@@ -50,3 +50,14 @@ supabase migration list     # 查看迁移状态
 ## 存储（Cloudflare R2）
 - 桶名：`knowledge-base-assets`（封面/插图）
 - 数据库仅保存 R2 路径字符串，禁止存二进制
+
+## 数据库连接信息（本地）
+- 项目 ref：`wkpxbyauvnxvmzidbeer`
+- 区域：`ap-southeast-2`
+- 直连主机：`db.wkpxbyauvnxvmzidbeer.supabase.co:5432`（**仅 IPv6**，WSL 内不可达）
+- 连接池（IPv4，本地开发用）：`aws-0-ap-southeast-2.pooler.supabase.com:5432`
+  - 用户名：`postgres.wkpxbyauvnxvmzidbeer`
+- 本地凭证存放：`supabase/.env.local`（已被 `.gitignore` 忽略，禁止提交）
+- CI 使用 GitHub Secret `SUPABASE_DB_PASSWORD`
+
+> 注意：WSL2 内直连数据库走 IPv6 会 `ENETUNREACH`，本地脚本请统一使用连接池地址。
