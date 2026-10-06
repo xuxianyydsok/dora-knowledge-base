@@ -18,11 +18,17 @@ import * as preferences from './routes/preferences.js';
 import * as music from './routes/music.js';
 import * as movies from './routes/movies.js';
 import * as rss from './routes/rss.js';
+import * as admin from './routes/admin.js';
 
 // 路由表：[method, pattern, handler]
 // pattern 中 :name 表示路径参数；handler 依次接收 (request, env, param1, param2, ...)
 const routes = [
   ['GET', '/api/me', me.getMe],
+
+  // 管理员用户管理（仅管理员）
+  ['GET', '/api/admin/users', admin.listUsers],
+  ['GET', '/api/admin/users/:id', admin.getUser],
+  ['PATCH', '/api/admin/users/:id', admin.updateUser],
 
   // 分类
   ['GET', '/api/categories', categories.listCategories],

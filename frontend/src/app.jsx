@@ -11,7 +11,7 @@ import {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
   Search, Graph, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit,
-  Movies, MovieView, MovieEdit, RssFeeds, RssArticles
+  Movies, MovieView, MovieEdit, RssFeeds, RssArticles, AdminUsers
 } from './routes/routes.js';
 
 function RouterView() {
@@ -39,6 +39,7 @@ function RouterView() {
       <ProtectedRoute path="/movies/:id"><MovieView /></ProtectedRoute>
       <ProtectedRoute path="/rss"><RssFeeds /></ProtectedRoute>
       <ProtectedRoute path="/rss/articles"><RssArticles /></ProtectedRoute>
+      <ProtectedRoute path="/admin/users"><AdminUsers /></ProtectedRoute>
       <ProtectedRoute path="/favorites"><Favorites /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>

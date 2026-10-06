@@ -168,29 +168,42 @@ const TOOLS = [
 // ---------------------------------------------------------------
 // 工具实现
 // ---------------------------------------------------------------
+// 定位文章：写操作严格限定管理员本人数据（管理员仅有读取全部权限）
 async function findPost(db, user, { id, slug }) {
-  const filters = { select: '*' };
+  const filters = { select: '*', user_id: `eq.${user.id}` };
   if (id) filters.id = `eq.${id}`;
   else if (slug) filters.slug = `eq.${slug}`;
   else throw new HttpError(422, '必须提供 id 或 slug');
 
-  const rows = await db.select('posts', qs({
-    ...filters,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
-  }));
+  const rows = await db.select('posts', qs(filters));
   if (!rows.length) throw new HttpError(404, '文章不存在');
   return rows[0];
 }
 
 async function resolveTagIds(db, user, tagIds) {
   if (tagIds === undefined) return undefined;
-  return validateTagIds(db, user.id, user.isAdmin, tagIds);
+  // 写操作仅允许使用本人标签（管理员同样不可挂他人标签）
+  return validateTagIds(db, user.id, false, tagIds);
+}
+
+// 校验资源归属（仅允许关联本人资源）
+async function validateResourceIds(db, userId, resourceIds) {
+  if (!Array.isArray(resourceIds) || resourceIds.length === 0) return [];
+  const unique = [...new Set(resourceIds)];
+  const rows = await db.select('resources', qs({
+    select: 'id', id: `in.(${unique.join(',')})`, user_id: `eq.${userId}`
+  }));
+  return rows.map((r) => r.id);
 }
 
 async function setLinkedResources(db, postId, userId, links) {
   await db.remove('post_resources', qs({ post_id: `eq.${postId}` }));
   if (!Array.isArray(links) || links.length === 0) return;
-  const rows = links.map((l, idx) => ({
+  // 过滤掉非本人资源，避免越权关联
+  const validIds = await validateResourceIds(db, userId, links.map((l) => l.resource_id));
+  const filtered = links.filter((l) => validIds.includes(l.resource_id));
+  if (!filtered.length) return;
+  const rows = filtered.map((l, idx) => ({
     user_id: userId,
     post_id: postId,
     resource_id: l.resource_id,
@@ -265,9 +278,9 @@ const handlers = {
     return { id: resource.id, title: resource.title, platform: meta.platform };
   },
 
-  async add_github_repo(db, user, args) {
+  async add_github_repo(db, user, args, env) {
     const url = requireString(args.url, 'url', { max: 500 });
-    const meta = await fetchGithubMeta(url, {});
+    const meta = await fetchGithubMeta(url, env);
     const rows = await db.insert('resources', {
       user_id: user.id,
       type: 'github',
@@ -371,10 +384,10 @@ const handlers = {
   }
 };
 
-async function invokeTool(db, user, toolName, args = {}) {
+async function invokeTool(db, user, toolName, args = {}, env = {}) {
   const handler = handlers[toolName];
   if (!handler) throw new HttpError(404, `未知工具: ${toolName}`);
-  return handler(db, user, args);
+  return handler(db, user, args, env);
 }
 
 // ---------------------------------------------------------------
@@ -392,7 +405,7 @@ export async function invokeMcpTool(request, env) {
   const { db, user } = await requireAdmin(request, env);
   const body = await readJson(request);
   const tool = requireString(body.tool, 'tool', { max: 60 });
-  const result = await invokeTool(db, user, tool, body.arguments || {});
+  const result = await invokeTool(db, user, tool, body.arguments || {}, env);
   return ok({ tool, result }, request, env);
 }
 
@@ -419,7 +432,7 @@ export async function mcpRpc(request, env) {
     if (method === 'tools/call') {
       const toolName = body.params?.name;
       const args = body.params?.arguments || {};
-      const result = await invokeTool(db, user, toolName, args);
+      const result = await invokeTool(db, user, toolName, args, env);
       return reply({ content: [{ type: 'text', text: JSON.stringify(result) }], isError: false });
     }
     return rpcError(-32601, `未支持的方法: ${method}`);

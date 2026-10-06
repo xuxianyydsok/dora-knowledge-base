@@ -29,6 +29,7 @@ export function Layout({ children }) {
           {isAuthenticated && link('/graph', '图谱')}
           {isAuthenticated && link('/categories', '分类')}
           {isAuthenticated && link('/tags', '标签')}
+          {isAdmin && link('/admin/users', '用户管理')}
         </nav>
         <span class="spacer" />
         {isAuthenticated && (

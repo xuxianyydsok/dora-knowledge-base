@@ -148,5 +148,10 @@ export const api = {
   // 偏好
   getPreferences: () => request('/api/preferences'),
   updatePreferences: (theme) => request('/api/preferences', { method: 'PUT', body: { theme } }),
-  resetPreferences: () => request('/api/preferences', { method: 'DELETE' })
+  resetPreferences: () => request('/api/preferences', { method: 'DELETE' }),
+
+  // 管理员用户管理
+  adminListUsers: (params = '') => request(`/api/admin/users${params}`),
+  adminGetUser: (id) => request(`/api/admin/users/${id}`),
+  adminUpdateUser: (id, body) => request(`/api/admin/users/${id}`, { method: 'PATCH', body })
 };

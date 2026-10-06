@@ -80,14 +80,14 @@ async function setLinkedResources(db, postId, userId, links) {
   });
 }
 
-// 校验关联资源归属
+// 校验关联资源归属（写操作：仅允许关联本人资源）
 async function validateResourceIds(db, user, resourceIds) {
   if (!Array.isArray(resourceIds) || resourceIds.length === 0) return [];
   const unique = [...new Set(resourceIds)];
   const rows = await db.select('resources', qs({
     select: 'id',
     id: `in.(${unique.join(',')})`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }));
   return rows.map((r) => r.id);
 }
@@ -178,7 +178,7 @@ export async function createPost(request, env) {
   const post = rows[0];
 
   if (body.tag_ids !== undefined) {
-    const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
+    const tagIds = await validateTagIds(db, user.id, false, body.tag_ids);
     await setPostTags(db, post.id, user.id, tagIds);
   }
   if (body.linked_resources !== undefined) {
@@ -197,6 +197,10 @@ export async function updatePost(request, env, id) {
   const { db, user } = await requireAuth(request, env);
   requireUuid(id, 'id');
   const body = await readJson(request);
+
+  // 写操作严格限定本人，管理员仅拥有读权限
+  const existing = await db.select(TABLE, qs({ select: 'id', id: `eq.${id}`, user_id: `eq.${user.id}` }));
+  if (!existing.length) throw new HttpError(404, '文章不存在或无权限');
 
   const patch = {};
   if (body.title !== undefined) {
@@ -219,13 +223,13 @@ export async function updatePost(request, env, id) {
   if (Object.keys(patch).length > 0) {
     const rows = await db.update(TABLE, qs({
       id: `eq.${id}`,
-      ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+      user_id: `eq.${user.id}`
     }), patch);
     if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
   }
 
   if (body.tag_ids !== undefined) {
-    const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
+    const tagIds = await validateTagIds(db, user.id, false, body.tag_ids);
     await setPostTags(db, id, user.id, tagIds);
   }
   if (body.linked_resources !== undefined) {
@@ -236,7 +240,7 @@ export async function updatePost(request, env, id) {
 
   const rows = await db.select(TABLE, qs({
     select: '*', id: `eq.${id}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }));
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
   const post = rows[0];
@@ -249,11 +253,16 @@ export async function updatePost(request, env, id) {
 export async function deletePost(request, env, id) {
   const { db, user } = await requireAuth(request, env);
   requireUuid(id, 'id');
-  await db.remove('post_resources', qs({ post_id: `eq.${id}` }));
-  await db.remove('post_tags', qs({ post_id: `eq.${id}` }));
+
+  // 先确认文章归属本人，再清理关联，避免越权删除他人文章
+  const existing = await db.select(TABLE, qs({ select: 'id', id: `eq.${id}`, user_id: `eq.${user.id}` }));
+  if (!existing.length) throw new HttpError(404, '文章不存在或无权限');
+
+  await db.remove('post_resources', qs({ post_id: `eq.${id}`, user_id: `eq.${user.id}` }));
+  await db.remove('post_tags', qs({ post_id: `eq.${id}`, user_id: `eq.${user.id}` }));
   const rows = await db.remove(TABLE, qs({
     id: `eq.${id}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }));
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
   return ok({ id }, request, env);

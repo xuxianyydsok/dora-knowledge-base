@@ -80,7 +80,7 @@ export async function createGithub(request, env) {
   if (body.category_id !== undefined && body.category_id !== null) {
     categoryId = requireUuid(body.category_id, 'category_id');
   }
-  const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
+  const tagIds = await validateTagIds(db, user.id, false, body.tag_ids);
 
   const rows = await db.insert(TABLE, {
     user_id: user.id,
@@ -119,7 +119,7 @@ export async function updateGithub(request, env, id) {
   if (body.refresh === true) {
     const existing = await db.select(TABLE, qs({
       select: 'url', id: `eq.${id}`, type: `eq.${TYPE}`,
-      ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+      user_id: `eq.${user.id}`
     }));
     if (existing.length && existing[0].url) {
       patch.metadata = await fetchGithubMeta(existing[0].url, env);
@@ -129,19 +129,19 @@ export async function updateGithub(request, env, id) {
   if (Object.keys(patch).length > 0) {
     const rows = await db.update(TABLE, qs({
       id: `eq.${id}`, type: `eq.${TYPE}`,
-      ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+      user_id: `eq.${user.id}`
     }), patch);
     if (!rows.length) throw new HttpError(404, '仓库收藏不存在或无权限');
   }
 
   if (body.tag_ids !== undefined) {
-    const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
+    const tagIds = await validateTagIds(db, user.id, false, body.tag_ids);
     await setResourceTags(db, id, user.id, tagIds);
   }
 
   const rows = await db.select(TABLE, qs({
     select: '*', id: `eq.${id}`, type: `eq.${TYPE}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }));
   if (!rows.length) throw new HttpError(404, '仓库收藏不存在或无权限');
   const [item] = await withTags(db, rows);
@@ -154,7 +154,7 @@ export async function deleteGithub(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({
     id: `eq.${id}`, type: `eq.${TYPE}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }));
   if (!rows.length) throw new HttpError(404, '仓库收藏不存在或无权限');
   return ok({ id }, request, env);

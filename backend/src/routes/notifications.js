@@ -71,7 +71,7 @@ export async function updateNotification(request, env, id) {
 
   const rows = await db.update('notifications', qs({
     id: `eq.${id}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }), { is_read: body.is_read });
   if (!rows.length) throw new HttpError(404, '通知不存在或无权限');
   return ok(rows[0], request, env);
@@ -92,7 +92,7 @@ export async function deleteNotification(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove('notifications', qs({
     id: `eq.${id}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }));
   if (!rows.length) throw new HttpError(404, '通知不存在或无权限');
   return ok({ id }, request, env);

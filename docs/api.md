@@ -428,3 +428,60 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/api/search?q=Breaking&resource_typ
 ## Cron 定时任务
 `wrangler.toml` 配置 `[triggers] crons = ["0 * * * *"]`（每小时）。
 `scheduled` handler 调用 `syncAllFeeds`，采用「截止时间 25s + 单次 20 个源」分批处理，规避 Workers 30s 超时；未处理完的源在下次 Cron 继续。
+
+---
+
+# Phase6 新增接口：管理员用户管理
+
+全部接口需管理员 JWT（`role=admin`），普通用户访问返回 `403`。
+实现文件：`backend/src/routes/admin.js`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/admin/users` | 用户列表（含 `stats.resources` / `stats.posts`；支持 `?role=user\|admin`、`?disabled=true`、`?limit=`） |
+| GET | `/api/admin/users/:id` | 单个用户详情（档案 + 资源统计） |
+| PATCH | `/api/admin/users/:id` | 更新用户，body: `{ is_disabled?, role? }` |
+
+### 约束
+- `role` 仅允许 `user` / `admin`；`is_disabled` 必须为布尔值。
+- **管理员不能禁用或降级自己**（返回 422），避免把自己锁在系统外。
+- 禁用通过 `user_profiles.is_disabled` 生效：`requireAuth` 中间件会拒绝被禁用账号的所有请求（403 `账号已被禁用`）。
+- 用户列表返回 `user_profiles` 档案，并额外通过 Supabase Auth Admin API 合并 `email` 字段（读取失败时该字段为 `null`，不影响列表可用）。
+
+### 调用示例
+```bash
+TOKEN=<管理员 access token>
+BASE=https://api.kb.example.com
+
+# 用户列表
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/users"
+
+# 仅看被禁用用户
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/users?disabled=true"
+
+# 禁用某个账号
+curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"is_disabled":true}' "$BASE/api/admin/users/<user_id>"
+
+# 启用并设为管理员
+curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"is_disabled":false,"role":"admin"}' "$BASE/api/admin/users/<user_id>"
+```
+
+## Phase6 权限修复说明（重要）
+统一修复了历史越权写入漏洞，规则为：
+
+| 操作 | 普通用户 | 管理员 |
+| --- | --- | --- |
+| 读取自己的数据 | ✅ | ✅ |
+| 读取全部数据 | ❌ | ✅（`?all=true`） |
+| 写入（创建） | ✅ 仅本人 | ✅ 仅本人 |
+| 写入（更新/删除） | ✅ 仅本人 | ❌ 仅本人数据，不可改他人 |
+| MCP 工具调用 | ❌ 403 | ✅ 但仅作用于本人数据 |
+
+涉及文件：`videos.js`、`github.js`、`posts.js`、`favorites.js`、`notifications.js`、`mcp.js`（`music.js`、`movies.js`、`rss.js` 在 Phase4/5 已符合规范）。
+具体改动：
+- 所有 `db.update` / `db.remove` 一律附加 `user_id=eq.<当前用户>`，移除 `user.isAdmin ? {}` 绕过。
+- 标签/关联资源校验改为 `validateTagIds(db, user.id, false, ...)` 与仅按本人 `user_id` 过滤，避免管理员把他人标签/资源挂到自己的数据上。
+- `deletePost` 改为**先校验归属再清理** `post_resources` / `post_tags`，防止越权删除他人文章的关联数据。
+- MCP `findPost` / `link_resources` 收紧为仅本人数据。

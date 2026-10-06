@@ -95,7 +95,7 @@ export async function createVideo(request, env) {
     categoryId = requireUuid(body.category_id, 'category_id');
   }
 
-  const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
+  const tagIds = await validateTagIds(db, user.id, false, body.tag_ids);
 
   const rows = await db.insert(TABLE, {
     user_id: user.id,
@@ -132,12 +132,12 @@ export async function updateVideo(request, env, id) {
 
   const rows = await db.update(TABLE, qs({
     id: `eq.${id}`, type: `eq.${TYPE}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }), patch);
   if (!rows.length) throw new HttpError(404, '视频不存在或无权限');
 
   if (body.tag_ids !== undefined) {
-    const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
+    const tagIds = await validateTagIds(db, user.id, false, body.tag_ids);
     await setResourceTags(db, id, user.id, tagIds);
   }
   const [withTagList] = await withTags(db, rows);
@@ -150,7 +150,7 @@ export async function deleteVideo(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({
     id: `eq.${id}`, type: `eq.${TYPE}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }));
   if (!rows.length) throw new HttpError(404, '视频不存在或无权限');
   return ok({ id }, request, env);
@@ -165,7 +165,7 @@ export async function saveVideoProgress(request, env, id) {
   // 校验资源归属
   const rows = await db.select(TABLE, qs({
     select: 'id', id: `eq.${id}`, type: `eq.${TYPE}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
+    user_id: `eq.${user.id}`
   }));
   if (!rows.length) throw new HttpError(404, '视频不存在或无权限');
 
