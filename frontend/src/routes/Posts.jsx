@@ -6,6 +6,7 @@ import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
 export function Posts() {
@@ -36,8 +37,11 @@ export function Posts() {
       coverUrl={p.cover_path}
       meta={
         <span class="row" style="gap:10px">
-          <span class="muted">{p.status === 'published' ? '🟢 已发布' : '⚪ 草稿'}</span>
-          {p.is_public && <span class="muted">🌐 公开</span>}
+          <span class="muted meta-item">
+            <Icon name="dot" size={13} class={p.status === 'published' ? 'dot-live' : 'dot-draft'} />
+            {p.status === 'published' ? '已发布' : '草稿'}
+          </span>
+          {p.is_public && <span class="muted meta-item"><Icon name="globe" size={13} /> 公开</span>}
         </span>
       }
       onClick={() => route(`/posts/${p.id}`)}

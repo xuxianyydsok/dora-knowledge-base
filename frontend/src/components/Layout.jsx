@@ -3,6 +3,7 @@ import { useRouter } from 'preact-router';
 import { ThemeToggle } from './ThemeToggle.jsx';
 import { NotificationBell } from './NotificationBell.jsx';
 import { Logo } from './Logo.jsx';
+import { Icon } from './Icon.jsx';
 import { useAuth } from '../lib/auth.jsx';
 
 export function Layout({ children }) {
@@ -36,16 +37,21 @@ export function Layout({ children }) {
         </nav>
         <span class="spacer" />
         {isAuthenticated && (
-          <a href="/search" title="全局搜索" aria-label="全局搜索">🔍</a>
+          <a href="/search" title="全局搜索" aria-label="全局搜索"><Icon name="search" size={18} /></a>
         )}
         <ThemeToggle />
         {isAuthenticated && <NotificationBell />}
         {isAuthenticated ? (
           <span class="row">
-            <a href="/settings" title="设置" aria-label="设置">⚙️</a>
-            <a href="/backup" title="备份" aria-label="备份">💾</a>
-            <span class="muted">{isAdmin ? '👑 ' : ''}{user?.email}</span>
-            <button onClick={signOut}>退出</button>
+            <a href="/settings" title="设置" aria-label="设置"><Icon name="settings" size={18} /></a>
+            <a href="/backup" title="备份" aria-label="备份"><Icon name="backup" size={18} /></a>
+            <span class="muted user-email">
+              {isAdmin && <Icon name="crown" size={14} class="crown-mark" />}
+              {user?.email}
+            </span>
+            <button onClick={signOut} title="退出登录" aria-label="退出登录">
+              <Icon name="logout" size={17} />
+            </button>
           </span>
         ) : (
           <a href="/login"><button class="primary">登录</button></a>

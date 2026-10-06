@@ -233,6 +233,29 @@ frontend/src/
 - Satoshi 为拉丁字形，中文自动回退到 `PingFang SC` / `Microsoft YaHei` 等系统字体。
 - 博客正文（`.post-content-wrap`）使用 Newsreader，行高 1.85、字号 17.5px，贴近 Claude 的阅读观感。
 
+## 图标系统（`src/components/Icon.jsx`）
+现代线性图标集，24×24 网格、`stroke` 描边、颜色继承 `currentColor`，全部内联 SVG，无外部请求。
+
+```jsx
+import { Icon } from '../components/Icon.jsx';
+<Icon name="blog" size={20} />
+<Icon name="crown" size={14} class="crown-mark" />
+```
+
+可用名称（`ICON_NAMES`）：`blog` `video` `github` `movie` `music` `rss` `search` `graph` `star` `bell`
+`palette` `backup` `sun` `moon` `settings` `crown` `logout` `arrowRight` `arrowLeft` `linkBroken`
+`sparkles` `layers` `play` `dot` `globe` `calendar` `clock` `tag` `external` `plus` `close`
+
+- 落地页功能矩阵、能力列表、控制台磁贴、顶栏按钮、卡片元信息与各模块标签全部改用图标，替换掉原有 emoji。
+- 模块配色：`tone-indigo`（博客）/ `tone-rose`（视频）/ `tone-slate`（GitHub）/ `tone-violet`（影视）/ `tone-teal`（音乐）/ `tone-amber`（RSS）；暗色主题下自动提亮（`[data-theme='dark'] .tone-*`）。
+- 辅助类：`.meta-item`（图标 + 文字）、`.chip-icon`（标签胶囊内图标）、`.dot-live` / `.dot-draft`（状态圆点）。
+
+## 品牌质感特效
+- **渐变流光文字**：顶栏 `Dora` 与落地页 `.hero-grad` 使用 `background-clip: text` + 缓慢位移的渐变（`grad-shift`），悬停时顶栏文字流光扫过。
+- **图标流光**：`Logo.jsx` 内 `.brand-sheen` 由 SVG `<animate>` 驱动，悬停时在立方体内部斜向扫光（`clip-path` 裁剪，`mix-blend-mode: screen`）。
+- **脉冲光环**：悬停时 `.brand-halo` 播放 `halo-pulse`（放大 + 淡出），并叠加 `drop-shadow` 发光。
+- 全部动效在 `prefers-reduced-motion: reduce` 下自动降级。
+
 ## 新增文件
 | 文件 | 说明 |
 | --- | --- |

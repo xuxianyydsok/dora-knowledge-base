@@ -3,6 +3,7 @@
 // 液态玻璃质感 + 悬停 3D 倾斜（由 lib/tilt.js 驱动，触摸/降级环境自动跳过）
 import { useEffect, useRef } from 'preact/hooks';
 import { TagChip } from './TagChip.jsx';
+import { Icon } from './Icon.jsx';
 import { attachTilt } from '../lib/tilt.js';
 
 export function Card({ title, description, coverUrl, meta, tags = [], footer, onClick }) {
@@ -15,7 +16,7 @@ export function Card({ title, description, coverUrl, meta, tags = [], footer, on
       {coverUrl ? (
         <img class="card-cover" src={coverUrl} alt={title} loading="lazy" />
       ) : (
-        <div class="card-cover-placeholder" aria-hidden="true">◈</div>
+        <div class="card-cover-placeholder" aria-hidden="true"><Icon name="layers" size={30} /></div>
       )}
       <div class="card-body">
         <h3 class="card-title">{title}</h3>

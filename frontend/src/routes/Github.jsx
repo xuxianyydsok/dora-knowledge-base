@@ -5,6 +5,7 @@ import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
 export function Github() {
@@ -55,9 +56,9 @@ export function Github() {
       tags={r.tags}
       meta={
         <span class="row" style="gap:12px">
-          <span class="muted">⭐ {r.metadata?.stars ?? 0}</span>
-          <span class="muted">🍴 {r.metadata?.forks ?? 0}</span>
-          {r.metadata?.language && <span class="muted">🧩 {r.metadata.language}</span>}
+          <span class="muted meta-item"><Icon name="star" size={13} /> {r.metadata?.stars ?? 0}</span>
+          <span class="muted meta-item"><Icon name="layers" size={13} /> {r.metadata?.forks ?? 0}</span>
+          {r.metadata?.language && <span class="muted meta-item"><Icon name="plus" size={13} /> {r.metadata.language}</span>}
         </span>
       }
       footer={

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
+import { Icon } from '../components/Icon.jsx';
 
 export function AdminUsers() {
   const { user, isAdmin } = useAuth();
@@ -89,7 +90,7 @@ export function AdminUsers() {
               <div class="card" key={u.id} style="padding:14px">
                 <div class="row" style="gap:10px;flex-wrap:wrap">
                   <strong>{u.display_name || u.username || '(未命名)'}</strong>
-                  {u.role === 'admin' && <span class="tag-chip">👑 管理员</span>}
+                  {u.role === 'admin' && <span class="tag-chip chip-icon"><Icon name="crown" size={12} />管理员</span>}
                   {u.is_disabled && <span class="tag-chip" style="color:var(--danger)">已禁用</span>}
                   {self && <span class="tag-chip">当前账号</span>}
                   <span class="spacer" />

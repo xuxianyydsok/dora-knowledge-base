@@ -5,24 +5,25 @@ import { route } from 'preact-router';
 import { useAuth } from '../lib/auth.jsx';
 import { api } from '../lib/api.js';
 import { Logo } from '../components/Logo.jsx';
+import { Icon } from '../components/Icon.jsx';
 
 // 能力矩阵（对应已交付的 Phase1–5 模块）
 const FEATURES = [
-  { icon: '📝', title: 'HTML 博客', desc: '原生 HTML 正文，支持 KaTeX、Three.js、Mermaid、Chart.js 自定义标签，重型库按需懒加载。' },
-  { icon: '📺', title: '学习视频库', desc: '粘贴 B站 / YouTube 链接自动抓取元信息，内嵌播放器与学习进度记忆。' },
-  { icon: '🐙', title: 'GitHub 收藏', desc: '保存仓库并抓取 Star、语言、描述，一键刷新最新数据。' },
-  { icon: '🎬', title: '影视库', desc: '电影 / 剧集元数据抓取（海报、简介、类型、上映时间），HTML5 播放与观看进度。' },
-  { icon: '🎵', title: '音乐收藏', desc: '歌曲元信息搜索、封面与播放地址管理，内置音频播放器与进度记忆。' },
-  { icon: '📡', title: 'RSS 订阅', desc: '定时抓取、未读标记、OPML 导入导出，新文章自动推送通知中心。' },
+  { icon: 'blog', tone: 'indigo', title: 'HTML 博客', desc: '原生 HTML 正文，支持 KaTeX、Three.js、Mermaid、Chart.js 自定义标签，重型库按需懒加载。' },
+  { icon: 'video', tone: 'rose', title: '学习视频库', desc: '粘贴 B站 / YouTube 链接自动抓取元信息，内嵌播放器与学习进度记忆。' },
+  { icon: 'github', tone: 'slate', title: 'GitHub 收藏', desc: '保存仓库并抓取 Star、语言、描述，一键刷新最新数据。' },
+  { icon: 'movie', tone: 'violet', title: '影视库', desc: '电影 / 剧集元数据抓取（海报、简介、类型、上映时间），HTML5 播放与观看进度。' },
+  { icon: 'music', tone: 'teal', title: '音乐收藏', desc: '歌曲元信息搜索、封面与播放地址管理，内置音频播放器与进度记忆。' },
+  { icon: 'rss', tone: 'amber', title: 'RSS 订阅', desc: '定时抓取、未读标记、OPML 导入导出，新文章自动推送通知中心。' },
 ];
 
 const CAPABILITIES = [
-  { icon: '🔍', title: '全文检索', desc: '跨博客与全部资源类型统一搜索。' },
-  { icon: '🕸️', title: '关联图谱', desc: '可视化博客、资源与标签的关联关系。' },
-  { icon: '⭐', title: '跨类型收藏夹', desc: '把不同模块的资源收进同一个收藏夹。' },
-  { icon: '🔔', title: '通知中心', desc: 'RSS 新条目、播放链接失效自动告警。' },
-  { icon: '🎨', title: '主题与配色', desc: '浅色 / 暗色切换，支持自定义配色云端同步。' },
-  { icon: '💾', title: 'JSON 备份', desc: '一键导出 / 导入，数据始终掌握在自己手里。' },
+  { icon: 'search', title: '全文检索', desc: '跨博客与全部资源类型统一搜索。' },
+  { icon: 'graph', title: '关联图谱', desc: '可视化博客、资源与标签的关联关系。' },
+  { icon: 'star', title: '跨类型收藏夹', desc: '把不同模块的资源收进同一个收藏夹。' },
+  { icon: 'bell', title: '通知中心', desc: 'RSS 新条目、播放链接失效自动告警。' },
+  { icon: 'palette', title: '主题与配色', desc: '浅色 / 暗色切换，支持自定义配色云端同步。' },
+  { icon: 'backup', title: 'JSON 备份', desc: '一键导出 / 导入，数据始终掌握在自己手里。' },
 ];
 
 const STEPS = [
@@ -91,8 +92,8 @@ function Hero({ isAuthenticated }) {
             </div>
           </div>
         </div>
-        <div class="mock-float mock-float-a">📝 新建博客</div>
-        <div class="mock-float mock-float-b">🔔 RSS 有新文章</div>
+        <div class="mock-float mock-float-a"><Icon name="blog" size={15} /> 新建博客</div>
+        <div class="mock-float mock-float-b"><Icon name="bell" size={15} /> RSS 有新文章</div>
       </div>
     </section>
   );
@@ -127,12 +128,12 @@ function Dashboard() {
   }, []);
 
   const tiles = [
-    { label: '博客', value: counts?.posts, to: '/posts', icon: '📝' },
-    { label: '学习视频', value: counts?.videos, to: '/videos', icon: '📺' },
-    { label: 'GitHub', value: counts?.github, to: '/github', icon: '🐙' },
-    { label: '音乐', value: counts?.music, to: '/music', icon: '🎵' },
-    { label: '影视', value: counts?.movies, to: '/movies', icon: '🎬' },
-    { label: 'RSS 订阅', value: counts?.rss, to: '/rss', icon: '📡' }
+    { label: '博客', value: counts?.posts, to: '/posts', icon: 'blog', tone: 'indigo' },
+    { label: '学习视频', value: counts?.videos, to: '/videos', icon: 'video', tone: 'rose' },
+    { label: 'GitHub', value: counts?.github, to: '/github', icon: 'github', tone: 'slate' },
+    { label: '音乐', value: counts?.music, to: '/music', icon: 'music', tone: 'teal' },
+    { label: '影视', value: counts?.movies, to: '/movies', icon: 'movie', tone: 'violet' },
+    { label: 'RSS 订阅', value: counts?.rss, to: '/rss', icon: 'rss', tone: 'amber' }
   ];
 
   return (
@@ -147,7 +148,7 @@ function Dashboard() {
       <div class="dash-grid">
         {tiles.map((t) => (
           <button key={t.label} class="dash-tile" onClick={() => route(t.to)}>
-            <span class="dash-icon">{t.icon}</span>
+            <span class={`dash-icon tone-${t.tone}`}><Icon name={t.icon} size={20} /></span>
             <span class="dash-value">{t.value ?? '—'}</span>
             <span class="dash-label">{t.label}</span>
           </button>
@@ -174,7 +175,7 @@ export function Home() {
         <div class="feature-grid">
           {FEATURES.map((f) => (
             <article key={f.title} class="feature-card">
-              <span class="feature-icon">{f.icon}</span>
+              <span class={`feature-icon tone-${f.tone}`}><Icon name={f.icon} size={22} /></span>
               <h3>{f.title}</h3>
               <p class="muted">{f.desc}</p>
             </article>
@@ -190,7 +191,7 @@ export function Home() {
         <div class="cap-grid">
           {CAPABILITIES.map((c) => (
             <article key={c.title} class="cap-card">
-              <span class="cap-icon">{c.icon}</span>
+              <span class="cap-icon"><Icon name={c.icon} size={20} /></span>
               <div>
                 <h4>{c.title}</h4>
                 <p class="muted">{c.desc}</p>

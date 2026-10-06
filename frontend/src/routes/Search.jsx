@@ -3,6 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { Card } from '../components/Card.jsx';
+import { Icon } from '../components/Icon.jsx';
 
 const TYPE_OPTIONS = [
   { value: 'all', label: '全部' },
@@ -86,7 +87,10 @@ export function Search({ q: initialQ }) {
             onClick={() => open(item)}
             meta={
               <span class="row" style="gap:8px">
-                <span class="tag-chip">{item.kind === 'post' ? '📝 博客' : `🔖 ${item.type || '资源'}`}</span>
+                <span class="tag-chip chip-icon">
+                  <Icon name={item.kind === 'post' ? 'blog' : 'layers'} size={12} />
+                  {item.kind === 'post' ? '博客' : (item.type || '资源')}
+                </span>
                 {item.status && <span class="muted">{item.status === 'published' ? '已发布' : '草稿'}</span>}
               </span>
             }

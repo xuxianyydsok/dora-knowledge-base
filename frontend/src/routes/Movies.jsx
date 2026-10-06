@@ -6,6 +6,7 @@ import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
 export function Movies() {
@@ -78,9 +79,9 @@ export function Movies() {
         tags={m.tags}
         meta={
           <span class="row" style="gap:10px">
-            <span class="tag-chip">{t.media_type === 'tv' ? '📺 剧集' : '🎬 电影'}</span>
+            <span class="tag-chip chip-icon"><Icon name={t.media_type === 'tv' ? 'video' : 'movie'} size={12} />{t.media_type === 'tv' ? '剧集' : '电影'}</span>
             {t.release_date && <span class="muted">{String(t.release_date).slice(0, 4)}</span>}
-            {t.rating != null && <span class="muted">⭐ {t.rating}</span>}
+            {t.rating != null && <span class="muted meta-item"><Icon name="star" size={13} /> {t.rating}</span>}
             {m.progress?.progress > 0 && <span class="muted">已看 {m.progress.progress}%</span>}
           </span>
         }
@@ -134,7 +135,7 @@ export function Movies() {
                   <span class="muted" style="font-size:12px">
                     {c.media_type === 'tv' ? '剧集' : '电影'}
                     {c.release_date ? ` · ${String(c.release_date).slice(0, 4)}` : ''}
-                    {c.rating != null ? ` · ⭐ ${c.rating}` : ''}
+                    {c.rating != null ? ` · ★ ${c.rating}` : ''}
                   </span>
                 </span>
                 <span class="spacer" />

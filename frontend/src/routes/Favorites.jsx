@@ -6,6 +6,7 @@ import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
 export function Favorites() {
@@ -48,8 +49,9 @@ export function Favorites() {
         description={t.summary || t.excerpt}
         onClick={() => open(fav)}
         meta={
-          <span class="tag-chip">
-            {t.kind === 'post' ? '📝 博客' : `🔖 ${t.type || '资源'}`}
+          <span class="tag-chip chip-icon">
+            <Icon name={t.kind === 'post' ? 'blog' : 'layers'} size={12} />
+            {t.kind === 'post' ? '博客' : (t.type || '资源')}
           </span>
         }
         footer={

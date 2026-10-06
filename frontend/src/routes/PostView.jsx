@@ -4,6 +4,7 @@ import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { PostRenderer } from '../components/PostRenderer.jsx';
 import { TagChip } from '../components/TagChip.jsx';
+import { Icon } from '../components/Icon.jsx';
 
 export function PostView({ id }) {
   const [post, setPost] = useState(null);
@@ -22,7 +23,7 @@ export function PostView({ id }) {
   return (
     <article class="stack">
       <div class="toolbar">
-        <button onClick={() => route('/posts')}>← 返回列表</button>
+        <button onClick={() => route('/posts')}><Icon name="arrowLeft" size={15} /> 返回列表</button>
         <span class="spacer" />
         <button onClick={() => route(`/posts/${post.id}/edit`)}>编辑</button>
       </div>

@@ -6,6 +6,7 @@ import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
 // preact-router 不解析 query string，这里直接从 location.search 读取 feed_id
@@ -73,7 +74,7 @@ export function RssArticles() {
       meta={
         <span class="row" style="gap:8px;flex-wrap:wrap">
           {!a.is_read && <span class="tag-chip">未读</span>}
-          {a.feed_title && <span class="muted" style="font-size:12px">📰 {a.feed_title}</span>}
+          {a.feed_title && <span class="muted meta-item" style="font-size:12px"><Icon name="rss" size={12} /> {a.feed_title}</span>}
           {a.author && <span class="muted" style="font-size:12px">{a.author}</span>}
           {a.published_at && (
             <span class="muted" style="font-size:12px">{new Date(a.published_at).toLocaleDateString('zh-CN')}</span>

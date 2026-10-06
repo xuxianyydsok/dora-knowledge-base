@@ -1,8 +1,13 @@
 // 通知中心面板：顶栏铃铛 + 未读徽标 + 下拉面板
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../lib/api.js';
+import { Icon } from './Icon.jsx';
 
-const TYPE_LABEL = { rss_new: '📰 RSS', link_broken: '⚠️ 链接失效', system: '⚙️ 系统' };
+const TYPE_META = {
+  rss_new: { label: 'RSS', icon: 'rss' },
+  link_broken: { label: '链接失效', icon: 'linkBroken' },
+  system: { label: '系统', icon: 'settings' }
+};
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -62,7 +67,8 @@ export function NotificationBell() {
   return (
     <div ref={boxRef} style="position:relative">
       <button onClick={() => { setOpen((v) => !v); if (!open) refresh(); }} title="通知中心" aria-label="通知中心">
-        🔔{unread > 0 && <span style="color:var(--danger);font-weight:700"> {unread}</span>}
+        <Icon name="bell" size={18} />
+        {unread > 0 && <span class="badge-dot">{unread > 99 ? '99+' : unread}</span>}
       </button>
 
       {open && (
@@ -82,7 +88,10 @@ export function NotificationBell() {
               style={`gap:4px;padding:8px;border-bottom:1px solid var(--border);opacity:${n.is_read ? 0.55 : 1}`}
             >
               <div class="row" style="gap:6px">
-                <span class="tag-chip" style="font-size:11px">{TYPE_LABEL[n.type] || n.type}</span>
+                <span class="tag-chip" style="font-size:11px;display:inline-flex;align-items:center;gap:4px">
+                  <Icon name={(TYPE_META[n.type] || {}).icon || 'bell'} size={12} />
+                  {(TYPE_META[n.type] || {}).label || n.type}
+                </span>
                 <span class="spacer" />
                 <span class="muted" style="font-size:11px">{new Date(n.created_at).toLocaleString('zh-CN')}</span>
               </div>

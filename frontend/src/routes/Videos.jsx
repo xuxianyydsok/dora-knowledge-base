@@ -6,6 +6,7 @@ import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { VideoPlayer } from '../components/VideoPlayer.jsx';
+import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
 export function Videos() {
@@ -55,7 +56,12 @@ export function Videos() {
       description={v.summary}
       coverUrl={v.metadata?.cover_url}
       tags={v.tags}
-      meta={<span class="muted">{v.source === 'bilibili' ? '📺 B站' : '▶️ YouTube'}</span>}
+      meta={
+        <span class="muted meta-item">
+          <Icon name={v.source === 'bilibili' ? 'video' : 'play'} size={13} />
+          {v.source === 'bilibili' ? 'B站' : 'YouTube'}
+        </span>
+      }
       onClick={() => play(v)}
       footer={
         <span class="row">

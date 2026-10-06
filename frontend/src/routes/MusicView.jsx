@@ -4,6 +4,7 @@ import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { AudioPlayer } from '../components/AudioPlayer.jsx';
 import { TagChip } from '../components/TagChip.jsx';
+import { Icon } from '../components/Icon.jsx';
 
 export function MusicView({ id }) {
   const [music, setMusic] = useState(null);
@@ -25,7 +26,7 @@ export function MusicView({ id }) {
   return (
     <article class="stack">
       <div class="toolbar">
-        <button onClick={() => route('/music')}>← 返回列表</button>
+        <button onClick={() => route('/music')}><Icon name="arrowLeft" size={15} /> 返回列表</button>
         <span class="spacer" />
         <button onClick={() => route(`/music/${music.id}/edit`)}>编辑</button>
       </div>
@@ -33,15 +34,15 @@ export function MusicView({ id }) {
       <div class="row" style="gap:20px;align-items:flex-start;flex-wrap:wrap">
         {cover
           ? <img src={cover} alt={music.title} style="width:200px;height:200px;object-fit:cover;border-radius:var(--radius)" />
-          : <div class="card-cover-placeholder" style="width:200px;height:200px;border-radius:var(--radius)">🎵</div>}
+          : <div class="card-cover-placeholder" style="width:200px;height:200px;border-radius:var(--radius)"><Icon name="music" size={34} /></div>}
         <div class="stack" style="flex:1;min-width:260px">
           <h1 style="margin:0">{music.title}</h1>
           <div class="muted">
             {t.artist}{t.album ? ` · ${t.album}` : ''}{t.release_year ? ` · ${t.release_year}` : ''}
           </div>
           <div class="row" style="gap:10px;flex-wrap:wrap">
-            {t.genre && <span class="tag-chip">🎵 {t.genre}</span>}
-            {t.duration && <span class="tag-chip">⏱ {Math.floor(t.duration / 60)}:{String(t.duration % 60).padStart(2, '0')}</span>}
+            {t.genre && <span class="tag-chip chip-icon"><Icon name="music" size={12} />{t.genre}</span>}
+            {t.duration && <span class="tag-chip chip-icon"><Icon name="clock" size={12} />{Math.floor(t.duration / 60)}:{String(t.duration % 60).padStart(2, '0')}</span>}
             {music.tags?.map((tag) => <TagChip key={tag.id} name={tag.name} color={tag.color} />)}
           </div>
         </div>

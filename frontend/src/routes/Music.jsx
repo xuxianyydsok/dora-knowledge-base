@@ -7,6 +7,7 @@ import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { AudioPlayer } from '../components/AudioPlayer.jsx';
+import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
 export function Music() {
@@ -80,8 +81,8 @@ export function Music() {
       tags={m.tags}
       meta={
         <span class="row" style="gap:10px">
-          {m.track?.duration && <span class="muted">⏱ {Math.floor(m.track.duration / 60)}:{String(m.track.duration % 60).padStart(2, '0')}</span>}
-          {m.track?.genre && <span class="muted">🎵 {m.track.genre}</span>}
+          {m.track?.duration && <span class="muted meta-item"><Icon name="clock" size={13} /> {Math.floor(m.track.duration / 60)}:{String(m.track.duration % 60).padStart(2, '0')}</span>}
+          {m.track?.genre && <span class="muted meta-item"><Icon name="music" size={13} /> {m.track.genre}</span>}
           {m.progress?.progress > 0 && <span class="muted">已听 {m.progress.progress}%</span>}
         </span>
       }

@@ -1,5 +1,6 @@
 // 品牌 SVG 图标：液态玻璃质感的「知识晶体」
 // 用于顶栏 brand、登录页与落地页；渐变 id 加后缀避免同页多实例冲突
+// 通过 CSS 类（.brand-mark 等）触发旋转、发光与内部流光动效
 let uid = 0;
 
 export function Logo({ size = 30, id }) {
@@ -20,6 +21,19 @@ export function Logo({ size = 30, id }) {
           <stop offset="0.5" stop-color="#4a6cf7" />
           <stop offset="1" stop-color="#7c4dff" />
         </linearGradient>
+        {/* 流光渐变：悬停时沿对角扫过 */}
+        <linearGradient id={`${n}-sheen`} x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#ffffff" stop-opacity="0" />
+          <stop offset="0.42" stop-color="#ffffff" stop-opacity="0" />
+          <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.85" />
+          <stop offset="0.58" stop-color="#ffffff" stop-opacity="0" />
+          <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+          <animate attributeName="x1" values="-40;64" dur="2.6s" repeatCount="indefinite" />
+          <animate attributeName="x2" values="24;128" dur="2.6s" repeatCount="indefinite" />
+        </linearGradient>
+        <clipPath id={`${n}-clip`}>
+          <path d="M32 3.6 57.2 17.8v28.4L32 60.4 6.8 46.2V17.8L32 3.6Z" />
+        </clipPath>
         <linearGradient id={`${n}-g2`} x1="14" y1="10" x2="50" y2="54" gradientUnits="userSpaceOnUse">
           <stop offset="0" stop-color="#ffffff" stop-opacity="0.9" />
           <stop offset="0.55" stop-color="#ffffff" stop-opacity="0.18" />
@@ -30,12 +44,30 @@ export function Logo({ size = 30, id }) {
         </filter>
       </defs>
 
+      {/* 悬停脉冲光环 */}
+      <path
+        class="brand-halo"
+        d="M32 3.6 57.2 17.8v28.4L32 60.4 6.8 46.2V17.8L32 3.6Z"
+        fill="none"
+        stroke={`url(#${n}-g1)`}
+        stroke-width="2"
+      />
+
       {/* 外层玻璃立方体 */}
       <path
         d="M32 3.6 57.2 17.8v28.4L32 60.4 6.8 46.2V17.8L32 3.6Z"
         fill={`url(#${n}-g1)`}
         stroke={`url(#${n}-g2)`}
         stroke-width="1.4"
+      />
+
+      {/* 内部流光（裁剪在立方体内） */}
+      <rect
+        class="brand-sheen"
+        x="0" y="0" width="64" height="64"
+        fill={`url(#${n}-sheen)`}
+        clip-path={`url(#${n}-clip)`}
+        style="mix-blend-mode: screen"
       />
 
       {/* 内部高光面：制造玻璃厚度 */}
