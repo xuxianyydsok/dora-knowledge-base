@@ -1024,6 +1024,12 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
   gap: 18px;
 }
+/* 六张卡在宽屏下排成 3×2 比 4+2 更平衡 */
+@media (min-width: 1100px) {
+  .feature-grid { grid-template-columns: repeat(3, 1fr); }
+  .cap-grid { grid-template-columns: repeat(3, 1fr); }
+  .step-grid { grid-template-columns: repeat(4, 1fr); }
+}
 .feature-card {
   padding: 26px 24px;
   border-radius: var(--radius-lg);
