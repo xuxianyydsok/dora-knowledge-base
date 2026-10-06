@@ -1930,6 +1930,22 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 /* —— 影视详情页 —— */
 .detail-page { display: flex; flex-direction: column; }
 .page-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+/* 详情页「返回 / 编辑」做成 ghost：别抢主操作（立即播放）的注意力 */
+.page-bar > button,
+.page-bar > a > button {
+  padding: 7px 12px;
+  color: var(--text-muted);
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.page-bar > button::after { display: none; }
+.page-bar > button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
 
 .detail-hero {
   position: relative;

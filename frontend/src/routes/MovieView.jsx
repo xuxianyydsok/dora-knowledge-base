@@ -7,6 +7,33 @@ import { MoviePlayer } from '../components/MoviePlayer.jsx';
 import { TagChip } from '../components/TagChip.jsx';
 import { Icon } from '../components/Icon.jsx';
 
+// 采集源的线路标识（vod_play_from）是站点内部代号，展示时换成人能读的源名
+const ROUTE_LABELS = [
+  [/lzm3u8|lzi/i, '量子资源'],
+  [/ffm3u8|ffzy/i, '非凡资源'],
+  [/dytt/i, '电影天堂'],
+  [/zuid/i, '最大资源'],
+  [/360|zy360/i, '360资源'],
+  [/heimuer|hmy/i, '黑木耳'],
+  [/wolong|wlm3u8/i, '卧龙资源'],
+  [/cjhw|hwba/i, '新华为']
+];
+function routeLabel(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return '默认线路';
+  const hit = ROUTE_LABELS.find(([re]) => re.test(raw));
+  const base = hit ? hit[1] : raw;
+  const proto = /m3u8/i.test(raw) ? 'm3u8' : (/mp4/i.test(raw) ? 'mp4' : '');
+  return proto ? `${base} · ${proto}` : base;
+}
+
+// 主演名单常常 20+ 位，详情页只展示前 8 位
+function trimCast(cast, max = 8) {
+  const list = String(cast || '').split(/[,，、]/).map((s) => s.trim()).filter(Boolean);
+  if (list.length <= max) return list.join('、');
+  return `${list.slice(0, max).join('、')} 等 ${list.length} 位`;
+}
+
 export function MovieView({ id }) {
   const [movie, setMovie] = useState(null);
   const [error, setError] = useState('');
@@ -32,6 +59,17 @@ export function MovieView({ id }) {
     if (saved.length) return saved;
     return Array.isArray(liveRoutes) ? liveRoutes : [];
   }, [t.routes, liveRoutes]);
+
+  // 线路标签去重：同一采集源可能出现多条线路（m3u8 / mp4），加序号区分
+  const routeLabels = useMemo(() => {
+    const seen = new Map();
+    return routes.map((r) => {
+      const base = routeLabel(r.name);
+      const n = (seen.get(base) || 0) + 1;
+      seen.set(base, n);
+      return n > 1 ? `${base} (${n})` : base;
+    });
+  }, [routes]);
 
   // 回源：采集源资源且未保存线路时，按 source_key + source_vod_id 拉取详情
   useEffect(() => {
@@ -126,7 +164,7 @@ export function MovieView({ id }) {
             </div>
 
             {t.director && <p class="detail-line"><b>导演</b>{t.director}</p>}
-            {t.cast_list && <p class="detail-line"><b>主演</b>{t.cast_list}</p>}
+            {t.cast_list && <p class="detail-line"><b>主演</b><span title={t.cast_list}>{trimCast(t.cast_list)}</span></p>}
             {t.overview && <p class="detail-content">{t.overview}</p>}
 
             <div class="detail-actions">
@@ -148,21 +186,28 @@ export function MovieView({ id }) {
         <>
           <div class="section-head">
             <h2><span class="bar" />{isSeries ? '剧集列表' : '播放线路'}</h2>
-            <span class="count">{episodes.length} 个</span>
+            <span class="count">
+              {routes.length > 1 ? `${routes.length} 条线路` : '1 条线路'}
+              {isSeries && episodes.length ? ` · ${episodes.length} 集` : ''}
+            </span>
           </div>
 
           {routes.length > 1 && (
             <div class="route-chips">
-              {routes.map((r, i) => (
-                <button
-                  key={`${r.name}-${i}`}
-                  class={`chip${i === routeIndex ? ' active' : ''}`}
-                  onClick={() => { setRouteIndex(i); setEpIndex(0); }}
-                >
-                  {r.name}
-                  <span class="chip-n">{r.episodes?.length || 0}</span>
-                </button>
-              ))}
+              {routes.map((r, i) => {
+                const label = routeLabels[i];
+                return (
+                  <button
+                    key={`${r.name}-${i}`}
+                    class={`chip${i === routeIndex ? ' active' : ''}`}
+                    title={`源标识：${r.name}`}
+                    onClick={() => { setRouteIndex(i); setEpIndex(0); }}
+                  >
+                    {label}
+                    <span class="chip-n">{r.episodes?.length || 0}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
 
