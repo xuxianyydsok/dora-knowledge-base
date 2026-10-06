@@ -97,6 +97,24 @@ const TOOLS = [
     }
   },
   {
+    name: 'add_music',
+    description: '新增一条音乐收藏（歌名/歌手/专辑/封面/播放地址/备注）',
+    inputSchema: {
+      type: 'object',
+      required: ['title'],
+      properties: {
+        title: { type: 'string', description: '歌曲名称' },
+        artist: { type: 'string' },
+        album: { type: 'string' },
+        artwork_url: { type: 'string', description: '封面链接' },
+        audio_url: { type: 'string', description: '播放地址（外链）' },
+        duration: { type: 'number', description: '时长（秒）' },
+        notes: { type: 'string' },
+        tag_ids: { type: 'array', items: { type: 'string' } }
+      }
+    }
+  },
+  {
     name: 'link_resources',
     description: '把若干资源绑定到一篇博客文章（覆盖式）',
     inputSchema: {
@@ -238,6 +256,34 @@ const handlers = {
     const tagIds = await resolveTagIds(db, user, args.tag_ids);
     if (tagIds) await setResourceTags(db, resource.id, user.id, tagIds);
     return { id: resource.id, title: resource.title, stars: meta.stars };
+  },
+
+  async add_music(db, user, args) {
+    const title = requireString(args.title, 'title', { max: 300 });
+    const rows = await db.insert('resources', {
+      user_id: user.id,
+      type: 'music',
+      title,
+      url: args.audio_url || null,
+      source: 'manual',
+      cover_path: args.artwork_url || null,
+      summary: args.notes || null,
+      metadata: { artist: args.artist || null, album: args.album || null, duration: args.duration || null }
+    });
+    const resource = rows[0];
+    await db.insert('music_tracks', {
+      resource_id: resource.id,
+      user_id: user.id,
+      artist: args.artist || null,
+      album: args.album || null,
+      artwork_url: args.artwork_url || null,
+      audio_url: args.audio_url || null,
+      duration: args.duration || null,
+      notes: args.notes || null
+    });
+    const tagIds = await resolveTagIds(db, user, args.tag_ids);
+    if (tagIds) await setResourceTags(db, resource.id, user.id, tagIds);
+    return { id: resource.id, title: resource.title, artist: args.artist || null };
   },
 
   async link_resources(db, user, args) {

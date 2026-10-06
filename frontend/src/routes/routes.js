@@ -15,8 +15,12 @@ const Graph = lazy(() => import('./Graph.jsx').then((m) => ({ default: m.Graph }
 const Favorites = lazy(() => import('./Favorites.jsx').then((m) => ({ default: m.Favorites })));
 const Backup = lazy(() => import('./Backup.jsx').then((m) => ({ default: m.Backup })));
 const Settings = lazy(() => import('./Settings.jsx').then((m) => ({ default: m.Settings })));
+const Music = lazy(() => import('./Music.jsx').then((m) => ({ default: m.Music })));
+const MusicView = lazy(() => import('./MusicView.jsx').then((m) => ({ default: m.MusicView })));
+const MusicEdit = lazy(() => import('./MusicEdit.jsx').then((m) => ({ default: m.MusicEdit })));
 
 export {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
-  Search, Graph, Favorites, Backup, Settings
+  Search, Graph, Favorites, Backup, Settings,
+  Music, MusicView, MusicEdit
 };

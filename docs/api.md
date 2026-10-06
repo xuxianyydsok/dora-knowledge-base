@@ -234,3 +234,69 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json
 # 导出备份
 curl -H "Authorization: Bearer $TOKEN" "$BASE/api/backup/export" -o backup.json
 ```
+
+---
+
+# Phase4 新增接口：音乐收藏库
+
+音乐主记录存于统一资源表 `resources(type='music')`，专属字段存于扩展表 `music_tracks`（1:1）。
+因此音乐自动支持：标签、分类、收藏夹、全局检索、关联图谱。
+
+## 音乐 CRUD
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/music` | 列表（管理员可 `?all=true`；可 `?category_id=`），返回含 `track` 与 `tags` |
+| POST | `/api/music/search` | 搜索元信息候选（不落库），body: `{ query, limit? }` |
+| POST | `/api/music` | 新增，body 见下 |
+| GET | `/api/music/:id` | 详情（含 `track`、`tags`、`progress`） |
+| PATCH | `/api/music/:id` | 更新（主资源字段 + 扩展字段） |
+| DELETE | `/api/music/:id` | 删除（同时删除扩展记录） |
+| GET | `/api/music/:id/progress` | 读取播放进度 |
+| PUT | `/api/music/:id/progress` | 保存进度，body: `{ position, duration?, completed? }` |
+
+### 新增/更新字段
+| 字段 | 说明 |
+| --- | --- |
+| `title` | 歌曲名称（必填） |
+| `artist` / `album` | 歌手 / 专辑 |
+| `artwork_url` | 封面链接（同时写入 `cover_path`） |
+| `audio_url` | 播放地址（外链，前端直接播放，后端不转发音频流） |
+| `preview_url` | 试听片段地址 |
+| `duration` | 时长（秒） |
+| `genre` / `release_year` | 流派 / 发行年份 |
+| `notes` / `lyrics` | 备注 / 歌词（纯文本） |
+| `category_id` / `tag_ids` / `is_public` | 分类 / 标签 / 公开 |
+
+### 元数据抓取
+`POST /api/music/search` 调用 iTunes Search API，返回候选：`{ title, artist, album, artwork_url, preview_url, duration, genre, release_year, page_url }`。
+仅抓取元信息与试听片段地址，**不下载音频、不入库音频文件**。
+
+## 权限
+- 普通用户仅能读写自己名下音乐。
+- 管理员可 `?all=true` 读取全部；**写操作（更新/删除/进度）始终限定本人**。
+
+## 调用示例
+```bash
+TOKEN=<access token>
+BASE=http://127.0.0.1:8787
+
+# 搜索元数据候选
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"query":"never gonna give you up","limit":5}' "$BASE/api/music/search"
+
+# 新增音乐
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Never Gonna Give You Up","artist":"Rick Astley","album":"Whenever You Need Somebody",
+       "artwork_url":"https://.../cover.jpg","audio_url":"https://.../song.mp3","duration":214,
+       "genre":"Pop","release_year":1987,"notes":"经典"}' "$BASE/api/music"
+
+# 保存播放进度
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"position":100,"duration":214}' "$BASE/api/music/<id>/progress"
+
+# 检索音乐
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/search?q=Rick&resource_type=music"
+```
+
+## MCP 工具
+新增 `add_music`（管理员）：`{ title, artist?, album?, artwork_url?, audio_url?, duration?, notes?, tag_ids? }`

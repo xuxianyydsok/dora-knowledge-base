@@ -15,6 +15,7 @@ import * as favorites from './routes/favorites.js';
 import * as notifications from './routes/notifications.js';
 import * as backup from './routes/backup.js';
 import * as preferences from './routes/preferences.js';
+import * as music from './routes/music.js';
 
 // 路由表：[method, pattern, handler]
 // pattern 中 :name 表示路径参数；handler 依次接收 (request, env, param1, param2, ...)
@@ -61,6 +62,16 @@ const routes = [
   ['GET', '/api/posts/:id', posts.getPost],
   ['PATCH', '/api/posts/:id', posts.updatePost],
   ['DELETE', '/api/posts/:id', posts.deletePost],
+
+  // 音乐收藏库
+  ['GET', '/api/music', music.listMusic],
+  ['POST', '/api/music', music.createMusic],
+  ['POST', '/api/music/search', music.searchMusicMeta],
+  ['GET', '/api/music/:id', music.getMusic],
+  ['PATCH', '/api/music/:id', music.updateMusic],
+  ['DELETE', '/api/music/:id', music.deleteMusic],
+  ['GET', '/api/music/:id/progress', music.getMusicProgress],
+  ['PUT', '/api/music/:id/progress', music.saveMusicProgress],
 
   // 全文检索
   ['GET', '/api/search', search.search],

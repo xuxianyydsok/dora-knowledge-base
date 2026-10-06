@@ -9,7 +9,8 @@ import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { Home } from './routes/Home.jsx';
 import {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
-  Search, Graph, Favorites, Backup, Settings
+  Search, Graph, Favorites, Backup, Settings,
+  Music, MusicView, MusicEdit
 } from './routes/routes.js';
 
 function RouterView() {
@@ -27,6 +28,10 @@ function RouterView() {
       <ProtectedRoute path="/posts/:id"><PostView /></ProtectedRoute>
       <ProtectedRoute path="/search"><Search /></ProtectedRoute>
       <ProtectedRoute path="/graph"><Graph /></ProtectedRoute>
+      <ProtectedRoute path="/music"><Music /></ProtectedRoute>
+      <ProtectedRoute path="/music/new"><MusicEdit /></ProtectedRoute>
+      <ProtectedRoute path="/music/:id/edit"><MusicEdit /></ProtectedRoute>
+      <ProtectedRoute path="/music/:id"><MusicView /></ProtectedRoute>
       <ProtectedRoute path="/favorites"><Favorites /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>

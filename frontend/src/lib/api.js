@@ -80,6 +80,16 @@ export const api = {
   updatePost: (id, body) => request(`/api/posts/${id}`, { method: 'PATCH', body }),
   deletePost: (id) => request(`/api/posts/${id}`, { method: 'DELETE' }),
 
+  // 音乐库
+  listMusic: (params = '') => request(`/api/music${params}`),
+  getMusic: (id) => request(`/api/music/${id}`),
+  searchMusicMeta: (query, limit = 5) => request('/api/music/search', { method: 'POST', body: { query, limit } }),
+  createMusic: (body) => request('/api/music', { method: 'POST', body }),
+  updateMusic: (id, body) => request(`/api/music/${id}`, { method: 'PATCH', body }),
+  deleteMusic: (id) => request(`/api/music/${id}`, { method: 'DELETE' }),
+  getMusicProgress: (id) => request(`/api/music/${id}/progress`),
+  saveMusicProgress: (id, body) => request(`/api/music/${id}/progress`, { method: 'PUT', body }),
+
   // 全文检索
   search: (q, params = '') => request(`/api/search?q=${encodeURIComponent(q)}${params}`),
 

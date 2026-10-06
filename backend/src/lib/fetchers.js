@@ -158,3 +158,46 @@ export async function fetchGithubMeta(rawUrl, env = {}) {
     updated_at: d.updated_at
   };
 }
+
+// ---------------------------------------------------------------
+// 音乐元信息：iTunes Search API（无需 API Key）
+// 仅抓取元信息与试听片段地址，音频文件不入库、后端不转发音频流
+// ---------------------------------------------------------------
+export async function fetchMusicMeta(query, limit = 5) {
+  const q = (query || '').trim();
+  if (!q) throw new HttpError(422, '缺少搜索关键词');
+
+  const res = await fetchWithTimeout(
+    `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=${Math.min(limit, 20)}`,
+    { headers: { 'User-Agent': UA } }
+  );
+  if (!res.ok) throw new HttpError(502, `音乐元信息接口请求失败 (${res.status})`);
+
+  const body = await res.json();
+  const results = (body.results || []).map((r) => ({
+    platform: 'itunes',
+    external_id: String(r.trackId ?? ''),
+    title: r.trackName,
+    artist: r.artistName,
+    album: r.collectionName,
+    artwork_url: (r.artworkUrl100 || '').replace('100x100bb', '600x600bb') || null,
+    preview_url: r.previewUrl || null,
+    duration: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
+    genre: r.primaryGenreName || null,
+    release_year: r.releaseDate ? new Date(r.releaseDate).getFullYear() : null,
+    page_url: r.trackViewUrl || null
+  }));
+
+  return { query: q, count: results.length, candidates: results };
+}
+
+// 解析用户直接提供的音乐链接（Apple Music / 其他），仅做基本校验
+export function parseMusicUrl(rawUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new HttpError(422, '音乐链接格式无效');
+  }
+  return { platform: 'external', url: url.toString() };
+}
