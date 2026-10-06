@@ -1,4 +1,9 @@
-// 全局基础布局：顶栏 + 导航 + 主内容区
+// 全局基础布局：单行顶栏（品牌 · 一级导航 · 更多菜单 · 搜索/主题/通知 · 头像菜单） + 主内容区
+//
+// 设计取舍：顶栏只平铺**内容模块**入口；工具类入口（收藏/图谱/分类/标签）收进「更多」，
+// 账号相关（设置/备份/用户管理/退出）收进头像菜单。
+// 之前是 12 项平铺 + 邮箱/退出挤在同一行，窄一点就折成两行、层级混乱。
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useRouter } from 'preact-router';
 import { ThemeToggle } from './ThemeToggle.jsx';
 import { NotificationBell } from './NotificationBell.jsx';
@@ -6,57 +11,163 @@ import { Logo } from './Logo.jsx';
 import { Icon } from './Icon.jsx';
 import { useAuth } from '../lib/auth.jsx';
 
+const PRIMARY = [
+  ['/videos', '视频'], ['/github', 'GitHub'], ['/posts', '博客'],
+  ['/music', '音乐'], ['/movies', '影视'], ['/rss', 'RSS']
+];
+
+const TOOLS = [
+  ['/favorites', '收藏', 'heart'], ['/graph', '图谱', 'graph'],
+  ['/categories', '分类', 'list'], ['/tags', '标签', 'tag']
+];
+
+// 通用下拉：点击展开；点击外部 / Esc / 选中任意项后关闭
+function Dropdown({ trigger, triggerClass = 'menu-trigger', children, align = 'right', label }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div class="menu" ref={ref}>
+      <button
+        type="button"
+        class={`${triggerClass}${open ? ' open' : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {trigger}
+      </button>
+      {open && (
+        <div class={`menu-panel ${align}`} role="menu" onClick={() => setOpen(false)}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuLink({ href, icon, children }) {
+  return (
+    <a class="menu-item" href={href} role="menuitem">
+      {icon && <Icon name={icon} size={16} />}
+      <span>{children}</span>
+    </a>
+  );
+}
+
 export function Layout({ children }) {
   const { isAuthenticated, user, signOut, isAdmin } = useAuth();
   const [router] = useRouter();
   const path = router?.path || '/';
+  const [navOpen, setNavOpen] = useState(false);
+
+  // 路由变化后收起移动端抽屉
+  useEffect(() => { setNavOpen(false); }, [path]);
 
   const link = (href, label) => (
-    <a href={href} class={path === href ? 'active' : ''}>{label}</a>
+    <a
+      href={href}
+      class={path === href ? 'active' : ''}
+      aria-current={path === href ? 'page' : undefined}
+    >{label}</a>
   );
+  const initial = String(user?.email || 'D').trim().charAt(0).toUpperCase();
 
   return (
     <div class="app-shell">
       <header class="app-header">
+        <button
+          type="button"
+          class="nav-toggle"
+          aria-label={navOpen ? '关闭菜单' : '打开菜单'}
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen((v) => !v)}
+        >
+          <Icon name={navOpen ? 'close' : 'menu'} size={20} />
+        </button>
+
         <a href="/" class="brand" aria-label="Dora 首页">
           <Logo size={30} />
           <span>Dora</span>
         </a>
-        <nav class="app-nav">
-          {isAuthenticated && link('/videos', '视频')}
-          {isAuthenticated && link('/github', 'GitHub')}
-          {isAuthenticated && link('/posts', '博客')}
-          {isAuthenticated && link('/music', '音乐')}
-          {isAuthenticated && link('/movies', '影视')}
-          {isAuthenticated && link('/rss', 'RSS')}
-          {isAuthenticated && link('/favorites', '收藏')}
-          {isAuthenticated && link('/graph', '图谱')}
-          {isAuthenticated && link('/categories', '分类')}
-          {isAuthenticated && link('/tags', '标签')}
-          {isAdmin && link('/admin/users', '用户管理')}
+
+        <nav class={`app-nav${navOpen ? ' open' : ''}`}>
+          {isAuthenticated && PRIMARY.map(([href, label]) => link(href, label))}
+          {isAuthenticated && (
+            <Dropdown
+              label="更多"
+              align="left"
+              triggerClass="menu-trigger nav-more"
+              trigger={<><span>更多</span><Icon name="chevronDown" size={14} /></>}
+            >
+              {TOOLS.map(([href, label, icon]) => (
+                <MenuLink key={href} href={href} icon={icon}>{label}</MenuLink>
+              ))}
+            </Dropdown>
+          )}
+          {/* 只有移动端抽屉展示：账号操作（桌面端收在头像菜单里） */}
+          {isAuthenticated && (
+            <div class="nav-drawer-actions">
+              <a href="/settings">设置</a>
+              <a href="/backup">备份</a>
+              {isAdmin && <a href="/admin/users">用户管理</a>}
+              <button type="button" onClick={signOut}>退出登录</button>
+            </div>
+          )}
         </nav>
+
         <span class="spacer" />
+
         {isAuthenticated && (
-          <a href="/search" title="全局搜索" aria-label="全局搜索"><Icon name="search" size={18} /></a>
+          <a href="/search" class="icon-btn" title="全局搜索" aria-label="全局搜索">
+            <Icon name="search" size={18} />
+          </a>
         )}
         <ThemeToggle />
         {isAuthenticated && <NotificationBell />}
+
         {isAuthenticated ? (
-          <span class="row">
-            <a href="/settings" title="设置" aria-label="设置"><Icon name="settings" size={18} /></a>
-            <a href="/backup" title="备份" aria-label="备份"><Icon name="backup" size={18} /></a>
-            <span class="muted user-email">
-              {isAdmin && <Icon name="crown" size={14} class="crown-mark" />}
-              {user?.email}
-            </span>
-            <button onClick={signOut} title="退出登录" aria-label="退出登录">
-              <Icon name="logout" size={17} />
+          <Dropdown
+            label="账号"
+            align="right"
+            triggerClass="menu-trigger avatar-trigger"
+            trigger={<span class={`avatar${isAdmin ? ' admin' : ''}`}>{initial}</span>}
+          >
+            <div class="menu-head">
+              <span class={`avatar lg${isAdmin ? ' admin' : ''}`}>{initial}</span>
+              <div class="menu-head-text">
+                <strong>{isAdmin ? '管理员' : '用户'}</strong>
+                <span>{user?.email}</span>
+              </div>
+            </div>
+            <div class="menu-sep" />
+            <MenuLink href="/settings" icon="settings">设置</MenuLink>
+            <MenuLink href="/backup" icon="backup">备份</MenuLink>
+            {isAdmin && <MenuLink href="/admin/users" icon="crown">用户管理</MenuLink>}
+            <div class="menu-sep" />
+            <button type="button" class="menu-item danger" onClick={signOut}>
+              <Icon name="logout" size={16} />
+              <span>退出登录</span>
             </button>
-          </span>
+          </Dropdown>
         ) : (
-          <a href="/login"><button class="primary">登录</button></a>
+          <a href="/login" class="login-link"><button type="button" class="primary">登录</button></a>
         )}
       </header>
+
       <main class="app-main">{children}</main>
     </div>
   );

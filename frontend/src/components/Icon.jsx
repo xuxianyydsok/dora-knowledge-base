@@ -252,6 +252,16 @@ const PATHS = {
       <circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none" />
     </>
   ),
+  menu: (
+    <>
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </>
+  ),
+  chevronDown: (
+    <>
+      <path d="m6 9.5 6 6 6-6" />
+    </>
+  ),
   heart: (
     <>
       <path d="M12 20s-7.5-4.6-7.5-9.6A4.4 4.4 0 0 1 12 7.6a4.4 4.4 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20Z" />

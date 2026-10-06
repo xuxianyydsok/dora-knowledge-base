@@ -161,6 +161,54 @@ JS
 
 ---
 
+## 2.7 UI 质量提升（同日，以 Awwwards / Webby / FWA 为基准的一轮）
+
+**先记能力边界**：本轮第一次做到「可视化验证」。这台机器原本没有可用浏览器 ——
+Playwright 的 `chrome-headless-shell` 缺 `libnspr4 / libnss3 / libasound2`（装它们要 sudo）。
+本轮用 `apt-get download` + `dpkg-deb -x` 把这三个 deb 解到 `~/.local/browser-libs`，
+再用 `LD_LIBRARY_PATH` 包装脚本（`~/.local/bin/omp-chrome`）驱动 omp 自带的 Chromium，
+并安装 Noto Sans/Serif CJK（`~/.fonts`）解决中文豆腐块，于是可以真机截图逐页自检：
+
+```js
+const tab = await browser.open({
+  name: 'dora', url: 'https://dora.xuguochen.de5.net/',
+  viewport: { width: 1440, height: 900 },
+  app: { path: '/home/xgc/.local/bin/omp-chrome', args: ['--proxy-server=http://127.0.0.1:7897'] }
+});
+display(await tab.screenshot({ format: 'webp' }));
+```
+
+改动（按影响面排序）：
+
+1. **顶栏重构**（`components/Layout.jsx`、`Icon.jsx` 新增 `menu`/`chevronDown`、`global.css`）：
+   原先 12 项平铺 + 邮箱/退出挤在同一行、窄一点就折成两行。现在单行——
+   品牌 · 6 个内容模块（视频/GitHub/博客/音乐/影视/RSS）· **更多**(收藏/图谱/分类/标签)
+   · 搜索 / 主题 / 通知 · **头像菜单**(设置/备份/用户管理/退出)；≤920px 收成抽屉（背景 97% 不透明）。
+2. **控制台重做**（`routes/Home.jsx`）：欢迎区（日期 + 管理员徽章 + 写博客/找音乐/找影视）、
+   6 个模块磁贴、**最近添加**（真实数据 + 相对时间）、**快捷入口**（6 个工具直达）。
+   原先只有 6 个磁贴，下面大半屏空白。
+3. **暗色表面层级**（tokens）：`--glass-bg` 55%→72%、`--glass-bg-strong` 78%→90%、边框对比加强、
+   `--glass-highlight` 0.10→0.14 —— 卡片才真正"浮"起来；内容区 1240→1280px，上下留白加大。
+4. **音乐页 / 影视页页头**（`Music.jsx` / `Movies.jsx` + CSS）：不再是「空容器玻璃面板」，
+   改为 kicker + 大标题（`clamp(30px, 3.2vw, 40px)`）+ 副标题 + 胶囊搜索框（`focus-within` 光晕）+ 细分割线；
+   音乐库专辑网格 158→174px、货架标题与计数胶囊化；影视推荐片单去掉面板外壳、行距收紧。
+5. **落地页规格条横跨整行**：原先只压在左栏、右下留一大块空白；条目字号/基线统一，预览卡显式定位到第 1 行右列。
+
+**同时修掉的真实缺陷**（不是纯美化）：
+- `ProtectedRoute` 丢掉路由参数 → 所有 `/xxx/:id` 详情页报「id 必须为合法 UUID」（见提交 `9184dd3`）。
+- `file_size` 校验上限吃掉无损音乐（`97363d8`）。
+- 确认 preact-router **确实拦截内部链接**（实测 `window.__probe` 跨导航存活、`<audio>` 未被销毁），
+  所以「点导航会整页刷新、打断播放器」的担心不成立——原实现是对的。
+
+仍待打磨（未在本轮完成，接手可直接做）：
+- 音乐**详情 / 正在播放 / 歌词**页的细部：hero 左右平衡、空状态、动效节奏。
+- 音乐库条目少时下半屏空 —— 可加「发现 / 热门」横向货架（Apple Music 式 Top Picks）。
+- 落地页预览窗仍是骨架块，可换成更有产品感的示意（真实封面/海报缩略）。
+- 收藏 / 图谱 / 检索 / 设置 / 用户管理等次级页面的同款打磨。
+- 动效系统统一（入场/悬停/按压的时长与缓动一致化）+ 键盘可达性（focus 顺序与可见焦点）复核。
+
+---
+
 ## 3. 下一步（按优先级，接手即可开工）
 
 1. **继续累积影音接口清单**：用户手上还有若干份「影音接口清单」文件，会陆续给路径。

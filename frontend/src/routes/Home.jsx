@@ -67,13 +67,14 @@ function Hero({ isAuthenticated }) {
             </>
           )}
         </div>
+      </div>
 
-        <div class="hero-stats">
-          <div class="hero-stat"><strong>6</strong><span>资源模块</span></div>
-          <div class="hero-stat"><strong>5</strong><span>重型渲染引擎</span></div>
-          <div class="hero-stat"><strong>双视图</strong><span>画廊 / 时间流</span></div>
-          <div class="hero-stat"><strong>MCP</strong><span>AI 自动化</span></div>
-        </div>
+      {/* 规格条：横跨整行，避免只压在左栏留下一大块空白 */}
+      <div class="hero-stats">
+        <div class="hero-stat"><strong>6</strong><span>资源模块</span></div>
+        <div class="hero-stat"><strong>5</strong><span>重型渲染引擎</span></div>
+        <div class="hero-stat"><strong>双视图</strong><span>画廊 / 时间流</span></div>
+        <div class="hero-stat"><strong>MCP</strong><span>AI 自动化</span></div>
       </div>
 
       {/* 玻璃预览卡：纯 CSS 绘制的界面示意 */}
@@ -99,60 +100,155 @@ function Hero({ isAuthenticated }) {
   );
 }
 
-function Dashboard() {
-  const [counts, setCounts] = useState(null);
+// 控制台用的模块元数据：磁贴 + 最近添加共用一份
+const MODULES = [
+  { key: 'posts', label: '博客', icon: 'blog', tone: 'indigo', to: '/posts', detail: (x) => `/posts/${x.id}`, load: () => api.listPosts() },
+  { key: 'videos', label: '学习视频', icon: 'video', tone: 'rose', to: '/videos', detail: () => '/videos', load: () => api.listVideos() },
+  { key: 'github', label: 'GitHub', icon: 'github', tone: 'slate', to: '/github', detail: () => '/github', load: () => api.listGithub() },
+  { key: 'music', label: '音乐', icon: 'music', tone: 'teal', to: '/music', detail: (x) => `/music/${x.id}`, load: () => api.listMusic() },
+  { key: 'movies', label: '影视', icon: 'movie', tone: 'violet', to: '/movies', detail: (x) => `/movies/${x.id}`, load: () => api.listMovies() },
+  { key: 'rss', label: 'RSS 订阅', icon: 'rss', tone: 'amber', to: '/rss', detail: () => '/rss', load: () => api.listFeeds() }
+];
 
+// 工具入口：顶栏收进「更多」后，控制台保留一键直达
+const SHORTCUTS = [
+  { to: '/search', icon: 'search', label: '全局搜索', desc: '跨全部资源检索' },
+  { to: '/graph', icon: 'graph', label: '关联图谱', desc: '看资源与标签关系' },
+  { to: '/favorites', icon: 'heart', label: '收藏夹', desc: '跨类型收藏' },
+  { to: '/tags', icon: 'tag', label: '标签', desc: '管理与配色' },
+  { to: '/categories', icon: 'list', label: '分类', desc: '组织资源' },
+  { to: '/backup', icon: 'backup', label: '备份', desc: '导出 / 导入 JSON' }
+];
+
+// 相对时间：控制台里「刚刚 / 3 小时前」比绝对时间更有信息量
+function relTime(iso) {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const mins = Math.round((Date.now() - t) / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  return new Date(iso).toLocaleDateString('zh-CN');
+}
+
+function Dashboard() {
+  const { isAdmin } = useAuth();
+  const [counts, setCounts] = useState(null);
+  const [recent, setRecent] = useState([]);
+
+  // 一次并发拉取全部模块：同时得到「数量」和「最近添加」，避免两次请求
   useEffect(() => {
     let active = true;
     (async () => {
-      const grab = async (fn) => { try { return await fn(); } catch { return null; } };
-      const [posts, videos, repos, music, movies, feeds] = await Promise.all([
-        grab(() => api.listPosts()),
-        grab(() => api.listVideos()),
-        grab(() => api.listGithub()),
-        grab(() => api.listMusic()),
-        grab(() => api.listMovies()),
-        grab(() => api.listFeeds())
-      ]);
+      const settled = await Promise.allSettled(MODULES.map((m) => m.load()));
       if (!active) return;
-      setCounts({
-        posts: posts?.length ?? 0,
-        videos: videos?.length ?? 0,
-        github: repos?.length ?? 0,
-        music: music?.length ?? 0,
-        movies: movies?.length ?? 0,
-        rss: feeds?.length ?? 0
+      const next = {};
+      const items = [];
+      settled.forEach((res, i) => {
+        const mod = MODULES[i];
+        const list = res.status === 'fulfilled' ? (res.value || []) : [];
+        next[mod.key] = list.length;
+        for (const row of list) {
+          items.push({
+            key: `${mod.key}-${row.id}`,
+            title: row.title || '(无标题)',
+            to: mod.detail(row),
+            icon: mod.icon,
+            tone: mod.tone,
+            label: mod.label,
+            at: row.created_at || row.updated_at || ''
+          });
+        }
       });
+      setCounts(next);
+      items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      setRecent(items.slice(0, 6));
     })();
     return () => { active = false; };
   }, []);
 
-  const tiles = [
-    { label: '博客', value: counts?.posts, to: '/posts', icon: 'blog', tone: 'indigo' },
-    { label: '学习视频', value: counts?.videos, to: '/videos', icon: 'video', tone: 'rose' },
-    { label: 'GitHub', value: counts?.github, to: '/github', icon: 'github', tone: 'slate' },
-    { label: '音乐', value: counts?.music, to: '/music', icon: 'music', tone: 'teal' },
-    { label: '影视', value: counts?.movies, to: '/movies', icon: 'movie', tone: 'violet' },
-    { label: 'RSS 订阅', value: counts?.rss, to: '/rss', icon: 'rss', tone: 'amber' }
-  ];
+  const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : null;
+  const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
 
   return (
-    <section class="stack" style="gap:22px">
-      <div class="dash-head">
-        <div>
-          <h1 style="margin:0 0 6px">控制台</h1>
-          <p class="muted" style="margin:0">你的资源概览，点击卡片进入对应模块。</p>
+    <section class="console">
+      <header class="console-head">
+        <div class="console-greet">
+          <span class="console-kicker">
+            {today}
+            {isAdmin && <em class="console-badge"><Icon name="crown" size={12} /> 管理员</em>}
+          </span>
+          <h1>欢迎回来</h1>
+          <p class="muted">
+            {total === null
+              ? '正在汇总你的资源…'
+              : <>已收录 <strong>{total}</strong> 条资源，分布在 {MODULES.length} 个模块。</>}
+          </p>
         </div>
-      </div>
+        <div class="console-actions">
+          <button class="primary" onClick={() => route('/posts/new')}><Icon name="plus" size={16} /> 写博客</button>
+          <button onClick={() => route('/music')}><Icon name="music" size={16} /> 找音乐</button>
+          <button onClick={() => route('/movies')}><Icon name="movie" size={16} /> 找影视</button>
+        </div>
+      </header>
 
       <div class="dash-grid">
-        {tiles.map((t) => (
-          <button key={t.label} class="dash-tile" onClick={() => route(t.to)}>
-            <span class={`dash-icon tone-${t.tone}`}><Icon name={t.icon} size={20} /></span>
-            <span class="dash-value">{t.value ?? '—'}</span>
-            <span class="dash-label">{t.label}</span>
+        {MODULES.map((m) => (
+          <button key={m.key} class="dash-tile" onClick={() => route(m.to)}>
+            <span class={`dash-icon tone-${m.tone}`}><Icon name={m.icon} size={20} /></span>
+            <span class="dash-value">{counts ? counts[m.key] : '—'}</span>
+            <span class="dash-label">{m.label}</span>
+            <span class="dash-arrow"><Icon name="chevronRight" size={15} /></span>
           </button>
         ))}
+      </div>
+
+      <div class="console-cols">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>最近添加</h2>
+            <a class="panel-more" href="/search">全部资源 <Icon name="chevronRight" size={13} /></a>
+          </div>
+          {recent.length === 0 ? (
+            <div class="empty-state">
+              <Icon name="sparkles" size={22} />
+              <p>还没有任何资源</p>
+              <span>从上面的快捷动作开始：写一篇博客，或收藏一首歌。</span>
+            </div>
+          ) : (
+            <ul class="recent-list">
+              {recent.map((r) => (
+                <li key={r.key}>
+                  <a class="recent-item" href={r.to}>
+                    <span class={`recent-icon tone-${r.tone}`}><Icon name={r.icon} size={15} /></span>
+                    <span class="recent-title">{r.title}</span>
+                    <span class="recent-meta">{r.label} · {relTime(r.at)}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>快捷入口</h2>
+          </div>
+          <div class="shortcut-grid">
+            {SHORTCUTS.map((s) => (
+              <a key={s.to} class="shortcut" href={s.to}>
+                <span class="shortcut-icon"><Icon name={s.icon} size={17} /></span>
+                <span class="shortcut-text">
+                  <strong>{s.label}</strong>
+                  <span>{s.desc}</span>
+                </span>
+              </a>
+            ))}
+          </div>
+        </section>
       </div>
     </section>
   );

@@ -189,7 +189,9 @@ export function Music() {
     <section class="music-page">
       {/* —— 头部：大标题 + 检索 —— */}
       <div class="music-head">
+        <span class="page-kicker">Music Library</span>
         <h1>音乐</h1>
+        <p class="page-sub muted">搜索完整音轨并收藏，跨页面续播；点封面进入同步歌词页。</p>
         <form class="music-search" onSubmit={(e) => { e.preventDefault(); runSearch(); }}>
           <span class="music-search-icon"><Icon name="search" size={16} /></span>
           <input

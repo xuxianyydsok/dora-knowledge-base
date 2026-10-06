@@ -155,8 +155,9 @@ export function Movies() {
       {/* —— 库头部：标题 + 搜索 —— */}
       <div class="vod-head">
         <div class="vod-head-title">
+          <span class="page-kicker">Movie Library</span>
           <h1>影视库</h1>
-          <p>聚合多个公开采集源，一次检索、多源比对，即点即播。</p>
+          <p>聚合 5 个公开采集源，一次检索、多源比对，即点即播。</p>
         </div>
         <form class="vod-search" onSubmit={search}>
           <span class="vod-search-icon"><Icon name="search" size={16} /></span>
