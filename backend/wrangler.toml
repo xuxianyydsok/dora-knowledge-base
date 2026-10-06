@@ -8,8 +8,8 @@ compatibility_date = "2026-10-01"
 workers_dev = true
 
 [vars]
-# CORS 白名单（逗号分隔），Phase6 绑定自定义域名后更新为正式前端域名
-CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+# CORS 白名单（逗号分隔）：正式前端域名 + 本地开发地址
+CORS_ORIGINS = "https://dora.xuguochen.de5.net,http://localhost:5173,http://127.0.0.1:5173"
 
 # Cron 定时任务：每小时抓取一次 RSS 订阅源
 # 抓取逻辑内置「截止时间 + 单次上限」分批处理，规避 Workers 30s 超时
@@ -21,7 +21,7 @@ crons = ["0 * * * *"]
 binding = "R2_BUCKET"
 bucket_name = "knowledge-base-assets"
 
-# 自定义域名在 Phase6 部署阶段配置
-# [[routes]]
-# pattern = "api.example.com"
-# custom_domain = true
+# 自定义域名（Cloudflare 会自动创建 DNS 记录并签发证书）
+[[routes]]
+pattern = "api.xuguochen.de5.net"
+custom_domain = true

@@ -95,6 +95,25 @@ CI 部署前端时同样通过 GitHub Secrets 注入这三个变量。
 
 # 自定义域名上线流程（Phase6）
 
+## 本项目已上线的正式域名（当前状态）
+
+| 项 | 值 |
+| --- | --- |
+| 域名 zone | `xuguochen.de5.net`（Cloudflare，zone id `<REDACTED:CF_ZONE_ID>`） |
+| 前端（Cloudflare Pages） | `https://dora.xuguochen.de5.net`，项目名 `knowledge-base`，默认域 `knowledge-base-9j0.pages.dev` |
+| 后端（Cloudflare Workers） | `https://api.xuguochen.de5.net`，Worker 名 `knowledge-base-api`，备用域 `knowledge-base-api.<REDACTED>.workers.dev` |
+| CORS 白名单 | `https://dora.xuguochen.de5.net` + 本地开发地址 |
+| Cron | `0 * * * *`（每小时抓取 RSS） |
+
+配置方式（已执行，供复现参考）：
+- 后端：`backend/wrangler.toml` 中声明 `[[routes]] pattern = "api.xuguochen.de5.net" custom_domain = true`，`wrangler deploy` 时 Cloudflare 自动创建 DNS 记录并签发证书。
+- 前端：Cloudflare 控制台 → Pages 项目 `knowledge-base` → Custom domains → 添加 `dora.xuguochen.de5.net`（同账户自动建 CNAME + 签证书，无需手填 IP）。
+- 证书无需手动配置：`dora` 与 `api` 均在 `*.xuguochen.de5.net` 的 Universal SSL 覆盖范围内。
+
+> 注意：**不要**为这两个子域手动添加指向 Cloudflare anycast IP 的 A 记录（如 `104.21.36.63`）。
+> 开启橙云代理时记录内容代表回源地址，指向 Cloudflare 自身会形成回环，导致 522。
+> 请使用 Custom domains / `custom_domain = true`，由 Cloudflare 自动管理 CNAME。
+
 架构约定：前端 Pages 与后端 Worker **各自绑定独立自定义域名**，全站 HTTPS，CORS 仅放行前端域名。
 示例域名（请替换为你自己的）：前端 `https://kb.example.com`，后端 `https://api.kb.example.com`。
 
