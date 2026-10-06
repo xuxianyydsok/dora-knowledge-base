@@ -50,6 +50,20 @@ export function MoviePlayer({
 
   const src = movie?.url || '';
 
+  // 线路自动回退：一部片常有 5~8 条线路，其中只有部分真的能播；失败时自动试下一条（每条最多试一次）
+  const triedRef = useRef(new Set());
+  const autoPlayRef = useRef(false);
+  function tryNextRoute(reason) {
+    if (!onSelectRoute || routes.length < 2) return false;
+    const next = routes.findIndex((_, i) => i !== routeIndex && !triedRef.current.has(i));
+    if (next < 0) return false;
+    triedRef.current.add(next);
+    autoPlayRef.current = true;   // 换线成功就自动续播（此前用户已与该 video 交互过，浏览器一般放行）
+    setSaved(`线路不可用（${reason}），自动尝试下一条…`);
+    onSelectRoute(next);
+    return true;
+  }
+
   // —— 加载片源：m3u8 走 hls.js（动态 import，符合重型库懒加载规范）——
   useEffect(() => {
     const el = videoRef.current;
@@ -69,6 +83,13 @@ export function MoviePlayer({
       }
     };
     el.addEventListener('loadedmetadata', onLoaded);
+    // 自动回退换线后：等有足够数据就续播，不让用户停在暂停画面
+    const onCanPlay = () => {
+      if (!autoPlayRef.current) return;
+      autoPlayRef.current = false;
+      el.play().then(() => setPlaying(true)).catch(() => {});
+    };
+    el.addEventListener('canplay', onCanPlay);
 
     if (isHls(src) && !el.canPlayType('application/vnd.apple.mpegurl')) {
       (async () => {
@@ -82,8 +103,10 @@ export function MoviePlayer({
           hls.attachMedia(el);
           hls.on(Hls.Events.ERROR, (_e, data) => {
             if (!data?.fatal) return;
-            setError('该线路播放失败，请切换到其他线路重试');
             setLoadingSrc(false);
+            if (!tryNextRoute('线路加载失败')) {
+              setError('该线路播放失败：多为 CDN 防盗链拦截或链接已失效，请切换其他线路或用「原站」打开');
+            }
           });
         } catch {
           if (!disposed) { el.src = src; }
@@ -96,6 +119,7 @@ export function MoviePlayer({
     return () => {
       disposed = true;
       el.removeEventListener('loadedmetadata', onLoaded);
+      el.removeEventListener('canplay', onCanPlay);
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     };
   }, [movie?.id, src]);
@@ -149,7 +173,18 @@ export function MoviePlayer({
     const el = videoRef.current;
     if (!el) return;
     if (playing) { el.pause(); setPlaying(false); saveProgress(); }
-    else { el.play().then(() => setPlaying(true)).catch(() => setError('浏览器阻止了自动播放，请再次点击播放')); }
+    else {
+      el.play().then(() => setPlaying(true)).catch((err) => {
+        // 不要把「片源不可用」误报成「自动播放被拦」——两者给用户的下一步完全不同
+        if (err?.name === 'NotAllowedError') {
+          setError('浏览器阻止了自动播放：再点一下播放按钮即可开始');
+        } else if (tryNextRoute('该线路没有可用片源')) {
+          setSaved('正在自动尝试下一条线路…');
+        } else {
+          setError('该线路没有可用片源：多为 CDN 防盗链拦截或链接已失效，请换一条线路，或用「原站」打开');
+        }
+      });
+    }
   }
 
   function seek(e) {
@@ -197,6 +232,14 @@ export function MoviePlayer({
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+          onError={() => {
+            // 原生 src 路径（含 hls.js 不可用时的回退）也要能自动换线：
+            // 采集源给的 m3u8 常被 CDN 防盗链拦掉，浏览器拿到的其实是 404/403 的 HTML
+            setLoadingSrc(false);
+            if (!tryNextRoute('片源无法解析')) {
+              setError('该线路片源无法播放：多为 CDN 防盗链拦截或链接已失效，请换一条线路或用「原站」打开');
+            }
+          }}
           onEnded={() => { setPlaying(false); saveProgress(true); onEnded?.(); }}
         />
 

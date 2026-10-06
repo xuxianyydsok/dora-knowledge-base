@@ -63,7 +63,9 @@ export async function upsertProgress(db, userId, resourceId, { position, duratio
   if (progress !== undefined) patch.progress = progress;
   if (completed !== undefined) patch.completed = completed;
 
-  const rows = await db.request('user_progress', {
+  // PostgREST 的 upsert 默认按主键判冲突；(user_id, resource_id) 是普通唯一约束，
+  // 必须显式给 on_conflict，否则第二次保存会报 duplicate key
+  const rows = await db.request('user_progress?on_conflict=user_id,resource_id', {
     method: 'POST',
     body: patch,
     prefer: 'return=representation,resolution=merge-duplicates'
