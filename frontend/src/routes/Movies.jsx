@@ -37,6 +37,7 @@ export function Movies() {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('hot');          // hot | new | search
+  const [recoOpen, setRecoOpen] = useState(false);  // 手机端推荐片单默认收起
   const [candidates, setCandidates] = useState([]);
   const [error, setError] = useState('');
   const [loadingList, setLoadingList] = useState(true);
@@ -172,13 +173,18 @@ export function Movies() {
         </form>
       </div>
 
-      {/* —— 推荐片单：搜索框下方，点击即聚合搜索 —— */}
+      {/* —— 推荐片单：搜索框下方，点击即聚合搜索（手机默认收起，避免把正文推到两屏之后） —— */}
       <div class="reco-panel">
         <div class="reco-head">
-          <Icon name="sparkles" size={14} />
+          <Icon name="sparkles" size={15} />
           <span>推荐搜索</span>
           <span class="reco-hint">点击任意片名，自动聚合多源搜索</span>
+          <button class="reco-toggle" type="button" onClick={() => setRecoOpen((v) => !v)}>
+            {recoOpen ? '收起' : '展开'}
+            <Icon name={recoOpen ? 'chevronDown' : 'chevronRight'} size={13} />
+          </button>
         </div>
+        <div class={`reco-body${recoOpen ? ' open' : ''}`}>
         {RECOMMEND.map((region) => (
           <div key={region.key} class="reco-region">
             <span class="reco-region-label">{region.label}</span>
@@ -202,6 +208,7 @@ export function Movies() {
             </div>
           </div>
         ))}
+        </div>
       </div>
 
       {/* —— 视图切换 —— */}

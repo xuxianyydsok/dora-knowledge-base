@@ -1727,6 +1727,32 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 .reco-head svg { color: color-mix(in srgb, var(--primary) 82%, var(--text)); }
 .reco-hint { margin-left: auto; font-size: 11.5px; font-weight: 400; color: var(--text-muted); }
 
+/* 手机端推荐片单默认收起（桌面始终展开）：6 行胶囊会把正文推到两屏之后 */
+.reco-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.reco-toggle::after { display: none; }
+.reco-toggle:hover { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 34%, var(--glass-border)); }
+@media (min-width: 641px) {
+  .reco-toggle { display: none; }
+}
+@media (max-width: 640px) {
+  .reco-body { display: none; }
+  .reco-body.open { display: block; }
+  .reco-hint { display: none; }
+}
+
 .reco-region {
   display: flex;
   gap: 12px;
