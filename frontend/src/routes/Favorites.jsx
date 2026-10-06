@@ -32,6 +32,8 @@ export function Favorites() {
   function open(fav) {
     const t = fav.target || {};
     if (t.kind === 'post') route(`/posts/${t.id}`);
+    else if (t.type === 'movie') route(`/movies/${t.id}`);
+    else if (t.type === 'music') route(`/music/${t.id}`);
     else if (t.url) window.open(t.url, '_blank');
   }
 

@@ -115,6 +115,31 @@ const TOOLS = [
     }
   },
   {
+    name: 'add_movie',
+    description: '新增一条影视收藏（电影/剧集，含名称、海报、简介、类型、上映时间等）',
+    inputSchema: {
+      type: 'object',
+      required: ['title'],
+      properties: {
+        title: { type: 'string', description: '影视名称' },
+        media_type: { type: 'string', enum: ['movie', 'tv'], default: 'movie' },
+        original_title: { type: 'string' },
+        director: { type: 'string' },
+        cast_list: { type: 'string' },
+        genres: { type: 'string', description: '类型，逗号分隔' },
+        release_date: { type: 'string', description: 'YYYY-MM-DD' },
+        runtime: { type: 'number', description: '时长（分钟）' },
+        rating: { type: 'number', description: '评分 0-10' },
+        overview: { type: 'string', description: '简介' },
+        poster_url: { type: 'string', description: '海报链接' },
+        url: { type: 'string', description: '外部详情页链接' },
+        source: { type: 'string', description: '数据源：tmdb/tvmaze/manual' },
+        notes: { type: 'string' },
+        tag_ids: { type: 'array', items: { type: 'string' } }
+      }
+    }
+  },
+  {
     name: 'link_resources',
     description: '把若干资源绑定到一篇博客文章（覆盖式）',
     inputSchema: {
@@ -284,6 +309,48 @@ const handlers = {
     const tagIds = await resolveTagIds(db, user, args.tag_ids);
     if (tagIds) await setResourceTags(db, resource.id, user.id, tagIds);
     return { id: resource.id, title: resource.title, artist: args.artist || null };
+  },
+
+  async add_movie(db, user, args) {
+    const title = requireString(args.title, 'title', { max: 300 });
+    const mediaType = args.media_type === 'tv' ? 'tv' : 'movie';
+    const rows = await db.insert('resources', {
+      user_id: user.id,
+      type: 'movie',
+      title,
+      url: args.url || null,
+      source: args.source || 'manual',
+      cover_path: args.poster_url || null,
+      summary: args.notes || args.overview || null,
+      metadata: {
+        media_type: mediaType,
+        original_title: args.original_title || null,
+        genres: args.genres || null,
+        release_date: args.release_date || null,
+        runtime: args.runtime || null,
+        rating: args.rating ?? null
+      }
+    });
+    const resource = rows[0];
+    await db.insert('movie_titles', {
+      resource_id: resource.id,
+      user_id: user.id,
+      media_type: mediaType,
+      original_title: args.original_title || null,
+      director: args.director || null,
+      cast_list: args.cast_list || null,
+      genres: args.genres || null,
+      release_date: args.release_date || null,
+      runtime: args.runtime || null,
+      rating: args.rating ?? null,
+      overview: args.overview || null,
+      poster_url: args.poster_url || null,
+      source: args.source || 'manual',
+      notes: args.notes || null
+    });
+    const tagIds = await resolveTagIds(db, user, args.tag_ids);
+    if (tagIds) await setResourceTags(db, resource.id, user.id, tagIds);
+    return { id: resource.id, title: resource.title, media_type: mediaType };
   },
 
   async link_resources(db, user, args) {

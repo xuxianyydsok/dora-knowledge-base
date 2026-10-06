@@ -18,9 +18,15 @@ const Settings = lazy(() => import('./Settings.jsx').then((m) => ({ default: m.S
 const Music = lazy(() => import('./Music.jsx').then((m) => ({ default: m.Music })));
 const MusicView = lazy(() => import('./MusicView.jsx').then((m) => ({ default: m.MusicView })));
 const MusicEdit = lazy(() => import('./MusicEdit.jsx').then((m) => ({ default: m.MusicEdit })));
+const Movies = lazy(() => import('./Movies.jsx').then((m) => ({ default: m.Movies })));
+const MovieView = lazy(() => import('./MovieView.jsx').then((m) => ({ default: m.MovieView })));
+const MovieEdit = lazy(() => import('./MovieEdit.jsx').then((m) => ({ default: m.MovieEdit })));
+const RssFeeds = lazy(() => import('./RssFeeds.jsx').then((m) => ({ default: m.RssFeeds })));
+const RssArticles = lazy(() => import('./RssArticles.jsx').then((m) => ({ default: m.RssArticles })));
 
 export {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
   Search, Graph, Favorites, Backup, Settings,
-  Music, MusicView, MusicEdit
+  Music, MusicView, MusicEdit,
+  Movies, MovieView, MovieEdit, RssFeeds, RssArticles
 };

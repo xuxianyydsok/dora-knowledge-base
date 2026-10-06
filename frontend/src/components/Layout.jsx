@@ -23,6 +23,8 @@ export function Layout({ children }) {
           {isAuthenticated && link('/github', 'GitHub')}
           {isAuthenticated && link('/posts', '博客')}
           {isAuthenticated && link('/music', '音乐')}
+          {isAuthenticated && link('/movies', '影视')}
+          {isAuthenticated && link('/rss', 'RSS')}
           {isAuthenticated && link('/favorites', '收藏')}
           {isAuthenticated && link('/graph', '图谱')}
           {isAuthenticated && link('/categories', '分类')}

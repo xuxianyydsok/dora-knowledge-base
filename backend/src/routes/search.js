@@ -4,13 +4,8 @@
 
 import { ok, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
-import { qs } from '../lib/supabase.js';
+import { qs, escapeLike } from '../lib/supabase.js';
 import { requireEnum } from '../lib/validate.js';
-
-// 转义 PostgREST 模糊匹配中的特殊字符，避免注入/语法错误
-function escapeLike(input) {
-  return input.replace(/[\\%_]/g, (c) => `\\${c}`).replace(/[(),]/g, '');
-}
 
 // GET /api/search?q=关键词&type=all|post|resource&resource_type=video&limit=20
 export async function search(request, env) {

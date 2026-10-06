@@ -90,6 +90,35 @@ export const api = {
   getMusicProgress: (id) => request(`/api/music/${id}/progress`),
   saveMusicProgress: (id, body) => request(`/api/music/${id}/progress`, { method: 'PUT', body }),
 
+  // 影视库
+  listMovies: (params = '') => request(`/api/movies${params}`),
+  getMovie: (id) => request(`/api/movies/${id}`),
+  searchMovieMeta: (query, limit = 5) => request('/api/movies/search', { method: 'POST', body: { query, limit } }),
+  createMovie: (body) => request('/api/movies', { method: 'POST', body }),
+  updateMovie: (id, body) => request(`/api/movies/${id}`, { method: 'PATCH', body }),
+  deleteMovie: (id) => request(`/api/movies/${id}`, { method: 'DELETE' }),
+  getMovieProgress: (id) => request(`/api/movies/${id}/progress`),
+  saveMovieProgress: (id, body) => request(`/api/movies/${id}/progress`, { method: 'PUT', body }),
+
+  // RSS 订阅
+  listFeeds: (params = '') => request(`/api/rss/feeds${params}`),
+  getFeed: (id) => request(`/api/rss/feeds/${id}`),
+  createFeed: (body) => request('/api/rss/feeds', { method: 'POST', body }),
+  updateFeed: (id, body) => request(`/api/rss/feeds/${id}`, { method: 'PATCH', body }),
+  deleteFeed: (id) => request(`/api/rss/feeds/${id}`, { method: 'DELETE' }),
+  fetchFeedNow: (id) => request(`/api/rss/feeds/${id}/fetch`, { method: 'POST' }),
+  fetchAllFeeds: (batchSize = 10) => request('/api/rss/fetch-all', { method: 'POST', body: { batch_size: batchSize } }),
+  listRssArticles: (params = '') => request(`/api/rss/articles${params}`),
+  markRssArticle: (id, isRead) => request(`/api/rss/articles/${id}`, { method: 'PATCH', body: { is_read: isRead } }),
+  markAllRssRead: (feedId) => request('/api/rss/articles/read-all', { method: 'POST', body: feedId ? { feed_id: feedId } : {} }),
+  importOpml: (opml) => request('/api/rss/opml', { method: 'POST', body: { opml } }),
+  // OPML 导出返回 text/xml，需单独处理（附带 JWT）
+  exportOpml: async () => {
+    const res = await fetch(`${API_BASE_URL}/api/rss/opml`, { headers: await authHeader() });
+    if (!res.ok) throw new ApiError(res.status, `导出失败 (${res.status})`);
+    return res.text();
+  },
+
   // 全文检索
   search: (q, params = '') => request(`/api/search?q=${encodeURIComponent(q)}${params}`),
 

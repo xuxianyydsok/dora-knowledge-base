@@ -201,3 +201,97 @@ export function parseMusicUrl(rawUrl) {
   }
   return { platform: 'external', url: url.toString() };
 }
+
+// ---------------------------------------------------------------
+// 影视元信息
+// 默认使用 TVmaze（免费、无需 Key，覆盖剧集/综艺）；
+// 若配置 env.TMDB_API_KEY，则优先使用 TMDB（电影 + 剧集更完整）。
+// 仅抓取元信息与海报链接，影视原始文件不入库、后端不转发视频流。
+// ---------------------------------------------------------------
+
+// 清理影视简介中的 HTML（TVmaze summary 含 <p> 等标签）
+function stripTags(html = '') {
+  return String(html)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function searchTmdb(query, limit, env) {
+  const url = `https://api.themoviedb.org/3/search/multi?api_key=${encodeURIComponent(env.TMDB_API_KEY)}`
+    + `&query=${encodeURIComponent(query)}&language=zh-CN&include_adult=false`;
+  const res = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } });
+  if (!res.ok) throw new HttpError(502, `TMDB 接口请求失败 (${res.status})`);
+  const body = await res.json();
+
+  const img = (p, size = 'w500') => (p ? `https://image.tmdb.org/t/p/${size}${p}` : null);
+  const candidates = (body.results || [])
+    .filter((r) => r.media_type === 'movie' || r.media_type === 'tv')
+    .slice(0, Math.min(limit, 20))
+    .map((r) => ({
+      platform: 'tmdb',
+      source: 'tmdb',
+      external_id: String(r.id),
+      media_type: r.media_type,
+      title: r.title || r.name || '(无标题)',
+      original_title: r.original_title || r.original_name || null,
+      overview: r.overview || null,
+      poster_url: img(r.poster_path),
+      backdrop_url: img(r.backdrop_path, 'w780'),
+      release_date: r.release_date || r.first_air_date || null,
+      rating: typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
+    }));
+
+  return { query, source: 'tmdb', count: candidates.length, candidates };
+}
+
+async function searchTvmaze(query, limit) {
+  const res = await fetchWithTimeout(
+    `https://api.tvmaze.com/search/shows?q=${encodeURIComponent(query)}`,
+    { headers: { 'User-Agent': UA } }
+  );
+  if (!res.ok) throw new HttpError(502, `TVmaze 接口请求失败 (${res.status})`);
+  const body = await res.json();
+
+  const candidates = (body || []).slice(0, Math.min(limit, 20)).map((entry) => {
+    const s = entry.show || {};
+    return {
+      platform: 'tvmaze',
+      source: 'tvmaze',
+      external_id: String(s.id ?? ''),
+      media_type: 'tv',
+      title: s.name || '(无标题)',
+      original_title: null,
+      overview: s.summary ? stripTags(s.summary) : null,
+      poster_url: s.image?.original || s.image?.medium || null,
+      backdrop_url: null,
+      release_date: s.premiered || null,
+      runtime: s.averageRuntime || s.runtime || null,
+      rating: s.rating?.average ?? null,
+      genres: (s.genres || []).join(', ') || null,
+      page_url: s.url || null
+    };
+  });
+
+  return { query, source: 'tvmaze', count: candidates.length, candidates };
+}
+
+export async function fetchMovieMeta(query, limit = 5, env = {}) {
+  const q = (query || '').trim();
+  if (!q) throw new HttpError(422, '缺少搜索关键词');
+  // 配置了 TMDB Key 时优先使用 TMDB，失败则回退 TVmaze
+  if (env.TMDB_API_KEY) {
+    try {
+      return await searchTmdb(q, limit, env);
+    } catch {
+      return searchTvmaze(q, limit);
+    }
+  }
+  return searchTvmaze(q, limit);
+}

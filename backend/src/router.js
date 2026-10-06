@@ -16,6 +16,8 @@ import * as notifications from './routes/notifications.js';
 import * as backup from './routes/backup.js';
 import * as preferences from './routes/preferences.js';
 import * as music from './routes/music.js';
+import * as movies from './routes/movies.js';
+import * as rss from './routes/rss.js';
 
 // 路由表：[method, pattern, handler]
 // pattern 中 :name 表示路径参数；handler 依次接收 (request, env, param1, param2, ...)
@@ -72,6 +74,30 @@ const routes = [
   ['DELETE', '/api/music/:id', music.deleteMusic],
   ['GET', '/api/music/:id/progress', music.getMusicProgress],
   ['PUT', '/api/music/:id/progress', music.saveMusicProgress],
+
+  // 影视收藏库
+  ['GET', '/api/movies', movies.listMovies],
+  ['POST', '/api/movies', movies.createMovie],
+  ['POST', '/api/movies/search', movies.searchMovieMeta],
+  ['GET', '/api/movies/:id', movies.getMovie],
+  ['PATCH', '/api/movies/:id', movies.updateMovie],
+  ['DELETE', '/api/movies/:id', movies.deleteMovie],
+  ['GET', '/api/movies/:id/progress', movies.getMovieProgress],
+  ['PUT', '/api/movies/:id/progress', movies.saveMovieProgress],
+
+  // RSS 订阅
+  ['GET', '/api/rss/feeds', rss.listFeeds],
+  ['POST', '/api/rss/feeds', rss.createFeed],
+  ['GET', '/api/rss/feeds/:id', rss.getFeed],
+  ['PATCH', '/api/rss/feeds/:id', rss.updateFeed],
+  ['DELETE', '/api/rss/feeds/:id', rss.deleteFeed],
+  ['POST', '/api/rss/feeds/:id/fetch', rss.fetchFeedNow],
+  ['POST', '/api/rss/fetch-all', rss.fetchAllFeeds],
+  ['GET', '/api/rss/articles', rss.listArticles],
+  ['PATCH', '/api/rss/articles/:id', rss.updateArticle],
+  ['POST', '/api/rss/articles/read-all', rss.markArticlesRead],
+  ['GET', '/api/rss/opml', rss.exportOpml],
+  ['POST', '/api/rss/opml', rss.importOpml],
 
   // 全文检索
   ['GET', '/api/search', search.search],

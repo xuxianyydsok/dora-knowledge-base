@@ -300,3 +300,131 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/api/search?q=Rick&resource_type=mu
 
 ## MCP 工具
 新增 `add_music`（管理员）：`{ title, artist?, album?, artwork_url?, audio_url?, duration?, notes?, tag_ids? }`
+
+---
+
+# Phase5 新增接口：RSS 订阅 + 影视库
+
+## RSS 订阅
+
+订阅源存于 `rss_feeds`，条目存于 `rss_articles`（仅元信息 + 文本摘要，不下载媒体文件）。
+新条目写入通知中心（`type=rss_new`）。Worker Cron 每小时分批抓取一次，规避 30s 超时。
+
+### 订阅源
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/rss/feeds` | 列表（含 `unread_count`；管理员可 `?all=true`；可 `?category_id=`） |
+| POST | `/api/rss/feeds` | 新增，body: `{ feed_url, title?, site_url?, category_id?, fetch_interval?, fetch_now? }`，默认立即抓取一次 |
+| GET | `/api/rss/feeds/:id` | 详情 |
+| PATCH | `/api/rss/feeds/:id` | 更新（title/site_url/fetch_interval/is_active/category_id/feed_url） |
+| DELETE | `/api/rss/feeds/:id` | 删除（级联删除条目） |
+| POST | `/api/rss/feeds/:id/fetch` | 手动抓取单个订阅源，返回 `{ notModified, newCount }` |
+| POST | `/api/rss/fetch-all` | 抓取本人全部活跃订阅源（分批，body: `{ batch_size? }`，≤30） |
+
+- `fetch_interval` 单位秒，范围 300–86400，默认 3600。
+- 抓取使用 ETag / Last-Modified 条件请求，未更新时返回 `notModified=true`。
+- 同一 `(feed_id, guid)` 幂等，重复抓取不会产生重复条目。
+
+### 条目
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/rss/articles` | 列表（`?feed_id=&unread=true&limit=&offset=`；管理员可 `?all=true`），返回含 `feed_title` |
+| PATCH | `/api/rss/articles/:id` | 标记已读/未读，body: `{ is_read }` |
+| POST | `/api/rss/articles/read-all` | 全部已读（可 `{ feed_id }` 限定单个源） |
+
+### OPML 导入导出
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/rss/opml` | 导出 OPML（`text/xml`，需携带 JWT） |
+| POST | `/api/rss/opml` | 导入，body: `{ opml: "<xml>" }` 或 `{ feeds: [{ feed_url, title? }] }`；已存在链接自动跳过 |
+
+### 调用示例
+```bash
+TOKEN=<access token>
+BASE=http://127.0.0.1:8787
+
+# 添加订阅源并立即抓取
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"feed_url":"https://hnrss.org/frontpage","title":"Hacker News"}' "$BASE/api/rss/feeds"
+
+# 手动抓取单个源
+curl -X POST -H "Authorization: Bearer $TOKEN" "$BASE/api/rss/feeds/<feed_id>/fetch"
+
+# 未读条目
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/rss/articles?unread=true&limit=20"
+
+# 导出 / 导入 OPML
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/rss/opml" -o rss.opml
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"feeds":[{"feed_url":"https://github.blog/feed/","title":"GitHub Blog"}]}' "$BASE/api/rss/opml"
+```
+
+## 影视库
+
+影视主记录存于统一资源表 `resources(type='movie')`，专属字段存于扩展表 `movie_titles`（1:1）。
+因此影视自动支持：标签、分类、收藏夹、全局检索、关联图谱。
+
+### 影视 CRUD
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/movies` | 列表（管理员可 `?all=true`；可 `?category_id=&media_type=movie\|tv`），返回含 `title_info` 与 `tags` |
+| POST | `/api/movies/search` | 搜索元信息候选（不落库），body: `{ query, limit? }` |
+| POST | `/api/movies` | 新增，body 见下 |
+| GET | `/api/movies/:id` | 详情（含 `title_info`、`tags`、`progress`） |
+| PATCH | `/api/movies/:id` | 更新（主资源字段 + 扩展字段） |
+| DELETE | `/api/movies/:id` | 删除（同时删除扩展记录） |
+| GET | `/api/movies/:id/progress` | 读取观看进度 |
+| PUT | `/api/movies/:id/progress` | 保存进度，body: `{ position, duration?, completed? }` |
+
+### 新增/更新字段
+| 字段 | 说明 |
+| --- | --- |
+| `title` | 名称（必填） |
+| `media_type` | `movie`（电影，默认）/ `tv`（剧集） |
+| `original_title` | 原名 |
+| `director` / `cast_list` | 导演 / 主演（文本，逗号分隔） |
+| `genres` | 类型/流派（文本，逗号分隔） |
+| `release_date` | 上映/首播日期（`YYYY-MM-DD`） |
+| `runtime` | 时长（分钟） |
+| `rating` | 评分 0–10 |
+| `overview` | 简介 |
+| `poster_url` / `backdrop_url` | 海报 / 背景图链接（同时写入 `cover_path`） |
+| `url` | 外部详情页链接；作为 HTML5 视频播放地址使用 |
+| `external_id` / `source` | 外部数据源 ID / 来源（`tmdb`/`tvmaze`/`manual`） |
+| `notes` | 备注 |
+| `category_id` / `tag_ids` / `is_public` | 分类 / 标签 / 公开 |
+
+### 元数据抓取
+`POST /api/movies/search` 默认调用 **TVmaze**（免费、无需 Key）；若 Worker 配置 `TMDB_API_KEY` 则优先使用 **TMDB**，失败自动回退 TVmaze。
+返回候选：`{ title, media_type, original_title, overview, poster_url, backdrop_url, release_date, runtime, rating, genres, page_url }`。
+仅抓取元信息与海报链接，**不下载视频文件、后端不转发视频流**。
+
+## 权限
+- 普通用户仅能读写自己名下 RSS 订阅/条目与影视资源。
+- 管理员可 `?all=true` 读取全部；**写操作（更新/删除/进度/抓取）始终限定本人**。
+
+## 调用示例
+```bash
+# 搜索影视元数据候选
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"query":"Breaking Bad","limit":5}' "$BASE/api/movies/search"
+
+# 新增影视
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Breaking Bad","media_type":"tv","genres":"Drama","rating":9.5,
+       "poster_url":"https://.../poster.jpg","url":"https://.../episode.m3u8"}' "$BASE/api/movies"
+
+# 保存观看进度
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"position":600,"duration":7200}' "$BASE/api/movies/<id>/progress"
+
+# 检索影视
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/search?q=Breaking&resource_type=movie"
+```
+
+## MCP 工具
+新增 `add_movie`（管理员）：`{ title, media_type?, original_title?, director?, cast_list?, genres?, release_date?, runtime?, rating?, overview?, poster_url?, url?, source?, notes?, tag_ids? }`
+
+## Cron 定时任务
+`wrangler.toml` 配置 `[triggers] crons = ["0 * * * *"]`（每小时）。
+`scheduled` handler 调用 `syncAllFeeds`，采用「截止时间 25s + 单次 20 个源」分批处理，规避 Workers 30s 超时；未处理完的源在下次 Cron 继续。

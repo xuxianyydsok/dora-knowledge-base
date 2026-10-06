@@ -78,3 +78,8 @@ export function qs(params) {
   }
   return sp.toString();
 }
+
+// 转义 PostgREST 模糊匹配（ilike）中的特殊字符，避免语法错误/注入
+export function escapeLike(input) {
+  return input.replace(/[\\%_]/g, (c) => `\\${c}`).replace(/[(),]/g, '');
+}

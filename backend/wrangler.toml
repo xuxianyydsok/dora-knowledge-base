@@ -11,6 +11,11 @@ workers_dev = true
 # CORS 白名单（逗号分隔），Phase6 绑定自定义域名后更新为正式前端域名
 CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
+# Cron 定时任务：每小时抓取一次 RSS 订阅源
+# 抓取逻辑内置「截止时间 + 单次上限」分批处理，规避 Workers 30s 超时
+[triggers]
+crons = ["0 * * * *"]
+
 # R2 存储桶绑定（存放封面/插图，仅存路径字符串）
 [[r2_buckets]]
 binding = "R2_BUCKET"

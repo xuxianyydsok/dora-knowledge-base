@@ -12,7 +12,6 @@ const TYPE_OPTIONS = [
 const RESOURCE_TYPES = [
   { value: '', label: '全部资源' },
   { value: 'video', label: '视频' },
-  { value: 'music', label: '音乐' },
   { value: 'github', label: 'GitHub' },
   { value: 'music', label: '音乐' },
   { value: 'movie', label: '影视' },
@@ -46,6 +45,7 @@ export function Search({ q: initialQ }) {
     if (item.kind === 'post') route(`/posts/${item.id}`);
     else if (item.type === 'video') route('/videos');
     else if (item.type === 'music') route(`/music/${item.id}`);
+    else if (item.type === 'movie') route(`/movies/${item.id}`);
     else if (item.type === 'github') route('/github');
     else if (item.url) window.open(item.url, '_blank');
   }

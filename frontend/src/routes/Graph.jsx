@@ -19,6 +19,8 @@ export function Graph() {
 
   function onSelect(node) {
     if (node.type === 'post') route(`/posts/${node.id}`);
+    else if (node.type === 'resource' && node.resource_type === 'movie') route(`/movies/${node.id}`);
+    else if (node.type === 'resource' && node.resource_type === 'music') route(`/music/${node.id}`);
     else if (node.type === 'resource' && node.url) window.open(node.url, '_blank');
   }
 

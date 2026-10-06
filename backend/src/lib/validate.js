@@ -45,6 +45,23 @@ export function optionalBool(value, field) {
   return value;
 }
 
+export function optionalNumber(value, field, { min = -1e9, max = 1e9 } = {}) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new HttpError(422, `${field} 必须为数字`);
+  if (n < min || n > max) throw new HttpError(422, `${field} 超出范围`);
+  return n;
+}
+
+// 校验 YYYY-MM-DD 日期字符串（用于上映日期等）
+export function optionalDateString(value, field) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    throw new HttpError(422, `${field} 必须为 YYYY-MM-DD 格式`);
+  }
+  return value.trim();
+}
+
 export function isUuid(value) {
   return typeof value === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
