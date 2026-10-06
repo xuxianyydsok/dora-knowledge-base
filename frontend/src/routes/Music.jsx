@@ -114,8 +114,11 @@ export function Music() {
 
   async function load() {
     setLoading(true);
-    try { setItems(await api.listMusic()); }
-    catch (e) { setError(e.message); }
+    try {
+      const list = await api.listMusic();
+      setItems(list);
+      return list || [];
+    } catch (e) { setError(e.message); return []; }
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
