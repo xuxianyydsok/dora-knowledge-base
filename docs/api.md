@@ -247,6 +247,7 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/api/backup/export" -o backup.json
 | --- | --- | --- |
 | GET | `/api/music` | 列表（管理员可 `?all=true`；可 `?category_id=`），返回含 `track` 与 `tags` |
 | POST | `/api/music/search` | 搜索元信息候选（不落库），body: `{ query, limit? }` |
+| POST | `/api/music/lyrics` | 获取歌词（LRCLIB），body: `{ title, artist, album?, duration? }` |
 | POST | `/api/music` | 新增，body 见下 |
 | GET | `/api/music/:id` | 详情（含 `track`、`tags`、`progress`） |
 | PATCH | `/api/music/:id` | 更新（主资源字段 + 扩展字段） |
@@ -261,15 +262,41 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/api/backup/export" -o backup.json
 | `artist` / `album` | 歌手 / 专辑 |
 | `artwork_url` | 封面链接（同时写入 `cover_path`） |
 | `audio_url` | 播放地址（外链，前端直接播放，后端不转发音频流） |
+| `audio_fallbacks` | 备用播放地址数组（多音源节点），主地址失败时前端依次尝试 |
 | `preview_url` | 试听片段地址 |
+| `artist_avatar` | 歌手头像链接（播放器唱片右下角与歌词页展示） |
+| `quality` | `full`=完整音轨（默认），`preview`=试听片段 |
 | `duration` | 时长（秒） |
 | `genre` / `release_year` | 流派 / 发行年份 |
 | `notes` / `lyrics` | 备注 / 歌词（纯文本） |
 | `category_id` / `tag_ids` / `is_public` | 分类 / 标签 / 公开 |
 
-### 元数据抓取
-`POST /api/music/search` 调用 iTunes Search API，返回候选：`{ title, artist, album, artwork_url, preview_url, duration, genre, release_year, page_url }`。
-仅抓取元信息与试听片段地址，**不下载音频、不入库音频文件**。
+### 元数据抓取（多源聚合）
+`POST /api/music/search` 并发调用三个免费数据源，去重合并后返回候选：
+
+| 数据源 | 说明 | 音质 |
+| --- | --- | --- |
+| **Audius**（主源） | 独立音乐平台，提供完整音轨 320kbps MP3，CORS 全开 | `full` |
+| iTunes Search | 元信息与封面规范 | `preview`（30s 试听） |
+| Deezer | iTunes 被限流（Workers 共享出口 IP 常返回 429）时兜底 | `preview` |
+
+返回候选字段：`{ platform, external_id, title, artist, artist_avatar, album, artwork_url, audio_url, audio_fallbacks, preview_url, quality, duration, genre, release_year, page_url }`。
+同名同歌手去重时优先保留 `quality=full` 的完整音轨。**不下载音频、不入库音频文件**，后端不转发音频流。
+
+Audius 由多个发现节点提供服务，单个节点可能把某条音轨 CID 拉黑（403），
+因此 `audio_fallbacks` 会附带其余节点地址，前端播放失败时自动切换。
+
+### 歌词
+`POST /api/music/lyrics` 调用 **LRCLIB**（开源、无需 Key、支持中文），返回：
+
+```json
+{ "source": "lrclib", "instrumental": false,
+  "synced": "[00:27.38] 窗外的麻雀 在電線桿上多嘴\n...",
+  "plain": "窗外的麻雀 在電線桿上多嘴\n..." }
+```
+
+- `synced` 为带时间轴的 LRC 文本，前端据此实现逐句高亮与自动滚动；无同步歌词时为 `null`。
+- 抓取源的歌手名常带前缀（如 `Jay 周杰伦`），服务端会自动尝试多种候选写法匹配。
 
 ## 权限
 - 普通用户仅能读写自己名下音乐。
@@ -389,15 +416,30 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 | `rating` | 评分 0–10 |
 | `overview` | 简介 |
 | `poster_url` / `backdrop_url` | 海报 / 背景图链接（同时写入 `cover_path`） |
-| `url` | 外部详情页链接；作为 HTML5 视频播放地址使用 |
+| `url` | **播放地址**：仅存放可播放的视频直链（`.mp4` 等），作为 HTML5 `<video src>` 使用 |
+| `external_url` | **外部详情页**链接（TVmaze / TMDB 等资料页），非播放地址，前端仅用于跳转 |
 | `external_id` / `source` | 外部数据源 ID / 来源（`tmdb`/`tvmaze`/`manual`） |
 | `notes` | 备注 |
 | `category_id` / `tag_ids` / `is_public` | 分类 / 标签 / 公开 |
 
-### 元数据抓取
-`POST /api/movies/search` 默认调用 **TVmaze**（免费、无需 Key）；若 Worker 配置 `TMDB_API_KEY` 则优先使用 **TMDB**，失败自动回退 TVmaze。
-返回候选：`{ title, media_type, original_title, overview, poster_url, backdrop_url, release_date, runtime, rating, genres, page_url }`。
-仅抓取元信息与海报链接，**不下载视频文件、后端不转发视频流**。
+### 元数据抓取（多源聚合）
+`POST /api/movies/search` 并发调用多个免费数据源，去重合并后返回候选：
+
+| 数据源 | 说明 | 可播放 |
+| --- | --- | --- |
+| **Internet Archive** | 公有领域影视库，提供完整 MP4 直链（无需 Key） | ✅ `playable_url` |
+| TMDB（可选） | 配置 `TMDB_API_KEY` 时启用，元信息最完整 | ❌ 仅元信息 |
+| TVmaze | 免费、无需 Key，覆盖剧集/综艺 | ❌ 仅元信息 |
+
+返回候选字段：`{ source, external_id, media_type, title, original_title, overview, poster_url, backdrop_url, release_date, runtime, rating, genres, director, cast_list, page_url, playable_url }`。
+
+- `playable_url` 为可直接播放的视频直链，**可播放的结果排在最前**。
+- `page_url` 为外部详情页，**不能作为播放地址**——这正是此前「搜索到但无法播放」的原因。
+- 同名条目去重时优先保留带 `playable_url` 的版本，并补齐其余来源缺失的元信息。
+- 仅抓取元信息与海报链接，**不下载视频文件、后端不转发视频流**。
+
+> 说明：TMDB / TVmaze 本身不提供视频直链，因此从它们收藏的条目需要在编辑页自行填写
+> 「播放地址」；从 Internet Archive 收藏的条目自带播放地址，可直接播放。
 
 ## 权限
 - 普通用户仅能读写自己名下 RSS 订阅/条目与影视资源。

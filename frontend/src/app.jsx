@@ -11,7 +11,7 @@ import { Home } from './routes/Home.jsx';
 import {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
   Search, Graph, Favorites, Backup, Settings,
-  Music, MusicView, MusicEdit,
+  Music, MusicView, MusicEdit, MusicLyrics,
   Movies, MovieView, MovieEdit, RssFeeds, RssArticles, AdminUsers
 } from './routes/routes.js';
 
@@ -33,6 +33,7 @@ function RouterView() {
       <ProtectedRoute path="/music"><Music /></ProtectedRoute>
       <ProtectedRoute path="/music/new"><MusicEdit /></ProtectedRoute>
       <ProtectedRoute path="/music/:id/edit"><MusicEdit /></ProtectedRoute>
+      <ProtectedRoute path="/music/:id/lyrics"><MusicLyrics /></ProtectedRoute>
       <ProtectedRoute path="/music/:id"><MusicView /></ProtectedRoute>
       <ProtectedRoute path="/movies"><Movies /></ProtectedRoute>
       <ProtectedRoute path="/movies/new"><MovieEdit /></ProtectedRoute>

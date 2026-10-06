@@ -1042,6 +1042,210 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 }
 
 /* ---------------- 无障碍：尊重「减少动态效果」 ---------------- */
+/* =============================================================
+   音乐播放器：黑胶唱片 + 同步歌词
+   ============================================================= */
+.player {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* —— 黑胶唱片（点击进入歌词页）—— */
+.vinyl {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.vinyl-disc {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%,
+      rgba(255, 255, 255, 0.055) 0 1px,
+      transparent 1px 4px),
+    radial-gradient(circle at 50% 50%, #2a2f3a 0%, #14171f 55%, #0b0d12 100%);
+  box-shadow: var(--shadow-lg), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+.vinyl-disc.spinning { animation: vinyl-spin 7s linear infinite; }
+@keyframes vinyl-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.vinyl:hover .vinyl-disc {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent),
+              var(--shadow-lg), 0 0 36px var(--glow-2);
+}
+
+/* 唱片纹路高光 */
+.vinyl-grooves {
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  background: conic-gradient(from 210deg,
+    transparent 0deg, rgba(255, 255, 255, 0.10) 40deg, transparent 90deg,
+    transparent 200deg, rgba(255, 255, 255, 0.07) 240deg, transparent 300deg);
+  pointer-events: none;
+}
+
+/* 中心专辑封面 */
+.vinyl-cover {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 56%; height: 56%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.vinyl-cover-empty {
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 45%, #1b1f28), #1b1f28);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 歌手头像：唱片右下角标签 */
+.vinyl-avatar {
+  position: absolute;
+  right: 2px; bottom: 2px;
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  transition: transform var(--dur) var(--ease-spring);
+}
+.vinyl:hover .vinyl-avatar { transform: scale(1.12); }
+
+/* 悬停提示「歌词」 */
+.vinyl-hint {
+  position: absolute;
+  left: 50%; bottom: -6px;
+  transform: translateX(-50%) translateY(6px);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+}
+.vinyl:hover .vinyl-hint { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+.play-btn {
+  width: 42px; height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* —— 音质标记 —— */
+.quality-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  width: fit-content;
+  margin-top: 3px;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 500;
+}
+.quality-full {
+  color: color-mix(in srgb, var(--primary) 80%, var(--text));
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent);
+}
+.quality-preview {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
+}
+
+/* —— 同步歌词面板 —— */
+.lyrics-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(22px) saturate(175%);
+  backdrop-filter: blur(22px) saturate(175%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 var(--glass-highlight);
+}
+.lyrics-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.lyrics-head h3 { display: inline-flex; align-items: center; gap: 7px; }
+
+.lyrics-scroll {
+  position: relative;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: 16px 8px;
+  scroll-behavior: smooth;
+  /* 上下淡出，突出中间当前行 */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
+}
+.lyric-line {
+  margin: 0;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out),
+              transform var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out);
+}
+.lyric-line:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.lyric-line.passed { opacity: 0.5; }
+/* 当前行：放大 + 主色高亮 + 光晕 */
+.lyric-line.active {
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 650;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  transform: scale(1.015);
+  box-shadow: inset 3px 0 0 var(--primary);
+  text-shadow: 0 0 22px color-mix(in srgb, var(--primary) 40%, transparent);
+}
+.lyric-line.static { cursor: default; color: var(--text-muted); font-size: 15px; }
+
+.artist-avatar {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: var(--shadow-md);
+}
+.artist-avatar-empty {
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 30%, var(--bg-subtle)), var(--bg-subtle));
+  color: var(--primary);
+}
+
+@media (max-width: 640px) {
+  .player { justify-content: center; }
+  .vinyl { width: 148px; height: 148px; }
+  .lyric-line { font-size: 15px; }
+  .lyric-line.active { font-size: 17px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

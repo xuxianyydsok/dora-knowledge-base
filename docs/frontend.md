@@ -274,3 +274,30 @@ import { Icon } from '../components/Icon.jsx';
 ## 首页（`src/routes/Home.jsx`）
 - 未登录：SaaS 落地页（Hero / 能力矩阵 / 能力列表 / 四步流程 / CTA / 页脚）。
 - 已登录：控制台概览，并发统计博客、视频、GitHub、音乐、影视、RSS 数量，卡片可点击跳转。
+
+# 音乐播放器与同步歌词（黑胶风格）
+
+## 黑胶唱片（`src/components/AudioPlayer.jsx`）
+- 播放时唱片持续旋转（`.vinyl-disc.spinning` → `@keyframes vinyl-spin`），暂停即停。
+- 唱片中心为**专辑封面**，右下角为**歌手头像**（`.vinyl-avatar`，悬停放大）。
+- 悬停唱片显示「歌词」提示，**点击唱片或「歌词」按钮**进入歌词页。
+- 唱片带纹路高光（`.vinyl-grooves` 锥形渐变）与主色光晕。
+
+## 播放地址与音质
+- `audio_url`（完整音轨）优先，其次 `preview_url`（试听），最后 `music.url`。
+- `audio_fallbacks` 为多音源节点地址数组；主地址播放失败（如 Audius 单节点 403）时
+  `onError` 自动切换到下一个节点。
+- 卡片与详情页用 `.quality-tag` 标注「完整音轨」（`.quality-full`）或「试听片段」（`.quality-preview`）。
+
+## 同步歌词页（`src/routes/MusicLyrics.jsx`，路由 `/music/:id/lyrics`）
+- 歌词来自 `POST /api/music/lyrics`（LRCLIB），`synced` 为 LRC 格式。
+- 客户端解析 `[mm:ss.xx]` 时间轴为行数组，按播放进度计算当前行：
+  当前行**放大 + 主色高亮 + 左侧色条 + 光晕**，已唱过的行降低透明度。
+- **自动滚动**：当前行居中显示；用户手动滚动时暂停跟随，5 秒后自动恢复（按钮可手动切换）。
+- 点击任意歌词行可跳转到该时间点。
+- 无时间轴时退化为静态歌词列表；纯音乐显示提示。
+- 底部「关于歌手」区块展示歌手头像、专辑与发行年份。
+
+## 相关样式
+`.player` / `.vinyl` / `.vinyl-disc` / `.vinyl-cover` / `.vinyl-avatar` / `.quality-tag` /
+`.lyrics-panel` / `.lyrics-scroll` / `.lyric-line`（`.active` / `.passed` / `.static`）/ `.artist-avatar`。

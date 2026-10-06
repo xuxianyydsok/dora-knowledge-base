@@ -8,7 +8,7 @@ export function MovieEdit({ id }) {
   const [form, setForm] = useState({
     title: '', media_type: 'movie', original_title: '', director: '', cast_list: '',
     genres: '', release_date: '', runtime: '', rating: '', overview: '',
-    poster_url: '', backdrop_url: '', url: '', source: 'manual', notes: ''
+    poster_url: '', backdrop_url: '', url: '', external_url: '', source: 'manual', notes: ''
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -26,7 +26,8 @@ export function MovieEdit({ id }) {
           release_date: t.release_date || '', runtime: t.runtime ?? '',
           rating: t.rating ?? '', overview: t.overview || '',
           poster_url: t.poster_url || m.cover_path || '', backdrop_url: t.backdrop_url || '',
-          url: m.url || '', source: t.source || m.source || 'manual', notes: t.notes || m.summary || ''
+          url: m.url || '', external_url: t.external_url || '',
+          source: t.source || m.source || 'manual', notes: t.notes || m.summary || ''
         });
       } catch (e) { setError(e.message); }
     })();
@@ -52,6 +53,7 @@ export function MovieEdit({ id }) {
         poster_url: form.poster_url || null,
         backdrop_url: form.backdrop_url || null,
         url: form.url || null,
+        external_url: form.external_url || null,
         source: form.source || 'manual',
         notes: form.notes || null
       };
@@ -93,7 +95,8 @@ export function MovieEdit({ id }) {
         </div>
         <label>海报链接<input value={form.poster_url} onInput={(e) => set('poster_url', e.currentTarget.value)} placeholder="https://..." /></label>
         <label>背景图链接<input value={form.backdrop_url} onInput={(e) => set('backdrop_url', e.currentTarget.value)} placeholder="https://..." /></label>
-        <label>播放地址<input value={form.url} onInput={(e) => set('url', e.currentTarget.value)} placeholder="https://...（视频外链，前端直接播放）" /></label>
+        <label>播放地址<input value={form.url} onInput={(e) => set('url', e.currentTarget.value)} placeholder="https://....mp4（视频直链，前端直接播放）" /></label>
+        <label>外部详情页<input value={form.external_url} onInput={(e) => set('external_url', e.currentTarget.value)} placeholder="https://...（TVmaze / TMDB 等资料页，非播放地址）" /></label>
         <label>简介<textarea rows={4} value={form.overview} onInput={(e) => set('overview', e.currentTarget.value)} /></label>
         <label>备注<textarea rows={3} value={form.notes} onInput={(e) => set('notes', e.currentTarget.value)} /></label>
 

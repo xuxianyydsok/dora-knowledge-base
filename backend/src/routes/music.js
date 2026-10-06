@@ -6,7 +6,7 @@
 import { ok, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
-import { fetchMusicMeta } from '../lib/fetchers.js';
+import { fetchMusicMeta, fetchLyrics } from '../lib/fetchers.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool
 } from '../lib/validate.js';
@@ -43,6 +43,7 @@ async function withTrack(db, resources) {
 }
 
 // POST /api/music/search  —— 搜索音乐元信息候选（不落库）
+// 聚合 Audius（完整音轨）/ iTunes / Deezer，结果含 quality 与 audio_url
 export async function searchMusicMeta(request, env) {
   const { db, user } = await requireAuth(request, env);
   const body = await readJson(request);
@@ -62,6 +63,20 @@ export async function searchMusicMeta(request, env) {
     if (!rows.length) throw new HttpError(422, '分类不存在或无权限');
   }
   return ok({ ...result, category_id: categoryId }, request, env);
+}
+
+// POST /api/music/lyrics  —— 获取歌词（LRCLIB，含带时间轴的同步歌词）
+// 请求体：{ title, artist, album?, duration? }
+export async function getMusicLyrics(request, env) {
+  await requireAuth(request, env);
+  const body = await readJson(request);
+  const title = requireString(body.title, 'title', { max: 300 });
+  const artist = requireString(body.artist, 'artist', { max: 200 });
+  const album = optionalString(body.album, 'album', { max: 200 }) ?? null;
+  const duration = optionalInt(body.duration, 'duration', { min: 0, max: 100000 }) ?? null;
+
+  const lyrics = await fetchLyrics({ title, artist, album, duration });
+  return ok({ title, artist, album, duration, ...lyrics }, request, env);
 }
 
 // GET /api/music
@@ -110,6 +125,13 @@ export async function createMusic(request, env) {
   const audioUrl = optionalString(body.audio_url, 'audio_url', { max: 1000 }) ?? null;
   const artworkUrl = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
   const previewUrl = optionalString(body.preview_url, 'preview_url', { max: 1000 }) ?? null;
+  const artistAvatar = optionalString(body.artist_avatar, 'artist_avatar', { max: 1000 }) ?? null;
+  // quality：full=完整音轨，preview=试听片段（由抓取源决定，手动录入默认 full）
+  const quality = body.quality === 'preview' ? 'preview' : 'full';
+  // 备用播放地址（多音源节点），仅接受字符串数组
+  const audioFallbacks = Array.isArray(body.audio_fallbacks)
+    ? body.audio_fallbacks.filter((u) => typeof u === 'string' && u.length <= 1000).slice(0, 5)
+    : null;
 
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
@@ -130,7 +152,8 @@ export async function createMusic(request, env) {
     metadata: {
       artist, album,
       duration: optionalInt(body.duration, 'duration', { min: 0 }) ?? null,
-      genre: optionalString(body.genre, 'genre', { max: 100 }) ?? null
+      genre: optionalString(body.genre, 'genre', { max: 100 }) ?? null,
+      quality
     },
     is_public: optionalBool(body.is_public, 'is_public') ?? false
   });
@@ -145,6 +168,9 @@ export async function createMusic(request, env) {
     artwork_url: artworkUrl,
     audio_url: audioUrl,
     preview_url: previewUrl,
+    artist_avatar: artistAvatar,
+    quality,
+    audio_fallbacks: audioFallbacks,
     duration: optionalInt(body.duration, 'duration', { min: 0 }) ?? null,
     genre: optionalString(body.genre, 'genre', { max: 100 }) ?? null,
     release_year: optionalInt(body.release_year, 'release_year', { min: 0, max: 3000 }) ?? null,
@@ -189,6 +215,8 @@ export async function updateMusic(request, env, id) {
   if (body.album !== undefined) extPatch.album = optionalString(body.album, 'album', { max: 200 }) ?? null;
   if (body.audio_url !== undefined) extPatch.audio_url = optionalString(body.audio_url, 'audio_url', { max: 1000 }) ?? null;
   if (body.preview_url !== undefined) extPatch.preview_url = optionalString(body.preview_url, 'preview_url', { max: 1000 }) ?? null;
+  if (body.artist_avatar !== undefined) extPatch.artist_avatar = optionalString(body.artist_avatar, 'artist_avatar', { max: 1000 }) ?? null;
+  if (body.quality !== undefined) extPatch.quality = body.quality === 'preview' ? 'preview' : 'full';
   if (body.artwork_url !== undefined) extPatch.artwork_url = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
   if (body.duration !== undefined) extPatch.duration = optionalInt(body.duration, 'duration', { min: 0 }) ?? null;
   if (body.genre !== undefined) extPatch.genre = optionalString(body.genre, 'genre', { max: 100 }) ?? null;

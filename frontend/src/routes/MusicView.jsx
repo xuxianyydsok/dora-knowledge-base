@@ -43,8 +43,15 @@ export function MusicView({ id }) {
           <div class="row" style="gap:10px;flex-wrap:wrap">
             {t.genre && <span class="tag-chip chip-icon"><Icon name="music" size={12} />{t.genre}</span>}
             {t.duration && <span class="tag-chip chip-icon"><Icon name="clock" size={12} />{Math.floor(t.duration / 60)}:{String(t.duration % 60).padStart(2, '0')}</span>}
+            <span class={`quality-tag${(t.quality || 'full') === 'full' ? ' quality-full' : ' quality-preview'}`}>
+              <Icon name={(t.quality || 'full') === 'full' ? 'sparkles' : 'preview'} size={12} />
+              {(t.quality || 'full') === 'full' ? '完整音轨' : '试听片段'}
+            </span>
             {music.tags?.map((tag) => <TagChip key={tag.id} name={tag.name} color={tag.color} />)}
           </div>
+          <button class="primary" onClick={() => route(`/music/${music.id}/lyrics`)} style="width:fit-content">
+            <Icon name="lyrics" size={15} /> 查看同步歌词
+          </button>
         </div>
       </div>
 

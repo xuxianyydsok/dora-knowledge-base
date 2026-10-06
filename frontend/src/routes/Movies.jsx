@@ -51,9 +51,13 @@ export function Movies() {
         runtime: candidate.runtime,
         rating: candidate.rating,
         genres: candidate.genres,
+        director: candidate.director,
+        cast_list: candidate.cast_list,
         external_id: candidate.external_id,
         source: candidate.source,
-        url: candidate.page_url
+        // 可播放直链写入 url；外部详情页写入 external_url
+        url: candidate.playable_url || null,
+        external_url: candidate.page_url || null
       });
       setCandidates(null);
       setQuery('');
@@ -136,6 +140,10 @@ export function Movies() {
                     {c.media_type === 'tv' ? '剧集' : '电影'}
                     {c.release_date ? ` · ${String(c.release_date).slice(0, 4)}` : ''}
                     {c.rating != null ? ` · ★ ${c.rating}` : ''}
+                  </span>
+                  <span class={`quality-tag${c.playable_url ? ' quality-full' : ' quality-preview'}`}>
+                    <Icon name={c.playable_url ? 'play' : 'external'} size={11} />
+                    {c.playable_url ? '可直接播放' : '仅元信息（需自备播放地址）'} · {c.source}
                   </span>
                 </span>
                 <span class="spacer" />

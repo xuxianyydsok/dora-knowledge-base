@@ -160,35 +160,285 @@ export async function fetchGithubMeta(rawUrl, env = {}) {
 }
 
 // ---------------------------------------------------------------
-// 音乐元信息：iTunes Search API（无需 API Key）
-// 仅抓取元信息与试听片段地址，音频文件不入库、后端不转发音频流
+// 音乐元信息（多源聚合，全部无需 API Key）
+//   1) Audius（主源）：独立音乐平台，提供【完整音轨】320kbps MP3，
+//      CORS 全开，前端可直接播放，不存在试听截断。
+//   2) iTunes Search：元信息与封面最规范，音频为 30s 试听，作为补充。
+//   3) Deezer：iTunes 被限流（Workers 共享出口 IP 常返回 429）时的元信息兜底。
+// 结果统一带 quality 字段：full=完整音轨，preview=试听片段。
+// 音频文件不入库、后端不转发音频流，仅保存播放地址字符串。
 // ---------------------------------------------------------------
-export async function fetchMusicMeta(query, limit = 5) {
-  const q = (query || '').trim();
-  if (!q) throw new HttpError(422, '缺少搜索关键词');
 
+const AUDIUS_APP = 'dora-knowledge-base';
+// Audius 有多个发现节点，单个节点可能把某条音轨的 CID 拉黑（返回 403）。
+// 依次提供多个节点地址，前端播放失败时自动切换下一个。
+const AUDIUS_NODES = [
+  'https://api.audius.co',
+  'https://discoveryprovider.audius.co',
+  'https://discoveryprovider2.audius.co'
+];
+
+function audiusStreamUrls(trackId) {
+  return AUDIUS_NODES.map((n) => `${n}/v1/tracks/${trackId}/stream?app_name=${AUDIUS_APP}`);
+}
+
+// Audius：搜索完整音轨
+async function searchAudiusMusic(q, limit) {
   const res = await fetchWithTimeout(
-    `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=${Math.min(limit, 20)}`,
-    { headers: { 'User-Agent': UA } }
+    `https://api.audius.co/v1/tracks/search?query=${encodeURIComponent(q)}&limit=${limit}&app_name=${AUDIUS_APP}`,
+    { headers: { 'User-Agent': UA, Accept: 'application/json' } }
   );
   if (!res.ok) throw new HttpError(502, `音乐元信息接口请求失败 (${res.status})`);
 
   const body = await res.json();
-  const results = (body.results || []).map((r) => ({
+  const candidates = (body.data || [])
+    .filter((t) => t.is_streamable !== false)
+    .map((t) => ({
+      platform: 'audius',
+      external_id: String(t.id ?? ''),
+      title: t.title || null,
+      artist: t.user?.name || t.user?.handle || null,
+      artist_avatar: t.user?.profile_picture?.['480x480']
+        || t.user?.profile_picture?.['150x150'] || null,
+      album: t.album_name || t.playlist_name || null,
+      artwork_url: t.artwork?.['1000x1000'] || t.artwork?.['480x480'] || null,
+      // 稳定 stream 端点：浏览器自动跟随 302 到签名地址，签名不会过期
+      audio_url: audiusStreamUrls(t.id)[0],
+      // 备用播放地址（多节点），前端在主地址失败时依次尝试
+      audio_fallbacks: audiusStreamUrls(t.id).slice(1),
+      preview_url: null,
+      quality: 'full',
+      duration: t.duration || null,
+      genre: t.genre || null,
+      release_year: t.release_date ? new Date(t.release_date).getFullYear() : null,
+      page_url: t.permalink ? `https://audius.co${t.permalink}` : null
+    }));
+
+  return { source: 'audius', candidates };
+}
+
+async function searchItunesMusic(q, limit) {
+  const res = await fetchWithTimeout(
+    `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=${limit}`,
+    { headers: { 'User-Agent': UA, Accept: 'application/json' } }
+  );
+  if (!res.ok) throw new HttpError(502, `音乐元信息接口请求失败 (${res.status})`);
+
+  const body = await res.json();
+  const candidates = (body.results || []).map((r) => ({
     platform: 'itunes',
     external_id: String(r.trackId ?? ''),
     title: r.trackName,
     artist: r.artistName,
     album: r.collectionName,
     artwork_url: (r.artworkUrl100 || '').replace('100x100bb', '600x600bb') || null,
+    artist_avatar: null,
+    audio_url: null,
     preview_url: r.previewUrl || null,
+    quality: 'preview',
     duration: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
     genre: r.primaryGenreName || null,
     release_year: r.releaseDate ? new Date(r.releaseDate).getFullYear() : null,
     page_url: r.trackViewUrl || null
   }));
 
-  return { query: q, count: results.length, candidates: results };
+  return { source: 'itunes', candidates };
+}
+
+async function searchDeezerMusic(q, limit) {
+  const res = await fetchWithTimeout(
+    `https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    { headers: { 'User-Agent': UA, Accept: 'application/json' } }
+  );
+  if (!res.ok) throw new HttpError(502, `音乐元信息接口请求失败 (${res.status})`);
+
+  const body = await res.json();
+  // Deezer 出错时返回 200 + { error: {...} }
+  if (body.error) {
+    throw new HttpError(502, `音乐元信息接口请求失败：${body.error.message || body.error.type || '未知错误'}`);
+  }
+
+  const candidates = (body.data || []).map((r) => ({
+    platform: 'deezer',
+    external_id: String(r.id ?? ''),
+    title: r.title || null,
+    artist: r.artist?.name || null,
+    artist_avatar: r.artist?.picture_xl || r.artist?.picture_big || null,
+    album: r.album?.title || null,
+    artwork_url: r.album?.cover_xl || r.album?.cover_big || r.album?.cover_medium || null,
+    audio_url: null,
+    // 注意：Deezer 试听链接带签名，约 15 分钟后失效，仅供即时试听
+    preview_url: r.preview || null,
+    quality: 'preview',
+    duration: r.duration || null,
+    genre: null,
+    release_year: null,
+    page_url: r.link || null
+  }));
+
+  return { source: 'deezer', candidates };
+}
+
+// 归一化用于去重：同名同歌手视为同一首
+function dedupeKey(c) {
+  const norm = (s) => String(s || '').toLowerCase().replace(/[\s\-_.()（）[\]【】]/g, '');
+  return `${norm(c.title)}|${norm(c.artist)}`;
+}
+
+export async function fetchMusicMeta(query, limit = 5) {
+  const q = (query || '').trim();
+  if (!q) throw new HttpError(422, '缺少搜索关键词');
+  const capped = Math.min(limit, 20);
+
+  // 三个源并发，任一失败不影响其余；Audius 结果排最前（可完整播放）
+  const settled = await Promise.allSettled([
+    searchAudiusMusic(q, capped),
+    searchItunesMusic(q, capped),
+    searchDeezerMusic(q, capped)
+  ]);
+
+  const sources = [];
+  const merged = [];
+  const seen = new Set();
+  for (const item of settled) {
+    if (item.status !== 'fulfilled') continue;
+    sources.push(item.value.source);
+    for (const c of item.value.candidates) {
+      const key = dedupeKey(c);
+      // 已收录同名同歌手时：若新结果音质更高（完整音轨）则替换试听版本
+      if (seen.has(key)) {
+        const idx = merged.findIndex((m) => dedupeKey(m) === key);
+        if (idx >= 0 && merged[idx].quality !== 'full' && c.quality === 'full') merged[idx] = c;
+        continue;
+      }
+      seen.add(key);
+      merged.push(c);
+    }
+  }
+
+  if (!merged.length) {
+    const reason = settled.find((s) => s.status === 'rejected');
+    throw reason?.reason || new HttpError(502, '音乐元信息接口请求失败');
+  }
+
+  return {
+    query: q,
+    source: sources.join('+'),
+    sources,
+    count: merged.length,
+    candidates: merged.slice(0, capped)
+  };
+}
+
+// ---------------------------------------------------------------
+// 歌词：LRCLIB（开源、无需 Key、支持中文，返回带时间轴的同步歌词）
+// 前端据此实现逐句高亮与自动滚动。
+// ---------------------------------------------------------------
+export async function fetchLyrics({ title, artist, album, duration }) {
+  if (!title || !artist) throw new HttpError(422, '缺少歌曲名或歌手名');
+
+  // 抓取源（Audius 等）的歌手名常带前缀/后缀，例如「Jay 周杰伦」，
+  // 直接精确匹配会失败，因此依次尝试多种候选写法。
+  const clean = (s) => String(s || '').trim();
+  const stripPrefix = (s) => clean(s).replace(/^.*?[\s\-–—]+(?=[^\s\-–—])/, '').trim();
+
+  const titleCandidates = [...new Set([clean(title), stripPrefix(title)])].filter(Boolean);
+  const artistCandidates = [...new Set([
+    clean(artist),
+    stripPrefix(artist),
+    // 「Jay 周杰伦」→ 取中文部分；「Jay Chou」→ 取首词
+    clean(artist).replace(/[A-Za-z0-9.&'\s-]+/g, '').trim(),
+    clean(artist).split(/[\s,;&]+/)[0]
+  ])].filter((s) => s && s.length > 1);
+
+  // 1) 先试精确匹配（/api/get）：命中率最高，且时长一致时最准确
+  for (const t of titleCandidates) {
+    for (const a of artistCandidates) {
+      const exact = new URLSearchParams({ artist_name: a, track_name: t });
+      if (album) exact.set('album_name', album);
+      if (duration) exact.set('duration', String(Math.round(duration)));
+      try {
+        const res = await fetchWithTimeout(
+          `https://lrclib.net/api/get?${exact.toString()}`,
+          { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+          12000
+        );
+        if (res.ok) {
+          const d = await res.json();
+          if (d && (d.syncedLyrics || d.plainLyrics)) {
+            return {
+              source: 'lrclib',
+              instrumental: !!d.instrumental,
+              synced: d.syncedLyrics || null,
+              plain: d.plainLyrics || null
+            };
+          }
+        }
+      } catch {
+        // 单个候选失败不影响后续尝试
+      }
+    }
+  }
+
+  // 2) 再走搜索（/api/search）：用歌名精确匹配，再按同步歌词与时长接近度排序
+  const collect = [];
+  for (const t of titleCandidates) {
+    const search = new URLSearchParams({ track_name: t });
+    try {
+      const res = await fetchWithTimeout(
+        `https://lrclib.net/api/search?${search.toString()}`,
+        { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+        12000
+      );
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list)) collect.push(...list);
+      }
+    } catch {
+      // 忽略单次失败
+    }
+    if (collect.length) break;
+  }
+
+  // 搜索无结果时退化为关键词搜索（q 参数）
+  if (!collect.length) {
+    try {
+      const res = await fetchWithTimeout(
+        `https://lrclib.net/api/search?q=${encodeURIComponent(`${title} ${artist}`)}`,
+        { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+        12000
+      );
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list)) collect.push(...list);
+      }
+    } catch {
+      // 忽略
+    }
+  }
+
+  const usable = collect.filter((r) => r && (r.syncedLyrics || r.plainLyrics));
+  if (!usable.length) throw new HttpError(404, '未找到该歌曲的歌词');
+
+  // 排序：优先同步歌词 → 歌名完全一致 → 时长最接近
+  const titleKey = (s) => String(s || '').toLowerCase().replace(/\s/g, '');
+  const wantTitle = titleKey(titleCandidates[0]);
+  const scored = usable
+    .map((r) => ({
+      row: r,
+      synced: r.syncedLyrics ? 0 : 1,
+      titleMatch: titleKey(r.trackName) === wantTitle ? 0 : 1,
+      diff: duration && r.duration ? Math.abs(r.duration - duration) : 999
+    }))
+    .sort((a, b) => a.synced - b.synced || a.titleMatch - b.titleMatch || a.diff - b.diff);
+
+  const best = scored[0].row;
+  return {
+    source: 'lrclib',
+    instrumental: !!best.instrumental,
+    synced: best.syncedLyrics || null,
+    plain: best.plainLyrics || null
+  };
 }
 
 // 解析用户直接提供的音乐链接（Apple Music / 其他），仅做基本校验
@@ -275,23 +525,176 @@ async function searchTvmaze(query, limit) {
       runtime: s.averageRuntime || s.runtime || null,
       rating: s.rating?.average ?? null,
       genres: (s.genres || []).join(', ') || null,
-      page_url: s.url || null
+      // TVmaze 只提供剧集资料页，没有视频直链
+      page_url: s.url || null,
+      playable_url: null
     };
   });
 
-  return { query, source: 'tvmaze', count: candidates.length, candidates };
+  return { source: 'tvmaze', candidates };
+}
+
+// ---------------------------------------------------------------
+// Internet Archive：公有领域影视库，提供可直链播放的 MP4
+// 这是本项目唯一能拿到「完整可播放视频」的免费来源（无需 Key）。
+// 检索 → 逐个取 metadata → 挑选体积最大的 MP4 作为播放地址。
+// 视频文件不入库、后端不转发视频流，仅保存直链字符串。
+// ---------------------------------------------------------------
+const IA_PLAYABLE_FORMATS = ['mpeg4', 'h.264', '512kb mpeg4', 'matroska', 'ogg video'];
+
+function iaFileUrl(identifier, name) {
+  return `https://archive.org/download/${encodeURIComponent(identifier)}/${encodeURIComponent(name)}`;
+}
+
+// 从 IA 条目文件列表中挑选最合适的可播放视频文件
+function pickIaVideoFile(files = []) {
+  const videos = files.filter((f) => {
+    const fmt = String(f.format || '').toLowerCase();
+    const name = String(f.name || '').toLowerCase();
+    return IA_PLAYABLE_FORMATS.includes(fmt) && /\.(mp4|m4v|mkv|ogv|webm)$/.test(name);
+  });
+  if (!videos.length) return null;
+  // 优先 mp4（浏览器兼容最好），其次选体积最大（通常为完整版而非预告）
+  const mp4 = videos.filter((f) => /\.(mp4|m4v)$/.test(String(f.name).toLowerCase()));
+  const pool = mp4.length ? mp4 : videos;
+  return pool.sort((a, b) => Number(b.size || 0) - Number(a.size || 0))[0];
+}
+
+async function searchInternetArchive(query, limit) {
+  const params = new URLSearchParams({
+    q: `title:(${query}) AND mediatype:movies AND format:(MPEG4)`,
+    sort: 'downloads desc',
+    rows: String(Math.min(Math.max(limit, 5), 12)),
+    page: '1',
+    output: 'json'
+  });
+  // 需要多个 fl[] 字段，URLSearchParams 无法表达重复键，手动拼接
+  const searchUrl = `https://archive.org/advancedsearch.php?${params.toString()}`
+    + `&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=year&fl%5B%5D=description`;
+
+  const res = await fetchWithTimeout(searchUrl, { headers: { 'User-Agent': UA, Accept: 'application/json' } }, 15000);
+  if (!res.ok) throw new HttpError(502, `影视元信息接口请求失败 (${res.status})`);
+  const body = await res.json();
+  const docs = body?.response?.docs || [];
+  if (!docs.length) return { source: 'internetarchive', candidates: [] };
+
+  // 并发取 metadata，挑出确实含可播放视频文件的条目
+  const details = await Promise.allSettled(docs.map(async (doc) => {
+    const metaRes = await fetchWithTimeout(
+      `https://archive.org/metadata/${encodeURIComponent(doc.identifier)}`,
+      { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+      15000
+    );
+    if (!metaRes.ok) throw new HttpError(502, 'metadata 获取失败');
+    const meta = await metaRes.json();
+    const file = pickIaVideoFile(meta.files);
+    if (!file) throw new HttpError(404, '无可播放文件');
+    return { doc, meta, file };
+  }));
+
+  const candidates = [];
+  for (const item of details) {
+    if (item.status !== 'fulfilled') continue;
+    const { doc, meta, file } = item.value;
+    const md = meta.metadata || {};
+    const rawDesc = Array.isArray(md.description) ? md.description[0] : md.description;
+    const year = md.year || doc.year || null;
+    candidates.push({
+      platform: 'internetarchive',
+      source: 'internetarchive',
+      external_id: String(doc.identifier),
+      media_type: 'movie',
+      title: md.title || doc.title || '(无标题)',
+      original_title: null,
+      overview: rawDesc ? stripTags(String(rawDesc)).slice(0, 2000) : null,
+      poster_url: `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`,
+      backdrop_url: null,
+      release_date: year ? `${year}-01-01` : null,
+      runtime: file.length ? Math.round(Number(file.length) / 60) : null,
+      rating: null,
+      genres: Array.isArray(md.subject) ? md.subject.slice(0, 4).join(', ') : (md.subject || null),
+      director: md.director || null,
+      cast_list: md.creator && md.creator !== md.director ? String(md.creator).slice(0, 300) : null,
+      page_url: `https://archive.org/details/${encodeURIComponent(doc.identifier)}`,
+      // 可直链播放的完整视频地址
+      playable_url: iaFileUrl(doc.identifier, file.name)
+    });
+    if (candidates.length >= Math.min(limit, 20)) break;
+  }
+
+  return { source: 'internetarchive', candidates };
+}
+
+// 归一化用于去重：同名（忽略年份/标点）视为同一部
+function movieKey(c) {
+  return String(c.title || '')
+    .toLowerCase()
+    .replace(/\(.*?\)|\[.*?\]/g, '')
+    .replace(/[\s\-_.:：,，。'’"]/g, '');
 }
 
 export async function fetchMovieMeta(query, limit = 5, env = {}) {
   const q = (query || '').trim();
   if (!q) throw new HttpError(422, '缺少搜索关键词');
-  // 配置了 TMDB Key 时优先使用 TMDB，失败则回退 TVmaze
-  if (env.TMDB_API_KEY) {
-    try {
-      return await searchTmdb(q, limit, env);
-    } catch {
-      return searchTvmaze(q, limit);
+  const capped = Math.min(limit, 20);
+
+  // 并发聚合多个免费源：
+  //   Internet Archive → 可完整播放的公有领域影片（有 playable_url）
+  //   TMDB（需 Key，可选）/ TVmaze → 元信息更完整，但无可播放直链
+  const tasks = [searchInternetArchive(q, capped)];
+  if (env.TMDB_API_KEY) tasks.push(searchTmdb(q, capped, env));
+  tasks.push(searchTvmaze(q, capped));
+
+  const settled = await Promise.allSettled(tasks);
+
+  const sources = [];
+  const merged = [];
+  const seen = new Set();
+  for (const item of settled) {
+    if (item.status !== 'fulfilled') continue;
+    sources.push(item.value.source);
+    for (const c of item.value.candidates) {
+      const key = movieKey(c);
+      if (seen.has(key)) {
+        // 已收录同名条目时：优先保留可播放版本，并补齐缺失的元信息
+        const idx = merged.findIndex((m) => movieKey(m) === key);
+        if (idx >= 0) {
+          const prev = merged[idx];
+          const preferNew = (!prev.playable_url && c.playable_url);
+          const base = preferNew ? c : prev;
+          const other = preferNew ? prev : c;
+          merged[idx] = {
+            ...base,
+            overview: base.overview || other.overview,
+            poster_url: base.poster_url || other.poster_url,
+            release_date: base.release_date || other.release_date,
+            rating: base.rating ?? other.rating,
+            genres: base.genres || other.genres,
+            runtime: base.runtime ?? other.runtime,
+            page_url: base.page_url || other.page_url,
+            playable_url: base.playable_url || other.playable_url
+          };
+        }
+        continue;
+      }
+      seen.add(key);
+      merged.push(c);
     }
   }
-  return searchTvmaze(q, limit);
+
+  if (!merged.length) {
+    const reason = settled.find((s) => s.status === 'rejected');
+    throw reason?.reason || new HttpError(502, '影视元信息接口请求失败');
+  }
+
+  // 可播放的结果排在前面，方便直接收藏观看
+  merged.sort((a, b) => Number(!!b.playable_url) - Number(!!a.playable_url));
+
+  return {
+    query: q,
+    source: sources.join('+'),
+    sources,
+    count: merged.length,
+    candidates: merged.slice(0, capped)
+  };
 }

@@ -131,12 +131,15 @@ export async function createMovie(request, env) {
   const posterUrl = optionalString(body.poster_url, 'poster_url', { max: 1000 }) ?? null;
   const overview = optionalString(body.overview, 'overview', { max: 4000 }) ?? null;
   const releaseDate = optionalDateString(body.release_date, 'release_date') ?? null;
+  // url 仅存放可播放的视频直链；external_url 存放外部详情页（TVmaze/TMDB 等）
+  const playableUrl = optionalString(body.url, 'url', { max: 1000 }) ?? null;
+  const externalUrl = optionalString(body.external_url ?? body.page_url, 'external_url', { max: 1000 }) ?? null;
 
   const rows = await db.insert(TABLE, {
     user_id: user.id,
     type: TYPE,
     title,
-    url: optionalString(body.url, 'url', { max: 1000 }) ?? null,
+    url: playableUrl,
     source: optionalString(body.source, 'source', { max: 60 }) ?? 'manual',
     cover_path: posterUrl,
     summary: optionalString(body.notes, 'notes', { max: 4000 }) ?? overview,
@@ -169,6 +172,7 @@ export async function createMovie(request, env) {
     backdrop_url: optionalString(body.backdrop_url, 'backdrop_url', { max: 1000 }) ?? null,
     external_id: optionalString(body.external_id, 'external_id', { max: 100 }) ?? null,
     source: optionalString(body.source, 'source', { max: 60 }) ?? 'manual',
+    external_url: externalUrl,
     notes: optionalString(body.notes, 'notes', { max: 4000 }) ?? null
   });
 
@@ -218,6 +222,7 @@ export async function updateMovie(request, env, id) {
   if (body.backdrop_url !== undefined) extPatch.backdrop_url = optionalString(body.backdrop_url, 'backdrop_url', { max: 1000 }) ?? null;
   if (body.external_id !== undefined) extPatch.external_id = optionalString(body.external_id, 'external_id', { max: 100 }) ?? null;
   if (body.source !== undefined) extPatch.source = optionalString(body.source, 'source', { max: 60 }) ?? null;
+  if (body.external_url !== undefined) extPatch.external_url = optionalString(body.external_url, 'external_url', { max: 1000 }) ?? null;
   if (body.notes !== undefined) extPatch.notes = optionalString(body.notes, 'notes', { max: 4000 }) ?? null;
 
   if (Object.keys(extPatch).length) {

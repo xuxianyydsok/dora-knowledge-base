@@ -75,6 +75,7 @@ const routes = [
   ['GET', '/api/music', music.listMusic],
   ['POST', '/api/music', music.createMusic],
   ['POST', '/api/music/search', music.searchMusicMeta],
+  ['POST', '/api/music/lyrics', music.getMusicLyrics],
   ['GET', '/api/music/:id', music.getMusic],
   ['PATCH', '/api/music/:id', music.updateMusic],
   ['DELETE', '/api/music/:id', music.deleteMusic],

@@ -84,6 +84,7 @@ export const api = {
   listMusic: (params = '') => request(`/api/music${params}`),
   getMusic: (id) => request(`/api/music/${id}`),
   searchMusicMeta: (query, limit = 5) => request('/api/music/search', { method: 'POST', body: { query, limit } }),
+  getMusicLyrics: (body) => request('/api/music/lyrics', { method: 'POST', body }),
   createMusic: (body) => request('/api/music', { method: 'POST', body }),
   updateMusic: (id, body) => request(`/api/music/${id}`, { method: 'PATCH', body }),
   deleteMusic: (id) => request(`/api/music/${id}`, { method: 'DELETE' }),

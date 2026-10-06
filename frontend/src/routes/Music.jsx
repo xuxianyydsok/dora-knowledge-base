@@ -47,7 +47,11 @@ export function Music() {
         artist: candidate.artist,
         album: candidate.album,
         artwork_url: candidate.artwork_url,
+        artist_avatar: candidate.artist_avatar,
+        audio_url: candidate.audio_url,
+        audio_fallbacks: candidate.audio_fallbacks,
         preview_url: candidate.preview_url,
+        quality: candidate.quality,
         duration: candidate.duration,
         genre: candidate.genre,
         release_year: candidate.release_year,
@@ -134,6 +138,10 @@ export function Music() {
                 <span class="stack" style="gap:2px">
                   <strong style="font-size:14px">{c.title}</strong>
                   <span class="muted" style="font-size:12px">{c.artist} · {c.album} {c.release_year ? `· ${c.release_year}` : ''}</span>
+                  <span class={`quality-tag${c.quality === 'full' ? ' quality-full' : ' quality-preview'}`}>
+                    <Icon name={c.quality === 'full' ? 'sparkles' : 'preview'} size={11} />
+                    {c.quality === 'full' ? '完整音轨' : '试听片段'} · {c.platform}
+                  </span>
                 </span>
                 <span class="spacer" />
                 <button class="primary" onClick={() => addFrom(c)} disabled={busy}>收藏</button>

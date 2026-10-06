@@ -148,6 +148,28 @@ const PATHS = {
       <path d="M7.5 4.8v14.4L20 12z" />
     </>
   ),
+  pause: (
+    <>
+      <path d="M8.5 4.5v15M15.5 4.5v15" stroke-width="2.6" />
+    </>
+  ),
+  volume: (
+    <>
+      <path d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z" />
+      <path d="M15.6 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8" />
+    </>
+  ),
+  lyrics: (
+    <>
+      <path d="M4 5.5h16M4 10h10M4 14.5h13M4 19h7" />
+    </>
+  ),
+  preview: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3.2 2" />
+    </>
+  ),
   dot: (
     <>
       <circle cx="12" cy="12" r="4.6" fill="currentColor" stroke="none" />

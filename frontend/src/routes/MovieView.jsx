@@ -52,8 +52,8 @@ export function MovieView({ id }) {
               {t.cast_list && <div>主演：{t.cast_list}</div>}
             </div>
           )}
-          {movie.url && (
-            <a href={movie.url} target="_blank" rel="noreferrer">前往外部详情页 <Icon name="external" size={13} /></a>
+          {t.external_url && (
+            <a href={t.external_url} target="_blank" rel="noreferrer">前往外部详情页 <Icon name="external" size={13} /></a>
           )}
         </div>
       </div>
