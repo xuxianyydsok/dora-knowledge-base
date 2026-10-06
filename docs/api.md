@@ -139,3 +139,98 @@ curl -X POST -H "Authorization: Bearer $ADMIN_JWT" -H "Content-Type: application
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_resources","arguments":{"type":"video"}}}' \
   $BASE/api/mcp
 ```
+
+---
+
+# Phase3 新增接口
+
+## 全文检索
+### GET /api/search
+跨博客（标题/摘要/正文）与资源（标题/摘要）检索。
+
+| 参数 | 说明 |
+| --- | --- |
+| `q` | 必填，检索关键词 |
+| `type` | `all`(默认) / `post` / `resource` |
+| `resource_type` | `video` / `github` / `music` / `movie` / `rss_article`（可选） |
+| `limit` | 返回上限，默认 20，最大 50 |
+| `all` | 管理员可传 `true` 检索全部用户数据 |
+
+返回：`{ query, count, items: [{ kind: 'post'|'resource', id, title, ... }] }`
+
+## 资源关联图谱
+### GET /api/graph
+输出 D3 力导向图所需的节点与边。
+
+- 节点类型：`post` / `resource`（含 `resource_type`）/ `tag`
+- 边类型：`post-resource`（含 `relation`）/ `post-tag` / `resource-tag`
+- 返回：`{ nodes, edges, stats: { posts, resources, tags, edges } }`
+- 管理员可传 `?all=true`
+
+## 收藏夹
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/favorites` | 列表（管理员可 `?all=true`），每项含 `target` 详情 |
+| POST | `/api/favorites` | 收藏，body: `{ resource_id }` 或 `{ post_id }`（二选一） |
+| DELETE | `/api/favorites/:id` | 按收藏 id 删除 |
+| DELETE | `/api/favorites/target?resource_id=...` | 按目标删除（或 `post_id`） |
+
+跨类型：可收藏资源或博客；同时传两者返回 422。
+
+## 通知中心
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/notifications` | 列表，支持 `?unread=true`、`?type=rss_new|link_broken|system`、`?limit=` |
+| GET | `/api/notifications/count` | 未读数量（顶栏徽标） |
+| POST | `/api/notifications` | 创建通知，body: `{ type, title, body?, link? }`（管理员可指定 `user_id`） |
+| POST | `/api/notifications/check-links` | 检测视频播放链接，失效则写入 `link_broken` 通知 |
+| PATCH | `/api/notifications/:id` | 标记已读/未读，body: `{ is_read: true|false }` |
+| PATCH | `/api/notifications/read-all` | 全部标记已读 |
+| DELETE | `/api/notifications/:id` | 删除单条 |
+| DELETE | `/api/notifications?read=true` | 清空（`read=true` 仅清已读） |
+
+## 导入导出备份
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/backup/export` | 导出当前用户全部数据（管理员可 `?all=true`） |
+| POST | `/api/backup/import` | 导入恢复，body: `{ data, mode: 'merge'|'replace' }` |
+
+导出内容：分类、标签、资源、博客、收藏、进度及全部关联关系。
+导入按「分类 → 标签 → 资源 → 博客 → 关联 → 收藏」顺序恢复，分类/标签按 slug 复用，其余重建 ID 映射。
+
+## 用户偏好（主题配色）
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/preferences` | 读取偏好 |
+| PUT | `/api/preferences` | 写入主题，body: `{ theme: { mode, light:{...}, dark:{...} } }` |
+| DELETE | `/api/preferences` | 重置为主题默认 |
+
+可自定义变量（白名单，值为 `#RRGGBB`）：
+`bg`、`bg_elevated`、`bg_subtle`、`text`、`text_muted`、`border`、`primary`、`primary_contrast`、`danger`
+
+## 调用示例
+```bash
+TOKEN=<access token>
+BASE=http://127.0.0.1:8787
+
+# 搜索
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/search?q=知识图谱&type=all"
+
+# 图谱
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/graph"
+
+# 收藏博客
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"post_id":"<post-id>"}' "$BASE/api/favorites"
+
+# 检测链接失效
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"limit":10}' "$BASE/api/notifications/check-links"
+
+# 保存暗色自定义配色
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"theme":{"mode":"dark","dark":{"primary":"#ff8800","bg":"#101014"}}}' "$BASE/api/preferences"
+
+# 导出备份
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/backup/export" -o backup.json
+```

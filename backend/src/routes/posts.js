@@ -9,7 +9,7 @@ import { qs } from '../lib/supabase.js';
 import {
   requireString, optionalString, requireUuid, optionalBool, requireEnum, slugify
 } from '../lib/validate.js';
-import { setResourceTags, withTags, validateTagIds } from '../lib/resources.js';
+import { validateTagIds } from '../lib/resources.js';
 
 const TABLE = 'posts';
 const ALLOWED_TAGS = ['katex-inline', 'katex-block', 'three-scene', 'mermaid-chart', 'chart-2d'];
@@ -21,6 +21,27 @@ function userFilter(user, all) {
 // 检测正文使用的重型组件（供前端按需懒加载）
 export function detectHeavyTags(content = '') {
   return ALLOWED_TAGS.filter((tag) => content.includes(`<${tag}`));
+}
+
+// 覆盖式设置博客标签（写入 post_tags）
+async function setPostTags(db, postId, userId, tagIds) {
+  if (!Array.isArray(tagIds)) return;
+  await db.remove('post_tags', qs({ post_id: `eq.${postId}` }));
+  const unique = [...new Set(tagIds)];
+  if (unique.length === 0) return;
+  await db.request('post_tags', {
+    method: 'POST',
+    body: unique.map((tagId) => ({ post_id: postId, tag_id: tagId, user_id: userId })),
+    prefer: 'return=representation,resolution=merge-duplicates'
+  });
+}
+
+// 读取博客标签
+async function loadPostTags(db, postId) {
+  const links = await db.select('post_tags', qs({ select: 'tag_id', post_id: `eq.${postId}` }));
+  if (!links.length) return [];
+  const ids = links.map((l) => l.tag_id);
+  return db.select('tags', qs({ select: 'id,name,color', id: `in.(${ids.join(',')})` }));
 }
 
 // 加载文章关联资源（resource_links）
@@ -104,8 +125,10 @@ export async function getPost(request, env, id) {
 
   const post = rows[0];
   const linked = await loadLinkedResources(db, id);
+  const tags = await loadPostTags(db, id);
   return ok({
     ...post,
+    tags,
     linked_resources: linked,
     heavy_tags: detectHeavyTags(post.content)
   }, request, env);
@@ -121,7 +144,8 @@ export async function getPostBySlug(request, env, slug) {
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
   const post = rows[0];
   const linked = await loadLinkedResources(db, post.id);
-  return ok({ ...post, linked_resources: linked, heavy_tags: detectHeavyTags(post.content) }, request, env);
+  const tags = await loadPostTags(db, post.id);
+  return ok({ ...post, tags, linked_resources: linked, heavy_tags: detectHeavyTags(post.content) }, request, env);
 }
 
 // POST /api/posts
@@ -155,7 +179,7 @@ export async function createPost(request, env) {
 
   if (body.tag_ids !== undefined) {
     const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
-    await setResourceTags(db, post.id, user.id, tagIds);
+    await setPostTags(db, post.id, user.id, tagIds);
   }
   if (body.linked_resources !== undefined) {
     const validIds = await validateResourceIds(db, user, (body.linked_resources || []).map((l) => l.resource_id));
@@ -164,7 +188,8 @@ export async function createPost(request, env) {
   }
 
   const linked = await loadLinkedResources(db, post.id);
-  return ok({ ...post, linked_resources: linked, heavy_tags: detectHeavyTags(content) }, request, env, 201);
+  const tags = await loadPostTags(db, post.id);
+  return ok({ ...post, tags, linked_resources: linked, heavy_tags: detectHeavyTags(content) }, request, env, 201);
 }
 
 // PATCH /api/posts/:id
@@ -201,7 +226,7 @@ export async function updatePost(request, env, id) {
 
   if (body.tag_ids !== undefined) {
     const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
-    await setResourceTags(db, id, user.id, tagIds);
+    await setPostTags(db, id, user.id, tagIds);
   }
   if (body.linked_resources !== undefined) {
     const validIds = await validateResourceIds(db, user, (body.linked_resources || []).map((l) => l.resource_id));
@@ -216,7 +241,8 @@ export async function updatePost(request, env, id) {
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
   const post = rows[0];
   const linked = await loadLinkedResources(db, post.id);
-  return ok({ ...post, linked_resources: linked, heavy_tags: detectHeavyTags(post.content) }, request, env);
+  const tags = await loadPostTags(db, post.id);
+  return ok({ ...post, tags, linked_resources: linked, heavy_tags: detectHeavyTags(post.content) }, request, env);
 }
 
 // DELETE /api/posts/:id
@@ -224,7 +250,7 @@ export async function deletePost(request, env, id) {
   const { db, user } = await requireAuth(request, env);
   requireUuid(id, 'id');
   await db.remove('post_resources', qs({ post_id: `eq.${id}` }));
-  await db.remove('resource_tags', qs({ resource_id: `eq.${id}` }));
+  await db.remove('post_tags', qs({ post_id: `eq.${id}` }));
   const rows = await db.remove(TABLE, qs({
     id: `eq.${id}`,
     ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })

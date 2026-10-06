@@ -10,5 +10,13 @@ const Github = lazy(() => import('./Github.jsx').then((m) => ({ default: m.Githu
 const Posts = lazy(() => import('./Posts.jsx').then((m) => ({ default: m.Posts })));
 const PostEdit = lazy(() => import('./PostEdit.jsx').then((m) => ({ default: m.PostEdit })));
 const PostView = lazy(() => import('./PostView.jsx').then((m) => ({ default: m.PostView })));
+const Search = lazy(() => import('./Search.jsx').then((m) => ({ default: m.Search })));
+const Graph = lazy(() => import('./Graph.jsx').then((m) => ({ default: m.Graph })));
+const Favorites = lazy(() => import('./Favorites.jsx').then((m) => ({ default: m.Favorites })));
+const Backup = lazy(() => import('./Backup.jsx').then((m) => ({ default: m.Backup })));
+const Settings = lazy(() => import('./Settings.jsx').then((m) => ({ default: m.Settings })));
 
-export { Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView };
+export {
+  Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
+  Search, Graph, Favorites, Backup, Settings
+};

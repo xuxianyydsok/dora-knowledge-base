@@ -1,6 +1,7 @@
 // 全局基础布局：顶栏 + 导航 + 主内容区
 import { useRouter } from 'preact-router';
 import { ThemeToggle } from './ThemeToggle.jsx';
+import { NotificationBell } from './NotificationBell.jsx';
 import { useAuth } from '../lib/auth.jsx';
 
 export function Layout({ children }) {
@@ -21,13 +22,21 @@ export function Layout({ children }) {
           {isAuthenticated && link('/videos', '视频')}
           {isAuthenticated && link('/github', 'GitHub')}
           {isAuthenticated && link('/posts', '博客')}
+          {isAuthenticated && link('/favorites', '收藏')}
+          {isAuthenticated && link('/graph', '图谱')}
           {isAuthenticated && link('/categories', '分类')}
           {isAuthenticated && link('/tags', '标签')}
         </nav>
         <span class="spacer" />
+        {isAuthenticated && (
+          <a href="/search" title="全局搜索" aria-label="全局搜索">🔍</a>
+        )}
         <ThemeToggle />
+        {isAuthenticated && <NotificationBell />}
         {isAuthenticated ? (
           <span class="row">
+            <a href="/settings" title="设置" aria-label="设置">⚙️</a>
+            <a href="/backup" title="备份" aria-label="备份">💾</a>
             <span class="muted">{isAdmin ? '👑 ' : ''}{user?.email}</span>
             <button onClick={signOut}>退出</button>
           </span>

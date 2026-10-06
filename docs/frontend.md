@@ -91,3 +91,44 @@ frontend/src/
 | `/posts` | 博客列表 |
 | `/posts/new`、`/posts/:id/edit` | 博客编辑 |
 | `/posts/:id` | 博客阅读 |
+
+---
+
+# Phase3 新增前端内容
+
+## 新增目录
+```
+frontend/src/
+├── components/
+│   ├── GraphView.jsx          # D3 力导向图谱（D3 懒加载）
+│   ├── NotificationBell.jsx   # 通知中心面板（未读徽标 + 下拉）
+│   └── ThemeCustomizer.jsx    # 主题自定义配色面板
+└── routes/
+    ├── Search.jsx             # 全局搜索
+    ├── Graph.jsx              # 资源关联图谱
+    ├── Favorites.jsx          # 收藏夹管理
+    ├── Backup.jsx             # 导入导出备份
+    └── Settings.jsx           # 设置（主题配色）
+```
+
+## 新增路由
+| 路径 | 页面 |
+| --- | --- |
+| `/search` | 全局搜索（按类型/资源类型过滤） |
+| `/graph` | 资源关联图谱（D3 力导向，可拖拽/缩放） |
+| `/favorites` | 收藏夹（画廊/时间流双视图） |
+| `/backup` | 导入导出备份 |
+| `/settings` | 主题自定义配色 |
+
+顶栏新增：🔍 搜索入口、🔔 通知铃铛（含未读徽标，每分钟轮询）、⚙️ 设置、💾 备份。
+
+## 懒加载说明
+- **D3** 仅在 `/graph` 路由的 `GraphView` 中通过 `await import('d3')` 加载，首屏不引入。
+- 构建验证：`dist/index.html` 无任何重型库 `modulepreload`；入口 JS 对 Graph/D3 chunk 均为动态 `import()`。
+- 现有 KaTeX/Mermaid/Chart.js/Three.js 仍遵循 Phase2 的「博客页按需加载」策略。
+
+## 主题自定义配色
+- 可在 `/settings` 分别配置浅色/暗色两套配色（9 个变量）。
+- 通过 CSS 变量覆盖实现，即时预览；「保存配色」持久化到后端 `user_preferences`。
+- 登录后自动从后端加载已保存配色；未登录时回退到 localStorage。
+- 配色值受后端白名单与 `#RRGGBB` 格式校验。

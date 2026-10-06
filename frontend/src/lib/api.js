@@ -78,5 +78,36 @@ export const api = {
   getPostBySlug: (slug) => request(`/api/posts/slug/${encodeURIComponent(slug)}`),
   createPost: (body) => request('/api/posts', { method: 'POST', body }),
   updatePost: (id, body) => request(`/api/posts/${id}`, { method: 'PATCH', body }),
-  deletePost: (id) => request(`/api/posts/${id}`, { method: 'DELETE' })
+  deletePost: (id) => request(`/api/posts/${id}`, { method: 'DELETE' }),
+
+  // 全文检索
+  search: (q, params = '') => request(`/api/search?q=${encodeURIComponent(q)}${params}`),
+
+  // 关联图谱
+  getGraph: (params = '') => request(`/api/graph${params}`),
+
+  // 收藏夹
+  listFavorites: (params = '') => request(`/api/favorites${params}`),
+  createFavorite: (body) => request('/api/favorites', { method: 'POST', body }),
+  deleteFavorite: (id) => request(`/api/favorites/${id}`, { method: 'DELETE' }),
+  deleteFavoriteByTarget: (query) => request(`/api/favorites/target?${query}`, { method: 'DELETE' }),
+
+  // 通知中心
+  listNotifications: (params = '') => request(`/api/notifications${params}`),
+  countUnread: () => request('/api/notifications/count'),
+  createNotification: (body) => request('/api/notifications', { method: 'POST', body }),
+  checkLinks: (limit = 10) => request('/api/notifications/check-links', { method: 'POST', body: { limit } }),
+  markNotification: (id, isRead) => request(`/api/notifications/${id}`, { method: 'PATCH', body: { is_read: isRead } }),
+  markAllNotificationsRead: () => request('/api/notifications/read-all', { method: 'PATCH' }),
+  deleteNotification: (id) => request(`/api/notifications/${id}`, { method: 'DELETE' }),
+  clearNotifications: (onlyRead = false) => request(`/api/notifications?read=${onlyRead}`, { method: 'DELETE' }),
+
+  // 备份
+  exportBackup: () => request('/api/backup/export'),
+  importBackup: (data, mode = 'merge') => request('/api/backup/import', { method: 'POST', body: { data, mode } }),
+
+  // 偏好
+  getPreferences: () => request('/api/preferences'),
+  updatePreferences: (theme) => request('/api/preferences', { method: 'PUT', body: { theme } }),
+  resetPreferences: () => request('/api/preferences', { method: 'DELETE' })
 };

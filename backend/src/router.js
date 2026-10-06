@@ -9,6 +9,12 @@ import * as videos from './routes/videos.js';
 import * as github from './routes/github.js';
 import * as posts from './routes/posts.js';
 import * as mcp from './routes/mcp.js';
+import * as search from './routes/search.js';
+import * as graph from './routes/graph.js';
+import * as favorites from './routes/favorites.js';
+import * as notifications from './routes/notifications.js';
+import * as backup from './routes/backup.js';
+import * as preferences from './routes/preferences.js';
 
 // 路由表：[method, pattern, handler]
 // pattern 中 :name 表示路径参数；handler 依次接收 (request, env, param1, param2, ...)
@@ -55,6 +61,37 @@ const routes = [
   ['GET', '/api/posts/:id', posts.getPost],
   ['PATCH', '/api/posts/:id', posts.updatePost],
   ['DELETE', '/api/posts/:id', posts.deletePost],
+
+  // 全文检索
+  ['GET', '/api/search', search.search],
+
+  // 关联图谱
+  ['GET', '/api/graph', graph.getGraph],
+
+  // 收藏夹
+  ['GET', '/api/favorites', favorites.listFavorites],
+  ['POST', '/api/favorites', favorites.createFavorite],
+  ['DELETE', '/api/favorites/target', favorites.deleteFavoriteByTarget],
+  ['DELETE', '/api/favorites/:id', favorites.deleteFavorite],
+
+  // 通知中心
+  ['GET', '/api/notifications', notifications.listNotifications],
+  ['GET', '/api/notifications/count', notifications.countUnread],
+  ['POST', '/api/notifications', notifications.createNotification],
+  ['POST', '/api/notifications/check-links', notifications.checkLinks],
+  ['PATCH', '/api/notifications/read-all', notifications.markAllRead],
+  ['DELETE', '/api/notifications', notifications.clearNotifications],
+  ['PATCH', '/api/notifications/:id', notifications.updateNotification],
+  ['DELETE', '/api/notifications/:id', notifications.deleteNotification],
+
+  // 备份导入导出
+  ['GET', '/api/backup/export', backup.exportBackup],
+  ['POST', '/api/backup/import', backup.importBackup],
+
+  // 用户偏好（主题配色）
+  ['GET', '/api/preferences', preferences.getPreferences],
+  ['PUT', '/api/preferences', preferences.updatePreferences],
+  ['DELETE', '/api/preferences', preferences.resetPreferences],
 
   // 管理员 MCP 端点
   ['GET', '/api/mcp/tools', mcp.listMcpTools],

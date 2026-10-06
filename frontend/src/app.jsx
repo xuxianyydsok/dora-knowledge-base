@@ -8,7 +8,8 @@ import { Layout } from './components/Layout.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { Home } from './routes/Home.jsx';
 import {
-  Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView
+  Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
+  Search, Graph, Favorites, Backup, Settings
 } from './routes/routes.js';
 
 function RouterView() {
@@ -24,6 +25,11 @@ function RouterView() {
       <ProtectedRoute path="/posts/new"><PostEdit /></ProtectedRoute>
       <ProtectedRoute path="/posts/:id/edit"><PostEdit /></ProtectedRoute>
       <ProtectedRoute path="/posts/:id"><PostView /></ProtectedRoute>
+      <ProtectedRoute path="/search"><Search /></ProtectedRoute>
+      <ProtectedRoute path="/graph"><Graph /></ProtectedRoute>
+      <ProtectedRoute path="/favorites"><Favorites /></ProtectedRoute>
+      <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
+      <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>
       <Home default />
     </Router>
   );
