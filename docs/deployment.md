@@ -61,3 +61,32 @@ supabase migration list     # 查看迁移状态
 - CI 使用 GitHub Secret `SUPABASE_DB_PASSWORD`
 
 > 注意：WSL2 内直连数据库走 IPv6 会 `ENETUNREACH`，本地脚本请统一使用连接池地址。
+
+## 后端密钥（wrangler secret）
+Phase1 起后端依赖以下 Cloudflare Worker Secrets（生产环境）：
+```bash
+cd backend
+wrangler secret put SUPABASE_URL
+wrangler secret put SUPABASE_ANON_KEY
+wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+```
+本地开发通过 `backend/.dev.vars` 提供（已被 `.gitignore` 忽略）。
+
+## 前端环境变量（Cloudflare Pages）
+在 Pages 项目设置中配置：
+- `VITE_API_BASE_URL`：后端 Worker 地址
+- `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`
+
+CI 部署前端时同样通过 GitHub Secrets 注入这三个变量。
+
+## 本地开发常见问题
+- **wrangler dev 启动后请求挂起/进程崩溃**：若 shell 中存在 `HTTP_PROXY/HTTPS_PROXY` 等代理变量，
+  workerd 会继承并导致出站请求异常。启动本地 Worker 时请清除代理变量：
+  ```bash
+  cd backend
+  env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
+    npx wrangler dev --port 8787 --local --ip 127.0.0.1
+  ```
+- 本地 `.dev.vars` 需包含 `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、
+  `CORS_ORIGINS`；`CORS_ORIGINS` 需包含本地前端地址（如 `http://127.0.0.1:5173`）。
+- WSL2 内数据库直连走 IPv6 不可达，脚本请使用连接池地址（见上文）。

@@ -1,10 +1,15 @@
-# Cloudflare Workers 配置（Phase0 骨架）
-# 敏感变量通过 wrangler secret put 注入，禁止写入本文件
+# Cloudflare Workers 配置
+# 敏感变量（SUPABASE_*）通过 `wrangler secret put` 注入，禁止写入本文件
+# 非敏感变量放在 [vars]
 
 name = "knowledge-base-api"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
+
+[vars]
+# CORS 白名单（逗号分隔），Phase6 绑定自定义域名后更新为正式前端域名
+CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 # R2 存储桶绑定（存放封面/插图，仅存路径字符串）
 [[r2_buckets]]
