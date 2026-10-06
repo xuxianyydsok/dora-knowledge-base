@@ -136,11 +136,28 @@ JS
 > **像素级效果仍需人眼确认**（要看的点见第 3 节第 4 条）。
 
 ### 2.5 文档更新
-
 - `docs/api.md`：音乐多源表 + GD 三个坑 + `/api/music/stream`；影视采集源表、搜索策略、
   元数据补全表、`/api/movies/latest`、`/sources/health`、`/source-detail`、以及 maccms 新增字段。
 - `docs/interface-inventory.md`：把本轮已集成的接口状态从「待集成」改为「已集成」。
 - 本文（`docs/progress.md`）：新增。
+
+### 2.6 上线后的返工（同日，用户实测反馈）
+
+1. **点歌播放报 `file_size 超出范围`（422）**
+   - 根因：`lib/validate.js` 的 `optionalInt` 默认上限是 `1e6`，而 `file_size` 单位是**字节**
+     （无损 FLAC 常 20~70MB），必然越界；我在 `routes/music.js` 写 metadata 时没显式放宽上限。
+   - 修复：`file_size` 显式改为 `{ min: 0, max: 10_000_000_000 }`。
+   - 复现 → 验证：同一 payload（`file_size=36600676`）修复前 `HTTP 422 {"error":"file_size 超出范围"}`，
+     修复后 `HTTP 201`，`metadata` 中 `platform/external_id/gd_source/bitrate/format/file_size` 全部正确落库。
+   - 同类隐患：`optionalInt` 的 1e6 默认上限**不适合任何「字节 / 毫秒 / 大数值」字段**，新增字段时务必显式给 max。
+2. **搜索结果改为横向列表**（原来是专辑卡片网格，一行一首更好扫读）
+   - `frontend/src/routes/Music.jsx`：新增 `SearchRow`（封面 + 曲目/歌手/专辑 + 音源标签 +
+     音质标签「无损/完整音轨/试听」+ 时长 + 收藏按钮），点击任意位置=收藏并播放，右侧 `+`=仅入库；
+     `addFrom(candidate, { play })` 支持只收藏不跳转。
+   - `frontend/src/styles/global.css`：新增 `.result-list/.result-row/.result-art/.result-main/.result-src/
+     .result-rate/.result-quality/.result-time/.result-collect`（含 hover/键盘焦点/触屏常显播放键/720px 断点）。
+   - 「我的音乐库」货架仍是专辑卡片网格（只有搜索结果改成了列表）。
+   - 顺带清理：`AlbumCard` 去掉只为搜索服务的 `candidate` 分支与收藏按钮，删除随之失效的 `.album-collect` 样式。
 
 ---
 
@@ -215,6 +232,10 @@ env -u CODEX_CI -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL
   用 PostgREST 查计数要用正确列名，否则返回 4 键错误对象造成「有残留数据」的误判。
 - 前端重型库（KaTeX/Three.js/Mermaid/Chart.js/D3/hls.js）必须**按路由动态 import**，
   上线前检查 `dist/index.html` 不含任何重型库 `modulepreload`。
+- **后端数值校验**：`lib/validate.js` 的 `optionalInt` 默认 `min=-1000000 / max=1000000`。
+  字节、毫秒、大数字段**必须显式给 `max`**——曾因漏给导致无损音乐的 `file_size`（36MB）直接 422 「超出范围」。
+- **Cloudflare Pages 部署后有传播延迟**：刚 `pages deploy` 完，新哈希的资源可能短暂返回
+  index.html（`content-type: text/html`）。等几秒或先用部署专属域名 `https://<hash>.knowledge-base-9j0.pages.dev` 验证。
 
 ---
 

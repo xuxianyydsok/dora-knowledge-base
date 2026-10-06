@@ -18,21 +18,18 @@ function fmtDuration(sec) {
   return `${m}:${s}`;
 }
 
-// 专辑封面卡：列表页与搜索结果共用
-function AlbumCard({ item, onPlay, onOpen, onCollect, busy, candidate }) {
+// 专辑封面卡：只用于「我的音乐库」货架（搜索结果已改为横向列表 SearchRow）
+function AlbumCard({ item, onPlay, onOpen }) {
   const t = item.track || {};
-  const cover = candidate ? item.artwork_url : (t.artwork_url || item.cover_path);
-  const title = item.title;
-  const artist = candidate ? item.artist : t.artist;
-  const album = candidate ? item.album : t.album;
-  const isPreview = (candidate ? item.quality : t.quality) === 'preview';
+  const cover = t.artwork_url || item.cover_path;
+  const isPreview = (t.quality || 'full') === 'preview';
 
   return (
     <article class="album-card" onClick={onOpen} role="button" tabindex={0}
       onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
       <div class="album-art">
         {cover
-          ? <img src={cover} alt={title} loading="lazy" referrerpolicy="no-referrer" />
+          ? <img src={cover} alt={item.title} loading="lazy" referrerpolicy="no-referrer" />
           : <span class="album-art-empty"><Icon name="music" size={30} /></span>}
         <button
           class="album-play"
@@ -44,17 +41,64 @@ function AlbumCard({ item, onPlay, onOpen, onCollect, busy, candidate }) {
         {isPreview && <span class="album-flag">试听</span>}
       </div>
       <div class="album-meta">
-        <h3 title={title}>{title}</h3>
-        <p title={artist}>{artist || '未知歌手'}</p>
-        {album && <span class="album-name" title={album}>{album}</span>}
+        <h3 title={item.title}>{item.title}</h3>
+        <p title={t.artist}>{t.artist || '未知歌手'}</p>
+        {t.album && <span class="album-name" title={t.album}>{t.album}</span>}
       </div>
-      {candidate && (
-        <button class="album-collect" disabled={busy} title="加入音乐库"
-          onClick={(e) => { e.stopPropagation(); onCollect(); }}>
-          <Icon name="plus" size={14} />
-        </button>
-      )}
     </article>
+  );
+}
+
+// 搜索结果行：横向排布（封面 + 曲目信息 + 音源/音质 + 时长 + 收藏）
+// 用户反馈搜索结果用卡片网格不方便扫读，改为一行一首的列表形式。
+const PLATFORM_LABEL = { gdstudio: 'GD音乐台', audius: 'Audius', itunes: 'iTunes', deezer: 'Deezer' };
+
+function SearchRow({ item, busy, onPlay, onCollect }) {
+  const isPreview = item.quality === 'preview';
+  const isLossless = item.format === 'flac' || (item.bitrate || 0) >= 900;
+  const qualityLabel = isPreview ? '试听' : (isLossless ? '无损' : '完整音轨');
+  const rate = item.bitrate
+    ? `${item.format === 'flac' ? 'FLAC · ' : ''}${item.bitrate}kbps`
+    : (item.format === 'flac' ? 'FLAC' : '');
+
+  return (
+    <div
+      class="result-row"
+      role="button"
+      tabindex={0}
+      title="播放并加入音乐库"
+      onClick={onPlay}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPlay(); } }}
+    >
+      <button class="result-art" type="button" title="播放" onClick={(e) => { e.stopPropagation(); onPlay(); }}>
+        {item.artwork_url
+          ? <img src={item.artwork_url} alt={item.title} loading="lazy" referrerpolicy="no-referrer" />
+          : <span class="result-art-empty"><Icon name="music" size={20} /></span>}
+        <span class="result-art-play"><Icon name="play" size={16} /></span>
+      </button>
+
+      <div class="result-main">
+        <h3 title={item.title}>{item.title}</h3>
+        <p title={`${item.artist || ''} ${item.album || ''}`}>
+          {[item.artist || '未知歌手', item.album].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+
+      <span class="result-src">{PLATFORM_LABEL[item.platform] || item.platform}</span>
+      {rate && <span class="result-rate">{rate}</span>}
+      <span class={`result-quality${isPreview ? ' preview' : ''}`}>{qualityLabel}</span>
+      <span class="result-time">{fmtDuration(item.duration)}</span>
+
+      <button
+        class="result-collect"
+        type="button"
+        disabled={busy}
+        title="仅加入音乐库"
+        onClick={(e) => { e.stopPropagation(); onCollect(); }}
+      >
+        <Icon name="plus" size={15} />
+      </button>
+    </div>
   );
 }
 
@@ -89,7 +133,7 @@ export function Music() {
     finally { setBusy(false); }
   }
 
-  async function addFrom(candidate) {
+  async function addFrom(candidate, { play = true } = {}) {
     setBusy(true); setError('');
     try {
       const created = await api.createMusic({
@@ -116,8 +160,8 @@ export function Music() {
         file_size: candidate.file_size
       });
       const list = await load();
-      // 收藏后立即播放，并把它接到当前队列末尾
-      if (created?.id) {
+      // 播放时立即起播并接到当前队列；「仅收藏」时不跳转
+      if (play && created?.id) {
         const merged = [...(list || [])];
         const idx = merged.findIndex((m) => m.id === created.id);
         await playQueue(merged, idx >= 0 ? idx : 0);
@@ -161,7 +205,7 @@ export function Music() {
 
       {error && <p style="color:var(--danger)">{error}</p>}
 
-      {/* —— 搜索结果 —— */}
+      {/* —— 搜索结果（横向列表） —— */}
       {candidates && (
         <section class="shelf">
           <div class="shelf-head">
@@ -173,16 +217,14 @@ export function Music() {
           {candidates.length === 0
             ? <div class="empty-state"><Icon name="music" size={24} /><p>没有找到相关曲目</p><span>换个关键词试试。</span></div>
             : (
-              <div class="album-grid">
+              <div class="result-list">
                 {candidates.map((c) => (
-                  <AlbumCard
+                  <SearchRow
                     key={`${c.platform}-${c.external_id}-${c.title}`}
                     item={c}
-                    candidate
                     busy={busy}
-                    onOpen={() => addFrom(c)}
-                    onCollect={() => addFrom(c)}
                     onPlay={() => addFrom(c)}
+                    onCollect={() => addFrom(c, { play: false })}
                   />
                 ))}
               </div>

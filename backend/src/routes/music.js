@@ -191,7 +191,8 @@ export async function createMusic(request, env) {
       // 音质信息：bitrate ≥ 900 或 format=flac 即为无损完整曲
       bitrate: optionalInt(body.bitrate, 'bitrate', { min: 0, max: 10000 }) ?? null,
       format: optionalString(body.format, 'format', { max: 20 }) ?? null,
-      file_size: optionalInt(body.file_size, 'file_size', { min: 0 }) ?? null
+      // file_size 单位是字节（无损 FLAC 常在 20~70MB），不能吃 optionalInt 默认的 1e6 上限
+      file_size: optionalInt(body.file_size, 'file_size', { min: 0, max: 10_000_000_000 }) ?? null
     },
     is_public: optionalBool(body.is_public, 'is_public') ?? false
   });
