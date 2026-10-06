@@ -6,6 +6,8 @@ import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
+import { EmptyState } from '../components/EmptyState.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
@@ -57,19 +59,21 @@ export function Posts() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">博客</h2>
-        <span class="spacer" />
-        <button class="primary" onClick={() => route('/posts/new')}>新建文章</button>
+      <PageHeader
+        kicker="Blog"
+        title="博客"
+        sub="原生 HTML 正文，支持 KaTeX / Three.js / Mermaid / Chart.js 自定义标签，重型库按需加载。"
+      >
+        <button class="primary" onClick={() => route('/posts/new')}><Icon name="plus" size={15} /> 新建文章</button>
         <ViewSwitch />
-      </div>
+      </PageHeader>
 
       {error && <p style="color:var(--danger)">{error}</p>}
 
       {loading ? <div class="center-box">加载中…</div> :
         viewMode === 'gallery'
-          ? <GalleryView items={items} renderCard={renderCard} />
-          : <TimelineView items={items} renderCard={renderCard} />}
+          ? <GalleryView items={items} renderCard={renderCard} empty={<EmptyState icon="blog" title="还没有文章" hint="点右上角「新建文章」写下第一篇。" />} />
+          : <TimelineView items={items} renderCard={renderCard} empty={<EmptyState icon="blog" title="还没有文章" hint="点右上角「新建文章」写下第一篇。" />} />}
     </section>
   );
 }

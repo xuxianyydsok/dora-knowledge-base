@@ -3,6 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { GraphView } from '../components/GraphView.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 export function Graph() {
   const [data, setData] = useState(null);
@@ -26,16 +27,18 @@ export function Graph() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">资源关联图谱</h2>
+      <PageHeader
+        kicker="Knowledge Graph"
+        title="资源关联图谱"
+        sub="博客、资源与标签之间的关联关系，节点可拖动、可点击。"
+      >
         {data?.stats && (
           <span class="muted">
             博客 {data.stats.posts} · 资源 {data.stats.resources} · 标签 {data.stats.tags} · 关系 {data.stats.edges}
           </span>
         )}
-        <span class="spacer" />
         <button onClick={load}>刷新</button>
-      </div>
+      </PageHeader>
 
       {error && <p style="color:var(--danger)">{error}</p>}
       {loading ? <div class="center-box">加载中…</div>

@@ -5,6 +5,8 @@ import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
+import { EmptyState } from '../components/EmptyState.jsx';
 import { VideoPlayer } from '../components/VideoPlayer.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
@@ -75,18 +77,20 @@ export function Videos() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">学习视频</h2>
-        <span class="spacer" />
+      <PageHeader
+        kicker="Video Library"
+        title="学习视频"
+        sub="粘贴 B站 / YouTube 链接自动抓取元信息，播放进度自动记忆。"
+      >
         <ViewSwitch />
-      </div>
+      </PageHeader>
 
-      <form class="toolbar" onSubmit={add}>
+      <form class="inline-form" onSubmit={add}>
+        <span class="inline-form-icon"><Icon name="link" size={16} /></span>
         <input
           placeholder="粘贴 Bilibili / YouTube 视频链接"
           value={url}
           onInput={(e) => setUrl(e.currentTarget.value)}
-          style="max-width:460px"
         />
         <button class="primary" type="submit" disabled={busy}>{busy ? '抓取中…' : '添加视频'}</button>
       </form>
@@ -100,8 +104,8 @@ export function Videos() {
         <>
           {loading ? <div class="center-box">加载中…</div> :
             viewMode === 'gallery'
-              ? <GalleryView items={items} renderCard={renderCard} />
-              : <TimelineView items={items} renderCard={renderCard} />}
+              ? <GalleryView items={items} renderCard={renderCard} empty={<EmptyState icon="video" title="还没有收藏视频" hint="把 B站 / YouTube 链接粘到上方的输入框就能自动抓取。" />} />
+              : <TimelineView items={items} renderCard={renderCard} empty={<EmptyState icon="video" title="还没有收藏视频" hint="把 B站 / YouTube 链接粘到上方的输入框就能自动抓取。" />} />}
         </>
       )}
     </section>

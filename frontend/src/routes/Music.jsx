@@ -268,6 +268,28 @@ export function Music() {
           </div>
         </section>
       ))}
+
+      {/* 库还很小的时候补一块「发现」：整页只有一两张卡片会显得很空 */}
+      {!loading && items.length > 0 && items.length < 6 && (
+        <section class="shelf">
+          <div class="shelf-head">
+            <h2>发现更多</h2>
+            <span class="count">点一下直接搜索</span>
+          </div>
+          <div class="discover-grid">
+            {RECOMMEND.map((k) => (
+              <button key={k} type="button" class="discover-card" onClick={() => runSearch(k)}>
+                <span class="discover-icon"><Icon name="search" size={16} /></span>
+                <span class="discover-text">
+                  <strong>{k}</strong>
+                  <span>搜索完整音轨</span>
+                </span>
+                <Icon name="chevronRight" size={15} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
     </section>
   );
 }

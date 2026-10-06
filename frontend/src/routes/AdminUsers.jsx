@@ -4,6 +4,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 export function AdminUsers() {
   const { user, isAdmin } = useAuth();
@@ -59,10 +60,11 @@ export function AdminUsers() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">用户管理</h2>
-        <span class="muted">共 {users.length} 个用户</span>
-        <span class="spacer" />
+      <PageHeader
+        kicker="Admin"
+        title="用户管理"
+        sub={`共 ${users.length} 个用户，可启用/禁用账号或调整角色。`}
+      >
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.currentTarget.value)} style="width:auto">
           <option value="">全部角色</option>
           <option value="user">普通用户</option>
@@ -75,7 +77,7 @@ export function AdminUsers() {
           style="max-width:240px"
         />
         <button onClick={load}>刷新</button>
-      </div>
+      </PageHeader>
 
       {error && <p style="color:var(--danger)">{error}</p>}
       {status && <p style="color:var(--primary)">{status}</p>}

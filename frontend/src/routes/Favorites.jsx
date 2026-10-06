@@ -8,6 +8,7 @@ import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 export function Favorites() {
   const [items, setItems] = useState([]);
@@ -68,16 +69,18 @@ export function Favorites() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">收藏夹</h2>
-        <span class="spacer" />
+      <PageHeader
+        kicker="Saved"
+        title="收藏夹"
+        sub="把不同模块的资源与博客收进同一个收藏夹。"
+      >
         <select value={filter} onChange={(e) => setFilter(e.currentTarget.value)} style="width:auto">
           <option value="all">全部</option>
           <option value="resource">资源</option>
           <option value="post">博客</option>
         </select>
         <ViewSwitch />
-      </div>
+      </PageHeader>
 
       {error && <p style="color:var(--danger)">{error}</p>}
       {loading ? <div class="center-box">加载中…</div> :

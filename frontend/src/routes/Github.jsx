@@ -5,6 +5,8 @@ import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
+import { EmptyState } from '../components/EmptyState.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
@@ -73,18 +75,20 @@ export function Github() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">GitHub 收藏</h2>
-        <span class="spacer" />
+      <PageHeader
+        kicker="Repositories"
+        title="GitHub 收藏"
+        sub="保存仓库并抓取 Star、语言与描述，随时刷新最新数据。"
+      >
         <ViewSwitch />
-      </div>
+      </PageHeader>
 
-      <form class="toolbar" onSubmit={add}>
+      <form class="inline-form" onSubmit={add}>
+        <span class="inline-form-icon"><Icon name="link" size={16} /></span>
         <input
           placeholder="粘贴 GitHub 仓库链接，如 https://github.com/owner/repo"
           value={url}
           onInput={(e) => setUrl(e.currentTarget.value)}
-          style="max-width:460px"
         />
         <button class="primary" type="submit" disabled={busy}>{busy ? '抓取中…' : '添加仓库'}</button>
       </form>
@@ -93,8 +97,8 @@ export function Github() {
 
       {loading ? <div class="center-box">加载中…</div> :
         viewMode === 'gallery'
-          ? <GalleryView items={items} renderCard={renderCard} />
-          : <TimelineView items={items} renderCard={renderCard} />}
+          ? <GalleryView items={items} renderCard={renderCard} empty={<EmptyState icon="github" title="还没有收藏仓库" hint="粘贴仓库链接即可抓取 Star、语言与描述。" />} />
+          : <TimelineView items={items} renderCard={renderCard} empty={<EmptyState icon="github" title="还没有收藏仓库" hint="粘贴仓库链接即可抓取 Star、语言与描述。" />} />}
     </section>
   );
 }

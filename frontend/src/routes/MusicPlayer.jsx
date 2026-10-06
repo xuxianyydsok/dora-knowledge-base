@@ -3,6 +3,7 @@
 // 极简控制区、可展开歌词，让画面随音乐呼吸。
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { route } from 'preact-router';
+import { api } from '../lib/api.js';
 import { usePlayer } from '../lib/player.jsx';
 import { Icon } from '../components/Icon.jsx';
 
@@ -16,9 +17,18 @@ function fmt(sec) {
 export function MusicPlayer() {
   const {
     music, track, playing, position, duration, volume,
-    hasPrev, hasNext, toggle, next, prev, seek, setVolume, stop
+    hasPrev, hasNext, toggle, next, prev, seek, setVolume, stop, playOne
   } = usePlayer();
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  const [shelf, setShelf] = useState([]);
+
+  // 直接打开 /play 而没有播放上下文时，拉取音乐库作为「挑一首」的入口
+  useEffect(() => {
+    if (music) return undefined;
+    let active = true;
+    api.listMusic().then((list) => { if (active) setShelf((list || []).slice(0, 6)); }).catch(() => {});
+    return () => { active = false; };
+  }, [music]);
 
   const cover = track.artwork_url || music?.cover_path || '';
   const pct = duration > 0 ? (position / duration) * 100 : 0;
@@ -38,10 +48,53 @@ export function MusicPlayer() {
 
   if (!music) {
     return (
-      <div class="now-playing empty">
-        <p class="muted">当前没有正在播放的歌曲。</p>
-        <button class="primary" onClick={() => route('/music')}>去音乐库</button>
-      </div>
+      <section class="now-playing empty">
+        <div class="np-bar">
+          <button class="np-icon" onClick={() => route('/music')} title="返回音乐库">
+            <Icon name="chevronLeft" size={18} />
+          </button>
+          <div class="np-bar-title">
+            <span>正在播放</span>
+            <strong>空闲</strong>
+          </div>
+          <span class="spacer" />
+          <button class="np-icon" onClick={() => route('/music')} title="关闭">
+            <Icon name="close" size={17} />
+          </button>
+        </div>
+
+        <div class="np-empty">
+          <span class="np-empty-icon"><Icon name="music" size={26} /></span>
+          <h2>还没有正在播放的歌曲</h2>
+          <p class="muted">
+            {shelf.length ? '从下面挑一首开始，或去音乐库搜索你喜欢的歌。' : '去音乐库搜索并收藏几首歌，这里就能直接续播。'}
+          </p>
+          <button class="primary" onClick={() => route('/music')}>
+            <Icon name="search" size={15} /> 去音乐库
+          </button>
+
+          {shelf.length > 0 && (
+            <div class="np-shelf">
+              {shelf.map((m) => {
+                const st = m.track || {};
+                const c = st.artwork_url || m.cover_path;
+                return (
+                  <button key={m.id} type="button" class="np-shelf-card" onClick={() => playOne(m)}>
+                    <span class="np-shelf-art">
+                      {c ? <img src={c} alt="" loading="lazy" /> : <Icon name="music" size={18} />}
+                    </span>
+                    <span class="np-shelf-text">
+                      <strong>{m.title}</strong>
+                      <span>{st.artist || '未知歌手'}</span>
+                    </span>
+                    <Icon name="play" size={15} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
     );
   }
 

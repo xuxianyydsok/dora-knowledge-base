@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 export function RssFeeds() {
   const [feeds, setFeeds] = useState([]);
@@ -101,15 +102,17 @@ export function RssFeeds() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">RSS 订阅源</h2>
-        <span class="spacer" />
-        <button onClick={fetchAll} disabled={busy}>抓取全部</button>
+      <PageHeader
+        kicker="Subscriptions"
+        title="RSS 订阅源"
+        sub="定时抓取订阅内容，新文章自动进入通知中心；支持 OPML 导入导出。"
+      >
+        <button onClick={fetchAll} disabled={busy}>{busy ? '抓取中…' : '抓取全部'}</button>
         <button onClick={exportOpml}>导出 OPML</button>
         <button onClick={() => fileRef.current?.click()} disabled={busy}>导入 OPML</button>
         <input ref={fileRef} type="file" accept=".opml,.xml,text/xml,application/xml" style="display:none" onChange={importOpml} />
         <button class="primary" onClick={() => route('/rss/articles')}>浏览条目</button>
-      </div>
+      </PageHeader>
 
       <form class="toolbar" onSubmit={add}>
         <input

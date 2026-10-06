@@ -7,6 +7,7 @@ import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 export function Tags() {
   const [items, setItems] = useState([]);
@@ -84,11 +85,13 @@ export function Tags() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">标签</h2>
-        <span class="spacer" />
+      <PageHeader
+        kicker="Taxonomy"
+        title="标签"
+        sub="跨模块复用标签，支持自定义颜色与批量管理。"
+      >
         <ViewSwitch />
-      </div>
+      </PageHeader>
 
       <form class="toolbar" onSubmit={create}>
         <input placeholder="标签名称" value={name} onInput={(e) => setName(e.currentTarget.value)} style="max-width:200px" />

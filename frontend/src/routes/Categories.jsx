@@ -6,6 +6,7 @@ import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 export function Categories() {
   const [items, setItems] = useState([]);
@@ -55,11 +56,13 @@ export function Categories() {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">分类</h2>
-        <span class="spacer" />
+      <PageHeader
+        kicker="Taxonomy"
+        title="分类"
+        sub="为资源与博客建立一层目录结构，卡片可直接编辑。"
+      >
         <ViewSwitch />
-      </div>
+      </PageHeader>
 
       <form class="toolbar" onSubmit={create}>
         <input placeholder="分类名称" value={name} onInput={(e) => setName(e.currentTarget.value)} style="max-width:220px" />

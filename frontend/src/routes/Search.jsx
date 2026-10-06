@@ -4,6 +4,7 @@ import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { Card } from '../components/Card.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 const TYPE_OPTIONS = [
   { value: 'all', label: '全部' },
@@ -53,9 +54,11 @@ export function Search({ q: initialQ }) {
 
   return (
     <section>
-      <div class="toolbar">
-        <h2 style="margin:0">全局搜索</h2>
-      </div>
+      <PageHeader
+        kicker="Search"
+        title="全局搜索"
+        sub="跨博客与全部资源类型统一检索，可按类型过滤。"
+      />
 
       <form class="toolbar" onSubmit={(e) => { e.preventDefault(); run(); }}>
         <input

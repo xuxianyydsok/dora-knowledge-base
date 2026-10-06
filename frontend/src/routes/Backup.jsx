@@ -1,6 +1,7 @@
 // 资源导入导出备份页
 import { useState } from 'preact/hooks';
 import { api } from '../lib/api.js';
+import { PageHeader } from '../components/PageHeader.jsx';
 
 export function Backup() {
   const [status, setStatus] = useState('');
@@ -43,7 +44,11 @@ export function Backup() {
 
   return (
     <section class="stack">
-      <h2 style="margin:0">导入 / 导出备份</h2>
+      <PageHeader
+        kicker="Backup"
+        title="导入 / 导出备份"
+        sub="导出你名下的分类、标签、资源、博客与收藏为 JSON，或从备份文件恢复。"
+      />
 
       {error && <p style="color:var(--danger)">{error}</p>}
       {status && <p style="color:var(--primary)">{status}</p>}

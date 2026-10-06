@@ -85,11 +85,18 @@ function Hero({ isAuthenticated }) {
             <span class="mock-url">dora.xuguochen.de5.net</span>
           </div>
           <div class="mock-body">
-            <div class="mock-line w60" />
-            <div class="mock-line w85" />
+            <div class="mock-toolbar">
+              <span class="mock-search" />
+              <span class="mock-pill" />
+              <span class="mock-pill" />
+            </div>
             <div class="mock-grid">
-              <div class="mock-card" /><div class="mock-card" />
-              <div class="mock-card" /><div class="mock-card" />
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} class={`mock-card t${i}`}>
+                  <span class="mock-thumb" />
+                  <span class="mock-line" />
+                </div>
+              ))}
             </div>
           </div>
         </div>
