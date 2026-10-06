@@ -160,12 +160,14 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: applicati
 工具清单：`create_post`、`update_post`、`add_video`、`add_github_repo`、`add_music`、`add_movie`、`link_resources`、`list_resources`。
 
 ## 文档索引
+- **开发进度与接力（先看这个）**：`docs/progress.md`
 - 需求：`docs/requirements.md`
 - 数据库 Schema：`docs/schema.md`
 - API：`docs/api.md`
 - 前端说明：`docs/frontend.md`
 - 部署与上线：`docs/deployment.md`
 - 存储：`docs/storage.md`
+- 外部影音接口实测清单：`docs/interface-inventory.md`
 
 ## 开发阶段
 | 阶段 | 内容 |
@@ -177,3 +179,9 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: applicati
 | Phase4 | 音乐收藏库 |
 | Phase5 | RSS 订阅 + 影视库 |
 | Phase6 | 管理员用户面板、权限统一修复、域名部署与文档 |
+
+Phase0–6 之后的增量（按时间顺序）：自定义域名上线 → SaaS 液态玻璃风格改造与落地页 →
+品牌更名 **Dora** + 自托管字体 → 现代线性图标系统 + 品牌流光 →
+音乐/影视多源聚合（Audius + GD音乐台 / 苹果CMS 采集源）+ 黑胶播放器 + 同步歌词 →
+影视采集源扩到 5 个、动漫类目搜索、元数据补全（Cinemeta / Bangumi / Kitsu）。
+**当前进度与下一步见 `docs/progress.md`。**

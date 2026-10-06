@@ -215,6 +215,82 @@ const PATHS = {
     <>
       <path d="M6 6l12 12M18 6L6 18" />
     </>
+  ),
+  // —— 音乐播放控制 ——
+  skipBack: (
+    <>
+      <path d="M18.5 5.6v12.8a.6.6 0 0 1-.92.5l-9.4-6.4a.6.6 0 0 1 0-1l9.4-6.4a.6.6 0 0 1 .92.5Z" />
+      <path d="M5.6 5v14" />
+    </>
+  ),
+  skipForward: (
+    <>
+      <path d="M5.5 5.6v12.8a.6.6 0 0 0 .92.5l9.4-6.4a.6.6 0 0 0 0-1L6.42 5.1a.6.6 0 0 0-.92.5Z" />
+      <path d="M18.4 5v14" />
+    </>
+  ),
+  shuffle: (
+    <>
+      <path d="M17 3.5 20.5 7 17 10.5" />
+      <path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l5.6 7.8c.7 1 1.8 1.6 3 1.6h2.2" />
+      <path d="M17 13.5 20.5 17 17 20.5" />
+      <path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.2" />
+    </>
+  ),
+  repeat: (
+    <>
+      <path d="M17 2.5 20.5 6 17 9.5" />
+      <path d="M3.5 12V9a3 3 0 0 1 3-3h14" />
+      <path d="M7 21.5 3.5 18 7 14.5" />
+      <path d="M20.5 12v3a3 3 0 0 1-3 3h-14" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    </>
+  ),
+  heart: (
+    <>
+      <path d="M12 20s-7.5-4.6-7.5-9.6A4.4 4.4 0 0 1 12 7.6a4.4 4.4 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20Z" />
+    </>
+  ),
+  wave: (
+    <>
+      <path d="M3 12h2M8 6.5v11M12 3.5v17M16 8v8M20 10.5v3" />
+    </>
+  ),
+  list: (
+    <>
+      <path d="M8.5 6.5h12M8.5 12h12M8.5 17.5h12" />
+      <circle cx="4" cy="6.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="17.5" r="1.1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  film: (
+    <>
+      <rect x="2.5" y="4" width="19" height="16" rx="2.5" />
+      <path d="M7.5 4v16M16.5 4v16M2.5 12h19M2.5 8h5M2.5 16h5M16.5 8h5M16.5 16h5" />
+    </>
+  ),
+  tv: (
+    <>
+      <rect x="2.5" y="6.5" width="19" height="12" rx="2.5" />
+      <path d="M8 3l4 3.5L16 3" />
+    </>
+  ),
+  chevronRight: (
+    <>
+      <path d="M9.5 6l6 6-6 6" />
+    </>
+  ),
+  chevronLeft: (
+    <>
+      <path d="M14.5 6l-6 6 6 6" />
+    </>
   )
 };
 

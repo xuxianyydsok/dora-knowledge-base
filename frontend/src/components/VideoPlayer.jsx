@@ -2,6 +2,7 @@
 // 定期上报播放进度到后端
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../lib/api.js';
+import { Icon } from './Icon.jsx';
 
 export function VideoPlayer({ video, onClose }) {
   const embedUrl = video?.metadata?.embed_url;
@@ -47,26 +48,35 @@ export function VideoPlayer({ video, onClose }) {
   }
 
   return (
-    <div class="stack">
-      <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:var(--radius);overflow:hidden">
+    <div class="watch">
+      <div class="watch-bar">
+        <button onClick={onClose}><Icon name="arrowLeft" size={15} /> 返回列表</button>
+        <span class="spacer" />
+        <span class="watch-title" title={video.title}>{video.title}</span>
+        <span class="spacer" />
+        {saved && <span class="muted" style="font-size:12px">{saved}</span>}
+        <button onClick={() => save(false)}>保存进度</button>
+        <button onClick={() => save(true)}>标记看完</button>
+        {video?.url && (
+          <a href={video.url} target="_blank" rel="noreferrer"><button>原站</button></a>
+        )}
+      </div>
+      <div class="watch-stage">
         <iframe
           src={embedUrl}
-          style="position:absolute;inset:0;width:100%;height:100%;border:0"
+          class="watch-frame"
           allowFullScreen
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           title={video.title}
         />
       </div>
-      <div class="row">
-        <button class="primary" onClick={() => save(false)}>保存进度</button>
-        <button onClick={() => save(true)}>标记看完</button>
-        <span class="muted">
-          {progress?.position != null && `已记录 ${Math.round(progress.position)}s`}
+      <div class="watch-meta">
+        <span class="muted" style="font-size:12px">
+          {video.source === 'bilibili' ? 'B站' : 'YouTube'}
+          {video.metadata?.author ? ` · ${video.metadata.author}` : ''}
+          {progress?.position != null ? ` · 已记录 ${Math.round(progress.position)}s` : ''}
           {progress?.progress ? ` · ${progress.progress}%` : ''}
         </span>
-        <span class="spacer" />
-        {saved && <span class="muted">{saved}</span>}
-        <button onClick={onClose}>关闭</button>
       </div>
     </div>
   );

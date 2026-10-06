@@ -7,7 +7,7 @@
 import { ok, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
-import { fetchMovieMeta } from '../lib/fetchers.js';
+import { fetchMovieMeta, fetchMovieLatest, fetchMovieDetailBySource, checkVodSources } from '../lib/fetchers.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool,
   optionalNumber, optionalDateString, requireEnum
@@ -60,6 +60,33 @@ export async function searchMovieMeta(request, env) {
     if (!rows.length) throw new HttpError(422, '分类不存在或无权限');
   }
   return ok({ ...result, category_id: categoryId }, request, env);
+}
+
+// GET /api/movies/latest  —— 采集源最新入库（影视首页用）
+export async function listMovieLatest(request, env) {
+  await requireAuth(request, env);
+  const url = new URL(request.url);
+  const limit = optionalInt(url.searchParams.get('limit'), 'limit', { min: 1, max: 60 }) ?? 24;
+  const sort = url.searchParams.get('sort') === 'new' ? 'new' : 'hot';
+  const result = await fetchMovieLatest(limit, env, sort);
+  return ok(result, request, env);
+}
+
+// POST /api/movies/source-detail  —— 按采集源 + 资源 ID 取完整线路与剧集
+export async function getMovieSourceDetail(request, env) {
+  await requireAuth(request, env);
+  const body = await readJson(request);
+  const sourceKey = requireString(body.source, 'source', { max: 60 });
+  const externalId = requireString(body.external_id, 'external_id', { max: 100 });
+  const detail = await fetchMovieDetailBySource(sourceKey, externalId, env);
+  return ok(detail, request, env);
+}
+
+// GET /api/movies/sources/health  —— 采集源可用性检查
+export async function getVodSourceHealth(request, env) {
+  await requireAuth(request, env);
+  const result = await checkVodSources(env);
+  return ok(result, request, env);
 }
 
 // GET /api/movies
@@ -173,6 +200,12 @@ export async function createMovie(request, env) {
     external_id: optionalString(body.external_id, 'external_id', { max: 100 }) ?? null,
     source: optionalString(body.source, 'source', { max: 60 }) ?? 'manual',
     external_url: externalUrl,
+    // 采集源信息：source_key + source_vod_id 用于回源取完整线路
+    source_key: optionalString(body.source_key, 'source_key', { max: 60 }) ?? null,
+    source_vod_id: optionalString(body.source_vod_id, 'source_vod_id', { max: 100 }) ?? null,
+    routes: Array.isArray(body.routes) ? body.routes : null,
+    area: optionalString(body.area, 'area', { max: 100 }) ?? null,
+    remarks: optionalString(body.remarks, 'remarks', { max: 200 }) ?? null,
     notes: optionalString(body.notes, 'notes', { max: 4000 }) ?? null
   });
 
@@ -223,6 +256,11 @@ export async function updateMovie(request, env, id) {
   if (body.external_id !== undefined) extPatch.external_id = optionalString(body.external_id, 'external_id', { max: 100 }) ?? null;
   if (body.source !== undefined) extPatch.source = optionalString(body.source, 'source', { max: 60 }) ?? null;
   if (body.external_url !== undefined) extPatch.external_url = optionalString(body.external_url, 'external_url', { max: 1000 }) ?? null;
+  if (body.source_key !== undefined) extPatch.source_key = optionalString(body.source_key, 'source_key', { max: 60 }) ?? null;
+  if (body.source_vod_id !== undefined) extPatch.source_vod_id = optionalString(body.source_vod_id, 'source_vod_id', { max: 100 }) ?? null;
+  if (body.routes !== undefined) extPatch.routes = Array.isArray(body.routes) ? body.routes : null;
+  if (body.area !== undefined) extPatch.area = optionalString(body.area, 'area', { max: 100 }) ?? null;
+  if (body.remarks !== undefined) extPatch.remarks = optionalString(body.remarks, 'remarks', { max: 200 }) ?? null;
   if (body.notes !== undefined) extPatch.notes = optionalString(body.notes, 'notes', { max: 4000 }) ?? null;
 
   if (Object.keys(extPatch).length) {

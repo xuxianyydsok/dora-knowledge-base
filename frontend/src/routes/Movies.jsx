@@ -1,40 +1,79 @@
-// 影视库列表页：元数据搜索新增 + 列表（画廊/时间流）+ 快速播放
-import { useEffect, useState } from 'preact/hooks';
+// 影视库
+// 上半部分：精选推荐 / 最新入库 / 搜索结果（来自苹果CMS 采集源，海报网格，点击即入库并可播放）
+// 下半部分：已收藏影视（画廊 / 时间流双视图）
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { Card } from '../components/Card.jsx';
 import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
+import { VodPoster } from '../components/VodPoster.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
+
+// 推荐片单：按国家/地区分组，点击即按片名聚合搜索。
+// 仅作为检索入口，不代表只能搜这些——搜索框仍可自由检索全部采集源。
+const RECOMMEND = [
+  {
+    key: 'cn', label: '中国',
+    groups: [
+      { label: '电视剧', items: ['觉醒年代', '历史转折中的邓小平', '老九门', '九门', '终极笔记', '三体'] },
+      { label: '动漫', items: ['完美世界', '画江湖之不良人', '一人之下', '诛仙', '遮天', '剑来', '斗破苍穹', '全职高手', '诡秘之主', '西行纪', '凡人修仙传', '仙逆'] },
+      { label: '电影', items: ['战狼', '流浪地球', '唐人街探案', '哪吒之魔童降世', '哪吒之魔童闹海'] }
+    ]
+  },
+  {
+    key: 'us', label: '美国',
+    groups: [{ label: '', items: ['复仇者联盟', '蜘蛛侠', '变形金刚', '美国队长', '毒液'] }]
+  },
+  {
+    key: 'jp', label: '日本',
+    groups: [{ label: '', items: ['迪迦奥特曼', '戴拿奥特曼', '奥特银河格斗', '赛罗奥特曼'] }]
+  }
+];
 
 export function Movies() {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
-  const [candidates, setCandidates] = useState(null);
+  const [mode, setMode] = useState('hot');          // hot | new | search
+  const [candidates, setCandidates] = useState([]);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loadingList, setLoadingList] = useState(true);
+  const [loadingCand, setLoadingCand] = useState(false);
   const [busy, setBusy] = useState(false);
   const { viewMode } = useViewMode();
 
   async function load() {
-    setLoading(true);
-    try { setItems(await api.listMovies()); }
+    setLoadingList(true);
+    try { const list = await api.listMovies(); setItems(list); return list; }
     catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+    finally { setLoadingList(false); }
   }
-  useEffect(() => { load(); }, []);
 
-  async function search(e) {
-    e.preventDefault();
-    if (!query.trim()) return;
-    setBusy(true); setError(''); setCandidates(null);
+  async function loadCandidates(nextMode, q = '') {
+    setLoadingCand(true); setError('');
     try {
-      const res = await api.searchMovieMeta(query, 6);
+      const res = nextMode === 'search'
+        ? await api.searchMovieMeta(q, 18)
+        : await api.listMovieLatest(`?limit=24&sort=${nextMode === 'new' ? 'new' : 'hot'}`);
       setCandidates(res.candidates || []);
-    } catch (e) { setError(e.message); }
-    finally { setBusy(false); }
+    } catch (e) { setError(e.message); setCandidates([]); }
+    finally { setLoadingCand(false); }
+  }
+
+  useEffect(() => { load(); loadCandidates('hot'); }, []);
+
+  function switchMode(next, q = '') {
+    setMode(next);
+    loadCandidates(next, q);
+  }
+
+  function search(e) {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    switchMode('search', q);
   }
 
   async function addFrom(candidate) {
@@ -55,13 +94,17 @@ export function Movies() {
         cast_list: candidate.cast_list,
         external_id: candidate.external_id,
         source: candidate.source,
-        // 可播放直链写入 url；外部详情页写入 external_url
+        source_key: candidate.source,
+        source_vod_id: candidate.external_id,
+        routes: candidate.routes,
+        area: candidate.area,
+        remarks: candidate.remarks,
         url: candidate.playable_url || null,
         external_url: candidate.page_url || null
       });
-      setCandidates(null);
-      setQuery('');
-      await load();
+      const list = await load();
+      const created = (list || []).find((m) => m.title === candidate.title);
+      if (created) route(`/movies/${created.id}`);
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -71,6 +114,12 @@ export function Movies() {
     try { await api.deleteMovie(id); await load(); }
     catch (e) { setError(e.message); }
   }
+
+  const heading = useMemo(() => {
+    if (mode === 'search') return `「${query.trim()}」的搜索结果`;
+    if (mode === 'new') return '最新入库';
+    return '精选推荐';
+  }, [mode, query]);
 
   const renderCard = (m) => {
     const t = m.title_info || {};
@@ -92,7 +141,7 @@ export function Movies() {
         onClick={() => route(`/movies/${m.id}`)}
         footer={
           <span class="row">
-            <button class="primary" onClick={(e) => { e.stopPropagation(); route(`/movies/${m.id}`); }}>详情</button>
+            <button class="primary" onClick={(e) => { e.stopPropagation(); route(`/movies/${m.id}`); }}>播放</button>
             <button onClick={(e) => { e.stopPropagation(); route(`/movies/${m.id}/edit`); }}>编辑</button>
             <button class="danger" onClick={(e) => { e.stopPropagation(); remove(m.id); }}>删除</button>
           </span>
@@ -102,62 +151,113 @@ export function Movies() {
   };
 
   return (
-    <section>
-      <div class="toolbar">
-        <h2 style="margin:0">影视库</h2>
-        <span class="spacer" />
-        <button class="primary" onClick={() => route('/movies/new')}>手动添加</button>
-        <ViewSwitch />
+    <section class="movies-page">
+      {/* —— 库头部：标题 + 搜索 —— */}
+      <div class="vod-head">
+        <div class="vod-head-title">
+          <h1>影视库</h1>
+          <p>聚合多个公开采集源，一次检索、多源比对，即点即播。</p>
+        </div>
+        <form class="vod-search" onSubmit={search}>
+          <span class="vod-search-icon"><Icon name="search" size={16} /></span>
+          <input
+            placeholder="搜索电影 / 电视剧，如：蜘蛛侠、觉醒年代"
+            value={query}
+            onInput={(e) => setQuery(e.currentTarget.value)}
+          />
+          <button class="primary" type="submit" disabled={loadingCand}>
+            {loadingCand && mode === 'search' ? '搜索中…' : '搜索'}
+          </button>
+        </form>
       </div>
 
-      <form class="toolbar" onSubmit={search}>
-        <input
-          placeholder="搜索影视名称，抓取元数据（TVmaze）"
-          value={query}
-          onInput={(e) => setQuery(e.currentTarget.value)}
-          style="max-width:420px"
-        />
-        <button class="primary" type="submit" disabled={busy}>{busy ? '搜索中…' : '搜索元数据'}</button>
-      </form>
+      {/* —— 推荐片单：搜索框下方，点击即聚合搜索 —— */}
+      <div class="reco-panel">
+        <div class="reco-head">
+          <Icon name="sparkles" size={14} />
+          <span>推荐搜索</span>
+          <span class="reco-hint">点击任意片名，自动聚合多源搜索</span>
+        </div>
+        {RECOMMEND.map((region) => (
+          <div key={region.key} class="reco-region">
+            <span class="reco-region-label">{region.label}</span>
+            <div class="reco-groups">
+              {region.groups.map((g) => (
+                <div key={g.label || region.key} class="reco-group">
+                  {g.label && <span class="reco-group-label">{g.label}</span>}
+                  <div class="reco-items">
+                    {g.items.map((name) => (
+                      <button
+                        key={name}
+                        class={`reco-item${query.trim() === name && mode === 'search' ? ' active' : ''}`}
+                        onClick={() => { setQuery(name); switchMode('search', name); }}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* —— 视图切换 —— */}
+      <div class="toolbar">
+        <div class="seg">
+          <button class={mode === 'hot' ? 'on' : ''} onClick={() => switchMode('hot')}>精选推荐</button>
+          <button class={mode === 'new' ? 'on' : ''} onClick={() => switchMode('new')}>最新入库</button>
+          {mode === 'search' && <button class="on">搜索结果</button>}
+        </div>
+      </div>
 
       {error && <p style="color:var(--danger)">{error}</p>}
 
-      {candidates && (
-        <div class="card" style="padding:14px;margin-bottom:18px">
-          <div class="row" style="margin-bottom:8px">
-            <strong>搜索结果</strong>
-            <span class="spacer" />
-            <button onClick={() => setCandidates(null)}>关闭</button>
-          </div>
-          {candidates.length === 0 && <div class="muted">无匹配结果</div>}
-          <div class="stack">
-            {candidates.map((c) => (
-              <div class="row" key={c.external_id || c.title} style="gap:10px;border-bottom:1px solid var(--border);padding-bottom:8px">
-                {c.poster_url && <img src={c.poster_url} alt="" style="width:44px;height:64px;border-radius:6px;object-fit:cover" />}
-                <span class="stack" style="gap:2px">
-                  <strong style="font-size:14px">{c.title}</strong>
-                  <span class="muted" style="font-size:12px">
-                    {c.media_type === 'tv' ? '剧集' : '电影'}
-                    {c.release_date ? ` · ${String(c.release_date).slice(0, 4)}` : ''}
-                    {c.rating != null ? ` · ★ ${c.rating}` : ''}
-                  </span>
-                  <span class={`quality-tag${c.playable_url ? ' quality-full' : ' quality-preview'}`}>
-                    <Icon name={c.playable_url ? 'play' : 'external'} size={11} />
-                    {c.playable_url ? '可直接播放' : '仅元信息（需自备播放地址）'} · {c.source}
-                  </span>
-                </span>
-                <span class="spacer" />
-                <button class="primary" onClick={() => addFrom(c)} disabled={busy}>收藏</button>
-              </div>
-            ))}
-          </div>
+      <div class="m-head">
+        <h2><span class="bar" />{heading}</h2>
+        {!loadingCand && <span class="count">{candidates.length} 条</span>}
+      </div>
+
+      {loadingCand ? (
+        <div class="vod-grid">
+          {Array.from({ length: 12 }).map((_, i) => <div key={i} class="vod-card skeleton-card" />)}
+        </div>
+      ) : candidates.length === 0 ? (
+        <div class="empty-state">
+          <Icon name="movie" size={26} />
+          <p>{mode === 'search' ? `没有找到「${query.trim()}」相关的电影或剧集` : '暂时没有拿到数据'}</p>
+          <span>换个关键词试试，或稍后重试。</span>
+        </div>
+      ) : (
+        <div class="vod-grid">
+          {candidates.map((c) => (
+            <VodPoster
+              key={`${c.source}-${c.external_id}`}
+              item={c}
+              hot={(c.alt_sources || []).length > 0}
+              busy={busy}
+              onOpen={() => addFrom(c)}
+              onCollect={() => addFrom(c)}
+            />
+          ))}
         </div>
       )}
 
-      {loading ? <div class="center-box">加载中…</div> :
-        viewMode === 'gallery'
-          ? <GalleryView items={items} renderCard={renderCard} />
-          : <TimelineView items={items} renderCard={renderCard} />}
+      {/* —— 已收藏影视 —— */}
+      <div class="m-head" style="margin-top:38px">
+        <h2><span class="bar" />我的影视收藏</h2>
+        <span class="spacer" />
+        <ViewSwitch />
+        <button class="primary" onClick={() => route('/movies/new')}><Icon name="plus" size={14} /> 手动添加</button>
+      </div>
+
+      {loadingList ? <div class="center-box">加载中…</div> :
+        items.length === 0
+          ? <div class="empty-state"><Icon name="layers" size={26} /><p>还没有收藏影视</p><span>在上方点击任意海报即可加入。</span></div>
+          : viewMode === 'gallery'
+            ? <GalleryView items={items} renderCard={renderCard} />
+            : <TimelineView items={items} renderCard={renderCard} />}
     </section>
   );
 }

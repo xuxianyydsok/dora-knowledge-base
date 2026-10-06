@@ -247,7 +247,8 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/api/backup/export" -o backup.json
 | --- | --- | --- |
 | GET | `/api/music` | 列表（管理员可 `?all=true`；可 `?category_id=`），返回含 `track` 与 `tags` |
 | POST | `/api/music/search` | 搜索元信息候选（不落库），body: `{ query, limit? }` |
-| POST | `/api/music/lyrics` | 获取歌词（LRCLIB），body: `{ title, artist, album?, duration? }` |
+| POST | `/api/music/lyrics` | 获取歌词（LRCLIB，缺失时回退 GD音乐台），body: `{ title, artist, album?, duration? }` |
+| POST | `/api/music/stream` | 重新解析可播放直链（直链是会过期的签名地址），body: `{ platform, external_id, source? }` |
 | POST | `/api/music` | 新增，body 见下 |
 | GET | `/api/music/:id` | 详情（含 `track`、`tags`、`progress`） |
 | PATCH | `/api/music/:id` | 更新（主资源字段 + 扩展字段） |
@@ -266,28 +267,38 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/api/backup/export" -o backup.json
 | `preview_url` | 试听片段地址 |
 | `artist_avatar` | 歌手头像链接（播放器唱片右下角与歌词页展示） |
 | `quality` | `full`=完整音轨（默认），`preview`=试听片段 |
+| `platform` / `external_id` / `gd_source` | 音源身份，写入 `resources.metadata`；直链过期后凭它调 `/api/music/stream` 重新解析 |
+| `bitrate` / `format` / `file_size` | 音质信息（如 `1619` kbps / `flac` / 64MB），同样写入 `resources.metadata` |
 | `duration` | 时长（秒） |
 | `genre` / `release_year` | 流派 / 发行年份 |
 | `notes` / `lyrics` | 备注 / 歌词（纯文本） |
 | `category_id` / `tag_ids` / `is_public` | 分类 / 标签 / 公开 |
 
 ### 元数据抓取（多源聚合）
-`POST /api/music/search` 并发调用三个免费数据源，去重合并后返回候选：
+`POST /api/music/search` 并发调用四个免费数据源，同名同歌手去重合并后返回候选
+（合并时播放地址与音质取更优的一侧，封面/专辑/时长互补）：
 
 | 数据源 | 说明 | 音质 |
 | --- | --- | --- |
-| **Audius**（主源） | 独立音乐平台，提供完整音轨 320kbps MP3，CORS 全开 | `full` |
+| **GD音乐台**（主源） | `https://music-api.gdstudio.xyz`，返回**完整曲目**直链。实测 `netease` 源稳定给出 900~1600kbps、20~64MB 的 FLAC；`joox`/`bilibili` 在当前环境拿不到直链，故默认只用 `netease`（可用环境变量 `GD_MUSIC_SOURCE` 覆盖） | `full`（无损） |
+| **Audius** | 独立音乐平台，完整音轨 320kbps MP3，CORS 全开，多发现节点互备 | `full` |
 | iTunes Search | 元信息与封面规范 | `preview`（30s 试听） |
 | Deezer | iTunes 被限流（Workers 共享出口 IP 常返回 429）时兜底 | `preview` |
 
-返回候选字段：`{ platform, external_id, title, artist, artist_avatar, album, artwork_url, audio_url, audio_fallbacks, preview_url, quality, duration, genre, release_year, page_url }`。
-同名同歌手去重时优先保留 `quality=full` 的完整音轨。**不下载音频、不入库音频文件**，后端不转发音频流。
+返回候选字段：`{ platform, external_id, gd_source, title, artist, artist_avatar, album, artwork_url,
+audio_url, audio_fallbacks, preview_url, quality, bitrate, format, file_size, duration, genre,
+release_year, page_url }`。结果按「完整曲目优先 + 音源可信度」排序。
+**不下载音频、不入库音频文件**，后端不转发音频流。
 
-Audius 由多个发现节点提供服务，单个节点可能把某条音轨 CID 拉黑（403），
-因此 `audio_fallbacks` 会附带其余节点地址，前端播放失败时自动切换。
+GD音乐台三个注意点（接入时踩过的坑，写在这里避免重复踩）：
+1. **限频 5 分钟 50 次**，且是共享出口 IP 的配额 —— 因此一次搜索只解析最靠前的 3 条直链
+   （`GD_RESOLVE_LIMIT`），其余拿不到地址的结果会被丢弃；直链与封面在 Worker 进程内缓存 10 分钟。
+2. **必须用浏览器 User-Agent**，自定义 UA 会被拦截并返回空列表。
+3. **直链是网易云 CDN 的带时间戳签名地址，会过期**（路径形如 `/20261006171212/…`）——
+   因此收藏时会把 `platform` / `external_id` / `gd_source` 写进 `resources.metadata`，
+   前端播放失败时调 `POST /api/music/stream` 换一条新直链（见 `frontend/src/lib/player.jsx`）。
 
-### 歌词
-`POST /api/music/lyrics` 调用 **LRCLIB**（开源、无需 Key、支持中文），返回：
+歌词：`POST /api/music/lyrics` 先查 **LRCLIB**（开源、无需 Key、支持中文），未命中时回退 **GD音乐台**歌词接口。返回：
 
 ```json
 { "source": "lrclib", "instrumental": false,
@@ -297,6 +308,17 @@ Audius 由多个发现节点提供服务，单个节点可能把某条音轨 CID
 
 - `synced` 为带时间轴的 LRC 文本，前端据此实现逐句高亮与自动滚动；无同步歌词时为 `null`。
 - 抓取源的歌手名常带前缀（如 `Jay 周杰伦`），服务端会自动尝试多种候选写法匹配。
+
+重新解析直链：
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"platform":"gdstudio","external_id":"2712018330","source":"netease"}' \
+  "$BASE/api/music/stream"
+# → { "platform":"gdstudio", "external_id":"2712018330", "source":"netease",
+#     "audio_url":"https://m801.music.126.net/...flac", "bitrate":922, "file_size":36600676,
+#     "quality":"full" }
+```
 
 ## 权限
 - 普通用户仅能读写自己名下音乐。
@@ -396,6 +418,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 | --- | --- | --- |
 | GET | `/api/movies` | 列表（管理员可 `?all=true`；可 `?category_id=&media_type=movie\|tv`），返回含 `title_info` 与 `tags` |
 | POST | `/api/movies/search` | 搜索元信息候选（不落库），body: `{ query, limit? }` |
+| GET | `/api/movies/latest` | 精选片单（首页用），`?limit=&sort=hot\|new`，按评分或年份排序 |
+| GET | `/api/movies/sources/health` | 各采集源健康检查（设置页用） |
+| POST | `/api/movies/source-detail` | 按 `{ source, external_id }` 取采集源完整线路与剧集（详情页选集用） |
 | POST | `/api/movies` | 新增，body 见下 |
 | GET | `/api/movies/:id` | 详情（含 `title_info`、`tags`、`progress`） |
 | PATCH | `/api/movies/:id` | 更新（主资源字段 + 扩展字段） |
@@ -418,28 +443,58 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 | `poster_url` / `backdrop_url` | 海报 / 背景图链接（同时写入 `cover_path`） |
 | `url` | **播放地址**：仅存放可播放的视频直链（`.mp4` 等），作为 HTML5 `<video src>` 使用 |
 | `external_url` | **外部详情页**链接（TVmaze / TMDB 等资料页），非播放地址，前端仅用于跳转 |
-| `external_id` / `source` | 外部数据源 ID / 来源（`tmdb`/`tvmaze`/`manual`） |
+| `external_id` / `source` | 外部数据源 ID / 来源（`lzi`/`ffzy`/`dytt`/`zuid`/`zy360`/`tmdb`/`tvmaze`/`manual`） |
+| `source_key` / `source_vod_id` | 采集源标识与源站资源 ID（详情页按它回源取完整剧集） |
+| `routes` | 全部播放线路 `[{ name, episodes:[{ name, url }] }]`，前端据此切换线路/选集 |
+| `area` / `remarks` | 地区 / 备注（如「全40集」「HD国语」） |
 | `notes` | 备注 |
 | `category_id` / `tag_ids` / `is_public` | 分类 / 标签 / 公开 |
 
-### 元数据抓取（多源聚合）
-`POST /api/movies/search` 并发调用多个免费数据源，去重合并后返回候选：
+### 元数据抓取（苹果CMS 采集源为主）
+`POST /api/movies/search` 以**苹果CMS 采集接口**为主源（真正能搜到电影/电视剧并可直接播放的源），
+采集源全部失败时才回退 Internet Archive / TVmaze。
 
-| 数据源 | 说明 | 可播放 |
+| 采集源 | 地址 | 说明 |
 | --- | --- | --- |
-| **Internet Archive** | 公有领域影视库，提供完整 MP4 直链（无需 Key） | ✅ `playable_url` |
-| TMDB（可选） | 配置 `TMDB_API_KEY` 时启用，元信息最完整 | ❌ 仅元信息 |
-| TVmaze | 免费、无需 Key，覆盖剧集/综艺 | ❌ 仅元信息 |
+| 量子资源 `lzi` | `https://cj.lziapi.com/api.php/provide/vod/` | 主力源 |
+| 非凡资源 `ffzy` | `https://api.ffzyapi.com/api.php/provide/vod/` | |
+| 电影天堂 `dytt` | `https://caiji.dyttzyapi.com/api.php/provide/vod/` | |
+| 最大资源 `zuid` | `https://api.zuidapi.com/api.php/provide/vod` | 补到 lzi 缺失的「仙逆」「迪迦奥特曼」等 |
+| 360资源 `zy360` | `https://360zy.com/api.php/provide/vod/` | |
 
-返回候选字段：`{ source, external_id, media_type, title, original_title, overview, poster_url, backdrop_url, release_date, runtime, rating, genres, director, cast_list, page_url, playable_url }`。
+可用环境变量 `VOD_SOURCES`（JSON 数组）覆盖默认源列表。
 
-- `playable_url` 为可直接播放的视频直链，**可播放的结果排在最前**。
-- `page_url` 为外部详情页，**不能作为播放地址**——这正是此前「搜索到但无法播放」的原因。
-- 同名条目去重时优先保留带 `playable_url` 的版本，并补齐其余来源缺失的元信息。
-- 仅抓取元信息与海报链接，**不下载视频文件、后端不转发视频流**。
+**搜索策略（两个都影响命中率，改代码前先读这段）**
+1. **每个源两路并发**：普通关键词搜索 + 该源「国产/日韩/欧美动漫」类目搜索。
+   动漫正片在关键词搜索里几乎被真人剧、短剧和同名作品挤掉（实测「凡人修仙传」关键词命中 0 条动漫，
+   按类目命中 4 条），而**各源的动漫 type_id 并不统一**（lzi/ffzy/dytt/zuid 是 29，
+   但 zy360 的 29 是动画片、38 才是国产动漫）——因此通过 `ac=list` 返回的 class 列表
+   **按名称动态发现**并缓存 1 小时（`lib/maccms.js` 的 `getAnimeClassIds`）。
+2. **内容过滤**：按 `type_id_1` 顶层分类只保留 1=电影片 / 2=连续剧（动漫搜索时额外放行 4=动漫片），
+   并剔除预告片、电影解说、综艺、体育、短剧、AI漫剧、有声等（`isFeatureContent`）。
+   仅靠 `type_id_1` 不够——部分源把短剧挂在「连续剧」根类目下，故同时按 `type_name` 过滤。
+3. **相关度排序**：完全同名 > 前缀命中 > 包含 > 其他，同档位「可播放优先」。
 
-> 说明：TMDB / TVmaze 本身不提供视频直链，因此从它们收藏的条目需要在编辑页自行填写
-> 「播放地址」；从 Internet Archive 收藏的条目自带播放地址，可直接播放。
+**元数据补全**（`lib/metadb.js`，只补前 4 条且确实缺字段的条目，失败静默跳过）：
+
+| 数据源 | 用途 | 说明 |
+| --- | --- | --- |
+| Cinemeta (Stremio) | 电影/剧集海报、背景图、IMDb 评分 | 搜索支持中文；评分需再查一次详情接口 |
+| Bangumi | 中文 ACG 条目封面/简介/评分 | **必须带 User-Agent**，动漫条目优先用它 |
+| Kitsu | 动漫元数据（Bangumi 未命中时） | |
+| Internet Archive | 公有领域影视，提供完整 MP4 直链 | 采集源全挂时的兜底 |
+
+返回候选字段：`{ source, source_name, source_key, external_id, media_type, title, original_title,
+overview, poster_url, backdrop_url, release_date, runtime, rating, genres, director, cast_list,
+area, remarks, episode_count, playable_url, routes, alt_sources, imdb_id }`。
+
+- `playable_url` 为可直接播放的视频直链（`.m3u8` / `.mp4`），**可播放的结果排在最前**；
+  `routes` 是全部线路与剧集，前端详情页据此切换线路/选集。
+- 同名条目跨源去重时合并线路，并补齐其余来源缺失的元信息。
+- 仅抓取元信息与播放地址字符串，**不下载视频文件、后端不转发视频流**。
+
+> 历史坑：TVmaze 只返回资料页链接，曾被当作 `<video src>` 使用，导致「搜到但无法播放」。
+> 现在 `resources.url` 只存**播放直链**，`movie_titles.external_url` 存**外部详情页**，两者已分离。
 
 ## 权限
 - 普通用户仅能读写自己名下 RSS 订阅/条目与影视资源。

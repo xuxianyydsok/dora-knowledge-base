@@ -4,7 +4,9 @@ import { Router } from 'preact-router';
 import { AuthProvider, useAuth } from './lib/auth.jsx';
 import { ThemeProvider } from './lib/theme.jsx';
 import { ViewModeProvider } from './lib/viewMode.jsx';
+import { PlayerProvider } from './lib/player.jsx';
 import { Layout } from './components/Layout.jsx';
+import { MiniPlayer } from './components/MiniPlayer.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { PointerGlow } from './components/PointerGlow.jsx';
 import { Home } from './routes/Home.jsx';
@@ -12,6 +14,7 @@ import {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
   Search, Graph, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
+  MusicPlayer,
   Movies, MovieView, MovieEdit, RssFeeds, RssArticles, AdminUsers
 } from './routes/routes.js';
 
@@ -34,6 +37,7 @@ function RouterView() {
       <ProtectedRoute path="/music/new"><MusicEdit /></ProtectedRoute>
       <ProtectedRoute path="/music/:id/edit"><MusicEdit /></ProtectedRoute>
       <ProtectedRoute path="/music/:id/lyrics"><MusicLyrics /></ProtectedRoute>
+      <ProtectedRoute path="/music/:id/play"><MusicPlayer /></ProtectedRoute>
       <ProtectedRoute path="/music/:id"><MusicView /></ProtectedRoute>
       <ProtectedRoute path="/movies"><Movies /></ProtectedRoute>
       <ProtectedRoute path="/movies/new"><MovieEdit /></ProtectedRoute>
@@ -65,10 +69,13 @@ export function App() {
     <ThemeProvider>
       <AuthProvider>
         <ViewModeProvider>
-          <PointerGlow />
-          <Layout>
-            <Shell />
-          </Layout>
+          <PlayerProvider>
+            <PointerGlow />
+            <Layout>
+              <Shell />
+            </Layout>
+            <MiniPlayer />
+          </PlayerProvider>
         </ViewModeProvider>
       </AuthProvider>
     </ThemeProvider>

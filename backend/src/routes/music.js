@@ -6,7 +6,7 @@
 import { ok, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
-import { fetchMusicMeta, fetchLyrics } from '../lib/fetchers.js';
+import { fetchMusicMeta, fetchLyrics, resolveGdstudioUrl, GD_DEFAULT_SOURCE } from '../lib/fetchers.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool
 } from '../lib/validate.js';
@@ -50,7 +50,7 @@ export async function searchMusicMeta(request, env) {
   const query = requireString(body.query, 'query', { max: 200 });
   const limit = optionalInt(body.limit, 'limit', { min: 1, max: 20 }) ?? 5;
 
-  const result = await fetchMusicMeta(query, limit);
+  const result = await fetchMusicMeta(query, limit, env);
 
   // 可选：带分类时校验归属
   let categoryId = null;
@@ -75,8 +75,37 @@ export async function getMusicLyrics(request, env) {
   const album = optionalString(body.album, 'album', { max: 200 }) ?? null;
   const duration = optionalInt(body.duration, 'duration', { min: 0, max: 100000 }) ?? null;
 
-  const lyrics = await fetchLyrics({ title, artist, album, duration });
+  const lyrics = await fetchLyrics({ title, artist, album, duration }, env.GD_MUSIC_SOURCE || GD_DEFAULT_SOURCE);
   return ok({ title, artist, album, duration, ...lyrics }, request, env);
+}
+
+// POST /api/music/stream —— 重新解析可播放直链
+// 说明：第三方 CDN 的直链是带时间戳的签名地址，会过期；已收藏曲目播放失败时，
+// 前端带上收藏时保存的 platform / external_id 调本接口即可换到新的直链。
+// 请求体：{ platform, external_id, source? }
+export async function resolveMusicStream(request, env) {
+  await requireAuth(request, env);
+  const body = await readJson(request);
+  const platform = optionalString(body.platform, 'platform', { max: 40 }) ?? null;
+  const externalId = requireString(body.external_id, 'external_id', { max: 200 });
+  const gdSource = optionalString(body.source, 'source', { max: 40 })
+    || env.GD_MUSIC_SOURCE || GD_DEFAULT_SOURCE;
+
+  if (platform !== 'gdstudio') {
+    throw new HttpError(422, `该音源不支持重新解析：${platform || 'unknown'}`);
+  }
+  const info = await resolveGdstudioUrl(externalId, gdSource);
+  if (!info.url) throw new HttpError(404, '该曲目暂时拿不到播放地址，请稍后重试');
+
+  return ok({
+    platform,
+    external_id: externalId,
+    source: gdSource,
+    audio_url: info.url,
+    bitrate: info.br,
+    file_size: info.size,
+    quality: 'full'
+  }, request, env);
 }
 
 // GET /api/music
@@ -153,7 +182,16 @@ export async function createMusic(request, env) {
       artist, album,
       duration: optionalInt(body.duration, 'duration', { min: 0 }) ?? null,
       genre: optionalString(body.genre, 'genre', { max: 100 }) ?? null,
-      quality
+      quality,
+      // 音源身份：第三方直链是带签名的会过期地址，播放失败时前端凭这三个字段
+      // 调 POST /api/music/stream 重新解析（见 routes/music.js）。
+      platform: optionalString(body.platform, 'platform', { max: 40 }) ?? null,
+      external_id: optionalString(body.external_id, 'external_id', { max: 200 }) ?? null,
+      gd_source: optionalString(body.gd_source, 'gd_source', { max: 40 }) ?? null,
+      // 音质信息：bitrate ≥ 900 或 format=flac 即为无损完整曲
+      bitrate: optionalInt(body.bitrate, 'bitrate', { min: 0, max: 10000 }) ?? null,
+      format: optionalString(body.format, 'format', { max: 20 }) ?? null,
+      file_size: optionalInt(body.file_size, 'file_size', { min: 0 }) ?? null
     },
     is_public: optionalBool(body.is_public, 'is_public') ?? false
   });

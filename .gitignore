@@ -42,3 +42,6 @@ Thumbs.db
 # ---- 其它 ----
 coverage/
 .cache/
+
+# ---- 工具产物（herdr 终端把粘贴的临时文件放在这里） ----
+.herdr-web-ui/

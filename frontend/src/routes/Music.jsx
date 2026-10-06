@@ -1,24 +1,72 @@
-// 音乐收藏库页面：元数据搜索新增 + 列表（画廊/时间流）+ 内置播放
-import { useEffect, useState } from 'preact/hooks';
+// 音乐库
+// 设计取向：参考 Apple Music 的「搜索 + 货架」结构 ——
+// 顶部大标题与检索、搜索结果直接铺成专辑网格、下方是「最近添加」货架。
+// 点击任意专辑立即开始播放（全局播放器接管，路由切换不断播）。
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
-import { Card } from '../components/Card.jsx';
-import { GalleryView } from '../components/GalleryView.jsx';
-import { TimelineView } from '../components/TimelineView.jsx';
-import { ViewSwitch } from '../components/ViewSwitch.jsx';
-import { AudioPlayer } from '../components/AudioPlayer.jsx';
 import { Icon } from '../components/Icon.jsx';
-import { useViewMode } from '../lib/viewMode.jsx';
+import { usePlayer } from '../lib/player.jsx';
+
+// 推荐搜索：给没有明确目标的场景一个起点
+const RECOMMEND = ['周杰伦', '林俊杰', '陈奕迅', '五月天', 'Beyond', '邓紫棋', 'Taylor Swift', 'Coldplay'];
+
+function fmtDuration(sec) {
+  if (!Number.isFinite(sec) || sec <= 0) return '';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+// 专辑封面卡：列表页与搜索结果共用
+function AlbumCard({ item, onPlay, onOpen, onCollect, busy, candidate }) {
+  const t = item.track || {};
+  const cover = candidate ? item.artwork_url : (t.artwork_url || item.cover_path);
+  const title = item.title;
+  const artist = candidate ? item.artist : t.artist;
+  const album = candidate ? item.album : t.album;
+  const isPreview = (candidate ? item.quality : t.quality) === 'preview';
+
+  return (
+    <article class="album-card" onClick={onOpen} role="button" tabindex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
+      <div class="album-art">
+        {cover
+          ? <img src={cover} alt={title} loading="lazy" referrerpolicy="no-referrer" />
+          : <span class="album-art-empty"><Icon name="music" size={30} /></span>}
+        <button
+          class="album-play"
+          title="播放"
+          onClick={(e) => { e.stopPropagation(); onPlay(); }}
+        >
+          <Icon name="play" size={20} />
+        </button>
+        {isPreview && <span class="album-flag">试听</span>}
+      </div>
+      <div class="album-meta">
+        <h3 title={title}>{title}</h3>
+        <p title={artist}>{artist || '未知歌手'}</p>
+        {album && <span class="album-name" title={album}>{album}</span>}
+      </div>
+      {candidate && (
+        <button class="album-collect" disabled={busy} title="加入音乐库"
+          onClick={(e) => { e.stopPropagation(); onCollect(); }}>
+          <Icon name="plus" size={14} />
+        </button>
+      )}
+    </article>
+  );
+}
 
 export function Music() {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
+  const [searchedFor, setSearchedFor] = useState('');
   const [candidates, setCandidates] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [playing, setPlaying] = useState(null);
-  const { viewMode } = useViewMode();
+  const { playQueue, playOne } = usePlayer();
 
   async function load() {
     setLoading(true);
@@ -28,21 +76,23 @@ export function Music() {
   }
   useEffect(() => { load(); }, []);
 
-  async function search(e) {
-    e.preventDefault();
-    if (!query.trim()) return;
-    setBusy(true); setError(''); setCandidates(null);
+  async function runSearch(kw) {
+    const q = (kw ?? query).trim();
+    if (!q) return;
+    setQuery(q);
+    setBusy(true); setError('');
     try {
-      const res = await api.searchMusicMeta(query, 6);
+      const res = await api.searchMusicMeta(q, 18);
       setCandidates(res.candidates || []);
-    } catch (e) { setError(e.message); }
+      setSearchedFor(q);
+    } catch (e) { setError(e.message); setCandidates([]); }
     finally { setBusy(false); }
   }
 
   async function addFrom(candidate) {
     setBusy(true); setError('');
     try {
-      await api.createMusic({
+      const created = await api.createMusic({
         title: candidate.title,
         artist: candidate.artist,
         album: candidate.album,
@@ -56,18 +106,25 @@ export function Music() {
         genre: candidate.genre,
         release_year: candidate.release_year,
         url: candidate.page_url,
-        source: candidate.platform
+        source: candidate.platform,
+        // 音源身份 + 音质信息：直链会过期，播放失败时凭这些字段重新解析（见 lib/player.jsx）
+        platform: candidate.platform,
+        external_id: candidate.external_id,
+        gd_source: candidate.gd_source,
+        bitrate: candidate.bitrate,
+        format: candidate.format,
+        file_size: candidate.file_size
       });
-      setCandidates(null);
-      setQuery('');
-      await load();
+      const list = await load();
+      // 收藏后立即播放，并把它接到当前队列末尾
+      if (created?.id) {
+        const merged = [...(list || [])];
+        const idx = merged.findIndex((m) => m.id === created.id);
+        await playQueue(merged, idx >= 0 ? idx : 0);
+        route(`/music/${created.id}/play`);
+      }
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
-  }
-
-  async function play(item) {
-    try { setPlaying(await api.getMusic(item.id)); }
-    catch (e) { setError(e.message); }
   }
 
   async function remove(id) {
@@ -76,97 +133,94 @@ export function Music() {
     catch (e) { setError(e.message); }
   }
 
-  const renderCard = (m) => (
-    <Card
-      key={m.id}
-      title={m.title}
-      description={m.track?.artist ? `${m.track.artist}${m.track.album ? ' · ' + m.track.album : ''}` : m.summary}
-      coverUrl={m.track?.artwork_url || m.cover_path}
-      tags={m.tags}
-      meta={
-        <span class="row" style="gap:10px">
-          {m.track?.duration && <span class="muted meta-item"><Icon name="clock" size={13} /> {Math.floor(m.track.duration / 60)}:{String(m.track.duration % 60).padStart(2, '0')}</span>}
-          {m.track?.genre && <span class="muted meta-item"><Icon name="music" size={13} /> {m.track.genre}</span>}
-          {m.progress?.progress > 0 && <span class="muted">已听 {m.progress.progress}%</span>}
-        </span>
-      }
-      onClick={() => route(`/music/${m.id}`)}
-      footer={
-        <span class="row">
-          <button class="primary" onClick={(e) => { e.stopPropagation(); play(m); }}>播放</button>
-          <button onClick={(e) => { e.stopPropagation(); route(`/music/${m.id}`); }}>详情</button>
-          <button onClick={(e) => { e.stopPropagation(); route(`/music/${m.id}/edit`); }}>编辑</button>
-          <button class="danger" onClick={(e) => { e.stopPropagation(); remove(m.id); }}>删除</button>
-        </span>
-      }
-    />
-  );
+  // 货架：按加入时间（列表已按 created_at 倒序）
+  const shelves = useMemo(() => ([
+    { key: 'recent', title: '最近添加', items: items.slice(0, 18) }
+  ]), [items]);
 
   return (
-    <section>
-      <div class="toolbar">
-        <h2 style="margin:0">音乐库</h2>
-        <span class="spacer" />
-        <button class="primary" onClick={() => route('/music/new')}>手动添加</button>
-        <ViewSwitch />
+    <section class="music-page">
+      {/* —— 头部：大标题 + 检索 —— */}
+      <div class="music-head">
+        <h1>音乐</h1>
+        <form class="music-search" onSubmit={(e) => { e.preventDefault(); runSearch(); }}>
+          <span class="music-search-icon"><Icon name="search" size={16} /></span>
+          <input
+            placeholder="搜索歌曲、歌手或专辑"
+            value={query}
+            onInput={(e) => setQuery(e.currentTarget.value)}
+          />
+          <button class="primary" type="submit" disabled={busy}>{busy ? '搜索中…' : '搜索'}</button>
+        </form>
+        <div class="music-reco">
+          {RECOMMEND.map((k) => (
+            <button key={k} class="music-reco-item" onClick={() => runSearch(k)}>{k}</button>
+          ))}
+        </div>
       </div>
-
-      <form class="toolbar" onSubmit={search}>
-        <input
-          placeholder="搜索歌曲名 / 歌手 / 专辑，抓取元数据"
-          value={query}
-          onInput={(e) => setQuery(e.currentTarget.value)}
-          style="max-width:420px"
-        />
-        <button class="primary" type="submit" disabled={busy}>{busy ? '搜索中…' : '搜索元数据'}</button>
-      </form>
 
       {error && <p style="color:var(--danger)">{error}</p>}
 
+      {/* —— 搜索结果 —— */}
       {candidates && (
-        <div class="card" style="padding:14px;margin-bottom:18px">
-          <div class="row" style="margin-bottom:8px">
-            <strong>搜索结果</strong>
+        <section class="shelf">
+          <div class="shelf-head">
+            <h2>「{searchedFor}」的搜索结果</h2>
+            <span class="count">{candidates.length} 首</span>
             <span class="spacer" />
-            <button onClick={() => setCandidates(null)}>关闭</button>
+            <button onClick={() => { setCandidates(null); setSearchedFor(''); }}>关闭</button>
           </div>
-          {candidates.length === 0 && <div class="muted">无匹配结果</div>}
-          <div class="stack">
-            {candidates.map((c) => (
-              <div class="row" key={c.external_id || c.title} style="gap:10px;border-bottom:1px solid var(--border);padding-bottom:8px">
-                {c.artwork_url && <img src={c.artwork_url} alt="" style="width:44px;height:44px;border-radius:6px;object-fit:cover" />}
-                <span class="stack" style="gap:2px">
-                  <strong style="font-size:14px">{c.title}</strong>
-                  <span class="muted" style="font-size:12px">{c.artist} · {c.album} {c.release_year ? `· ${c.release_year}` : ''}</span>
-                  <span class={`quality-tag${c.quality === 'full' ? ' quality-full' : ' quality-preview'}`}>
-                    <Icon name={c.quality === 'full' ? 'sparkles' : 'preview'} size={11} />
-                    {c.quality === 'full' ? '完整音轨' : '试听片段'} · {c.platform}
-                  </span>
-                </span>
-                <span class="spacer" />
-                <button class="primary" onClick={() => addFrom(c)} disabled={busy}>收藏</button>
+          {candidates.length === 0
+            ? <div class="empty-state"><Icon name="music" size={24} /><p>没有找到相关曲目</p><span>换个关键词试试。</span></div>
+            : (
+              <div class="album-grid">
+                {candidates.map((c) => (
+                  <AlbumCard
+                    key={`${c.platform}-${c.external_id}-${c.title}`}
+                    item={c}
+                    candidate
+                    busy={busy}
+                    onOpen={() => addFrom(c)}
+                    onCollect={() => addFrom(c)}
+                    onPlay={() => addFrom(c)}
+                  />
+                ))}
               </div>
+            )}
+        </section>
+      )}
+
+      {/* —— 我的音乐库 —— */}
+      {loading ? (
+        <div class="album-grid">
+          {Array.from({ length: 8 }).map((_, i) => <div key={i} class="album-card skeleton-card" />)}
+        </div>
+      ) : items.length === 0 ? (
+        <div class="empty-state" style="margin-top:22px">
+          <Icon name="music" size={26} />
+          <p>音乐库还是空的</p>
+          <span>在上方搜索歌曲或歌手，点一下就能收藏并播放。</span>
+        </div>
+      ) : shelves.map((shelf) => (
+        <section key={shelf.key} class="shelf">
+          <div class="shelf-head">
+            <h2>{shelf.title}</h2>
+            <span class="count">{items.length} 首</span>
+            <span class="spacer" />
+            <button onClick={() => playQueue(items, 0)}><Icon name="play" size={14} /> 全部播放</button>
+          </div>
+          <div class="album-grid">
+            {shelf.items.map((m, i) => (
+              <AlbumCard
+                key={m.id}
+                item={m}
+                onPlay={() => playQueue(items, i)}
+                onOpen={() => route(`/music/${m.id}`)}
+              />
             ))}
           </div>
-        </div>
-      )}
-
-      {playing && (
-        <div class="card" style="padding:16px;margin-bottom:20px">
-          <div class="row" style="margin-bottom:8px">
-            <strong>{playing.title}</strong>
-            <span class="muted">{playing.track?.artist}</span>
-            <span class="spacer" />
-            <button onClick={() => setPlaying(null)}>收起</button>
-          </div>
-          <AudioPlayer music={playing} />
-        </div>
-      )}
-
-      {loading ? <div class="center-box">加载中…</div> :
-        viewMode === 'gallery'
-          ? <GalleryView items={items} renderCard={renderCard} />
-          : <TimelineView items={items} renderCard={renderCard} />}
+        </section>
+      ))}
     </section>
   );
 }

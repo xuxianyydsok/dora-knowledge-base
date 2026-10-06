@@ -93,21 +93,17 @@ export function Videos() {
 
       {error && <p style="color:var(--danger)">{error}</p>}
 
-      {playing && (
-        <div class="card" style="padding:16px;margin-bottom:20px">
-          <div class="row" style="margin-bottom:8px">
-            <strong>{playing.title}</strong>
-            <span class="spacer" />
-            <button onClick={() => setPlaying(null)}>收起</button>
-          </div>
-          <VideoPlayer video={playing} onClose={() => setPlaying(null)} />
-        </div>
+      {/* 播放中：只保留播放器，列表整体隐藏，避免播放器下方重复出现同一张卡片 */}
+      {playing ? (
+        <VideoPlayer video={playing} onClose={() => setPlaying(null)} />
+      ) : (
+        <>
+          {loading ? <div class="center-box">加载中…</div> :
+            viewMode === 'gallery'
+              ? <GalleryView items={items} renderCard={renderCard} />
+              : <TimelineView items={items} renderCard={renderCard} />}
+        </>
       )}
-
-      {loading ? <div class="center-box">加载中…</div> :
-        viewMode === 'gallery'
-          ? <GalleryView items={items} renderCard={renderCard} />
-          : <TimelineView items={items} renderCard={renderCard} />}
     </section>
   );
 }

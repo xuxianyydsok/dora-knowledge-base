@@ -85,6 +85,8 @@ export const api = {
   getMusic: (id) => request(`/api/music/${id}`),
   searchMusicMeta: (query, limit = 5) => request('/api/music/search', { method: 'POST', body: { query, limit } }),
   getMusicLyrics: (body) => request('/api/music/lyrics', { method: 'POST', body }),
+  // 重新解析可播放直链（第三方直链是会过期的签名地址）
+  resolveMusicStream: (body) => request('/api/music/stream', { method: 'POST', body }),
   createMusic: (body) => request('/api/music', { method: 'POST', body }),
   updateMusic: (id, body) => request(`/api/music/${id}`, { method: 'PATCH', body }),
   deleteMusic: (id) => request(`/api/music/${id}`, { method: 'DELETE' }),
@@ -95,6 +97,9 @@ export const api = {
   listMovies: (params = '') => request(`/api/movies${params}`),
   getMovie: (id) => request(`/api/movies/${id}`),
   searchMovieMeta: (query, limit = 5) => request('/api/movies/search', { method: 'POST', body: { query, limit } }),
+  listMovieLatest: (params = '') => request(`/api/movies/latest${params}`),
+  getMovieSourceDetail: (body) => request('/api/movies/source-detail', { method: 'POST', body }),
+  getVodSourceHealth: () => request('/api/movies/sources/health'),
   createMovie: (body) => request('/api/movies', { method: 'POST', body }),
   updateMovie: (id, body) => request(`/api/movies/${id}`, { method: 'PATCH', body }),
   deleteMovie: (id) => request(`/api/movies/${id}`, { method: 'DELETE' }),

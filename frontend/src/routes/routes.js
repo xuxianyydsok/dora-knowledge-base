@@ -19,6 +19,7 @@ const Music = lazy(() => import('./Music.jsx').then((m) => ({ default: m.Music }
 const MusicView = lazy(() => import('./MusicView.jsx').then((m) => ({ default: m.MusicView })));
 const MusicEdit = lazy(() => import('./MusicEdit.jsx').then((m) => ({ default: m.MusicEdit })));
 const MusicLyrics = lazy(() => import('./MusicLyrics.jsx').then((m) => ({ default: m.MusicLyrics })));
+const MusicPlayer = lazy(() => import('./MusicPlayer.jsx').then((m) => ({ default: m.MusicPlayer })));
 const Movies = lazy(() => import('./Movies.jsx').then((m) => ({ default: m.Movies })));
 const MovieView = lazy(() => import('./MovieView.jsx').then((m) => ({ default: m.MovieView })));
 const MovieEdit = lazy(() => import('./MovieEdit.jsx').then((m) => ({ default: m.MovieEdit })));
@@ -30,5 +31,6 @@ export {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
   Search, Graph, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
+  MusicPlayer,
   Movies, MovieView, MovieEdit, RssFeeds, RssArticles, AdminUsers
 };
