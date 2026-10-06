@@ -2,6 +2,7 @@
 import { useRouter } from 'preact-router';
 import { ThemeToggle } from './ThemeToggle.jsx';
 import { NotificationBell } from './NotificationBell.jsx';
+import { Logo } from './Logo.jsx';
 import { useAuth } from '../lib/auth.jsx';
 
 export function Layout({ children }) {
@@ -16,7 +17,10 @@ export function Layout({ children }) {
   return (
     <div class="app-shell">
       <header class="app-header">
-        <a href="/" class="brand">📚 知识库</a>
+        <a href="/" class="brand" aria-label="dora 首页">
+          <Logo size={30} />
+          <span>dora</span>
+        </a>
         <nav class="app-nav">
           {link('/', '首页')}
           {isAuthenticated && link('/videos', '视频')}

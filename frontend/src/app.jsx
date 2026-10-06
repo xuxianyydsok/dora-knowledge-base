@@ -6,6 +6,7 @@ import { ThemeProvider } from './lib/theme.jsx';
 import { ViewModeProvider } from './lib/viewMode.jsx';
 import { Layout } from './components/Layout.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
+import { PointerGlow } from './components/PointerGlow.jsx';
 import { Home } from './routes/Home.jsx';
 import {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
@@ -63,6 +64,7 @@ export function App() {
     <ThemeProvider>
       <AuthProvider>
         <ViewModeProvider>
+          <PointerGlow />
           <Layout>
             <Shell />
           </Layout>

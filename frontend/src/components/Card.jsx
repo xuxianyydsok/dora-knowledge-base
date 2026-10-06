@@ -1,14 +1,21 @@
 // 全局通用卡片组件：所有资源板块复用同一套卡片
 // props: title, description, coverUrl, meta(节点), tags(数组), onClick, footer
+// 液态玻璃质感 + 悬停 3D 倾斜（由 lib/tilt.js 驱动，触摸/降级环境自动跳过）
+import { useEffect, useRef } from 'preact/hooks';
 import { TagChip } from './TagChip.jsx';
+import { attachTilt } from '../lib/tilt.js';
 
 export function Card({ title, description, coverUrl, meta, tags = [], footer, onClick }) {
+  const ref = useRef(null);
+
+  useEffect(() => attachTilt(ref.current), []);
+
   return (
-    <article class="card" onClick={onClick} role={onClick ? 'button' : undefined}>
+    <article ref={ref} class="card" onClick={onClick} role={onClick ? 'button' : undefined}>
       {coverUrl ? (
         <img class="card-cover" src={coverUrl} alt={title} loading="lazy" />
       ) : (
-        <div class="card-cover-placeholder" aria-hidden="true">🖼️</div>
+        <div class="card-cover-placeholder" aria-hidden="true">◈</div>
       )}
       <div class="card-body">
         <h3 class="card-title">{title}</h3>

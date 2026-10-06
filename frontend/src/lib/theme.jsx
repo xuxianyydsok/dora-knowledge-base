@@ -25,14 +25,14 @@ export const THEME_VARS = [
 // 默认配色（与 global.css 保持一致，用于「重置」预览）
 export const DEFAULT_COLORS = {
   light: {
-    bg: '#f6f7f9', bg_elevated: '#ffffff', bg_subtle: '#eef0f3',
-    text: '#1a1d21', text_muted: '#5b6470', border: '#e2e5ea',
-    primary: '#3b6ef5', primary_contrast: '#ffffff', danger: '#e5484d'
+    bg: '#eef1f8', bg_elevated: '#ffffff', bg_subtle: '#e6eaf3',
+    text: '#10131a', text_muted: '#5b6472', border: '#d9dfea',
+    primary: '#4a6cf7', primary_contrast: '#ffffff', danger: '#e5484d'
   },
   dark: {
-    bg: '#14171c', bg_elevated: '#1c2027', bg_subtle: '#232830',
-    text: '#e8eaed', text_muted: '#9aa3af', border: '#2c333d',
-    primary: '#5b8cff', primary_contrast: '#0b0d10', danger: '#ff6369'
+    bg: '#0a0c12', bg_elevated: '#171b24', bg_subtle: '#1e232e',
+    text: '#eef1f6', text_muted: '#9aa4b5', border: '#2a3140',
+    primary: '#6f8dff', primary_contrast: '#0a0c12', danger: '#ff6b70'
   }
 };
 

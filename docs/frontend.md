@@ -214,3 +214,28 @@ frontend/src/
 - **资源图谱**：影视作为 `resource` 节点（`resource_type='movie'`）展示，含标签边；点击跳转详情。
 - **收藏夹**：影视与音乐结果点击后跳转对应详情页。
 - 列表/详情页复用 Phase1 的通用卡片与画廊/时间流双视图组件。
+
+# Phase6 后续：SaaS 液态玻璃风格改造 + 品牌更名 dora
+
+## 品牌
+- 站点名统一为 **dora**（顶栏 brand、`index.html` 标题/描述、落地页页脚与 CTA）。
+- 品牌图标：`src/components/Logo.jsx`（六边形「知识晶体」SVG，渐变 id 带自增后缀防同页冲突）+ `public/favicon.svg` 同款。
+
+## 新增文件
+| 文件 | 说明 |
+| --- | --- |
+| `src/components/Logo.jsx` | 品牌 SVG 图标 |
+| `src/components/PointerGlow.jsx` | 鼠标跟随聚光层，`rAF` 节流，触摸 / 降级环境自动禁用 |
+| `src/lib/tilt.js` | `attachTilt()` 卡片 3D 倾斜，触摸 / 降级自动跳过 |
+| `public/favicon.svg` | 站点图标 |
+
+## 样式改造（`src/styles/global.css`）
+- 新色板：浅色 `--bg:#eef1f8 --primary:#4a6cf7`；暗色 `--bg:#0a0c12 --primary:#6f8dff`。
+- 玻璃派生变量（`--glass-bg` / `--glass-border` / `--glass-highlight` / `--glow-*`）用 `color-mix()` 从主题变量计算，**主题自定义配色面板依旧生效**。
+- `body` 极光渐变背景（`background-attachment: fixed`）、`.pointer-glow` 鼠标聚光、按钮高光扫过、卡片 3D 悬停。
+- 动画：`fade-up` / `pop-in` / `float-y` / `grad-shift` / `pulse-dot`；末尾 `@media (prefers-reduced-motion: reduce)` 降级。
+- 落地页样式（`.landing` / `.hero` / `.feature-grid` / `.cap-grid` / `.step-grid` / `.cta` / `.dash-*`）。
+
+## 首页（`src/routes/Home.jsx`）
+- 未登录：SaaS 落地页（Hero / 能力矩阵 / 能力列表 / 四步流程 / CTA / 页脚）。
+- 已登录：控制台概览，并发统计博客、视频、GitHub、音乐、影视、RSS 数量，卡片可点击跳转。
