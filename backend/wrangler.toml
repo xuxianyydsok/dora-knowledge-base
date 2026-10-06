@@ -1,0 +1,17 @@
+# Cloudflare Workers 配置（Phase0 骨架）
+# 敏感变量通过 wrangler secret put 注入，禁止写入本文件
+
+name = "knowledge-base-api"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# R2 存储桶绑定（存放封面/插图，仅存路径字符串）
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "knowledge-base-assets"
+
+# 自定义域名在 Phase6 部署阶段配置
+# [[routes]]
+# pattern = "api.example.com"
+# custom_domain = true

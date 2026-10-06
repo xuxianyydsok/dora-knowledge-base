@@ -1,0 +1,44 @@
+# ---- 依赖 ----
+node_modules/
+.pnp
+.pnp.js
+
+# ---- 构建产物 ----
+dist/
+build/
+.output/
+.wrangler/
+.dev.vars
+frontend/dist/
+backend/dist/
+
+# ---- 环境变量与密钥（严禁入库）----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---- Wrangler 本地 secret / 状态 ----
+.wrangler/
+wrangler.toml.local
+backend/.dev.vars
+.dev.vars
+
+# ---- Supabase 本地配置 ----
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+supabase/config.toml.local
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# ---- 其它 ----
+coverage/
+.cache/
