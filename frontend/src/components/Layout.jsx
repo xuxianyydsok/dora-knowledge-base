@@ -18,6 +18,9 @@ export function Layout({ children }) {
         <a href="/" class="brand">📚 知识库</a>
         <nav class="app-nav">
           {link('/', '首页')}
+          {isAuthenticated && link('/videos', '视频')}
+          {isAuthenticated && link('/github', 'GitHub')}
+          {isAuthenticated && link('/posts', '博客')}
           {isAuthenticated && link('/categories', '分类')}
           {isAuthenticated && link('/tags', '标签')}
         </nav>

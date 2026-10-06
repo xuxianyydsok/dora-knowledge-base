@@ -1,0 +1,73 @@
+// 视频播放器：使用 iframe 嵌入 Bilibili/YouTube（后端不转发流媒体）
+// 定期上报播放进度到后端
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { api } from '../lib/api.js';
+
+export function VideoPlayer({ video, onClose }) {
+  const embedUrl = video?.metadata?.embed_url;
+  const [progress, setProgress] = useState(video?.progress || null);
+  const [saved, setSaved] = useState('');
+  const startRef = useRef(Date.now());
+
+  // 打开播放器时重置计时起点
+  useEffect(() => {
+    startRef.current = Date.now();
+    setProgress(video?.progress || null);
+  }, [video?.id]);
+
+  async function save(completed = false) {
+    if (!video?.id) return;
+    // iframe 无法读取真实播放位置，这里以停留时长估算进度
+    const elapsed = Math.round((Date.now() - startRef.current) / 1000);
+    const base = progress?.position || 0;
+    const duration = progress?.duration || video?.metadata?.duration || 0;
+    const position = base + elapsed;
+    try {
+      const data = await api.saveVideoProgress(video.id, {
+        position: duration ? Math.min(position, duration) : position,
+        duration: duration || undefined,
+        completed
+      });
+      setProgress(data);
+      startRef.current = Date.now();
+      setSaved('进度已保存');
+      setTimeout(() => setSaved(''), 2000);
+    } catch (e) {
+      setSaved(`保存失败: ${e.message}`);
+    }
+  }
+
+  if (!embedUrl) {
+    return (
+      <div class="stack">
+        <p class="muted">该视频暂无可嵌入播放地址，请<a href={video?.url} target="_blank" rel="noreferrer">前往原站观看</a>。</p>
+        <button onClick={onClose}>关闭</button>
+      </div>
+    );
+  }
+
+  return (
+    <div class="stack">
+      <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:var(--radius);overflow:hidden">
+        <iframe
+          src={embedUrl}
+          style="position:absolute;inset:0;width:100%;height:100%;border:0"
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          title={video.title}
+        />
+      </div>
+      <div class="row">
+        <button class="primary" onClick={() => save(false)}>保存进度</button>
+        <button onClick={() => save(true)}>标记看完</button>
+        <span class="muted">
+          {progress?.position != null && `已记录 ${Math.round(progress.position)}s`}
+          {progress?.progress ? ` · ${progress.progress}%` : ''}
+        </span>
+        <span class="spacer" />
+        {saved && <span class="muted">{saved}</span>}
+        <button onClick={onClose}>关闭</button>
+      </div>
+    </div>
+  );
+}

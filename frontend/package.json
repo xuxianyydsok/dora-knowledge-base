@@ -10,8 +10,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
+    "chart.js": "^4.5.1",
+    "katex": "^0.19.0",
+    "mermaid": "^12.1.0",
     "preact": "^10.24.0",
-    "preact-router": "^4.1.2"
+    "preact-router": "^4.1.2",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.0",

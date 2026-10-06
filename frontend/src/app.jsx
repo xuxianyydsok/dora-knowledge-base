@@ -7,7 +7,9 @@ import { ViewModeProvider } from './lib/viewMode.jsx';
 import { Layout } from './components/Layout.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { Home } from './routes/Home.jsx';
-import { Categories, Tags, Login } from './routes/routes.js';
+import {
+  Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView
+} from './routes/routes.js';
 
 function RouterView() {
   return (
@@ -16,6 +18,12 @@ function RouterView() {
       <Login path="/login" />
       <ProtectedRoute path="/categories"><Categories /></ProtectedRoute>
       <ProtectedRoute path="/tags"><Tags /></ProtectedRoute>
+      <ProtectedRoute path="/videos"><Videos /></ProtectedRoute>
+      <ProtectedRoute path="/github"><Github /></ProtectedRoute>
+      <ProtectedRoute path="/posts"><Posts /></ProtectedRoute>
+      <ProtectedRoute path="/posts/new"><PostEdit /></ProtectedRoute>
+      <ProtectedRoute path="/posts/:id/edit"><PostEdit /></ProtectedRoute>
+      <ProtectedRoute path="/posts/:id"><PostView /></ProtectedRoute>
       <Home default />
     </Router>
   );
