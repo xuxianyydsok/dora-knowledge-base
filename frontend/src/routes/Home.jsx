@@ -218,7 +218,7 @@ export function Home() {
 
       <section class="cta">
         <Logo size={46} />
-        <h2>现在就开始使用 dora</h2>
+        <h2>现在就开始使用 Dora</h2>
         <p class="muted">使用邮箱注册，几秒钟即可创建属于你的空间。</p>
         <div class="hero-actions">
           <button class="primary" onClick={() => route('/login')}>免费开始使用</button>
@@ -227,7 +227,7 @@ export function Home() {
       </section>
 
       <footer class="landing-footer">
-        <span>dora · Personal Knowledge Platform</span>
+        <span>Dora · Personal Knowledge Platform</span>
         <span class="muted">Preact · Cloudflare Workers · Supabase</span>
       </footer>
     </div>

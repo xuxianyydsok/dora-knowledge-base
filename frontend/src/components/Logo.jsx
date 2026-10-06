@@ -12,7 +12,7 @@ export function Logo({ size = 30, id }) {
       viewBox="0 0 64 64"
       fill="none"
       role="img"
-      aria-label="dora"
+      aria-label="Dora"
     >
       <defs>
         <linearGradient id={`${n}-g1`} x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">

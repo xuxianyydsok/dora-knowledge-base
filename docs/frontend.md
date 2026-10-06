@@ -218,8 +218,20 @@ frontend/src/
 # Phase6 后续：SaaS 液态玻璃风格改造 + 品牌更名 dora
 
 ## 品牌
-- 站点名统一为 **dora**（顶栏 brand、`index.html` 标题/描述、落地页页脚与 CTA）。
+- 站点名统一为 **Dora**（顶栏 brand、`index.html` 标题/描述、落地页页脚与 CTA）。
+- 顶栏「首页」导航已移除：点击品牌图标即可回到首页，避免重复入口。
 - 品牌图标：`src/components/Logo.jsx`（六边形「知识晶体」SVG，渐变 id 带自增后缀防同页冲突）+ `public/favicon.svg` 同款。
+
+## 字体（自托管，见 `src/styles/fonts.css`）
+| 用途 | 字体 | 文件 |
+| --- | --- | --- |
+| UI / 标题 | Satoshi（Claude 所用 Styrene 的开源近似体） | `public/fonts/satoshi-{400,500,700}.woff2` |
+| 博客正文 | Newsreader（Claude 所用 Tiempos 的衬线近似体） | `public/fonts/newsreader-{400,500}.woff2` |
+| 代码块 | `ui-monospace` 系统等宽字体 | — |
+
+- 字体随站点一起发布，不依赖 Google Fonts / Fontshare CDN，国内访问更稳定。
+- Satoshi 为拉丁字形，中文自动回退到 `PingFang SC` / `Microsoft YaHei` 等系统字体。
+- 博客正文（`.post-content-wrap`）使用 Newsreader，行高 1.85、字号 17.5px，贴近 Claude 的阅读观感。
 
 ## 新增文件
 | 文件 | 说明 |

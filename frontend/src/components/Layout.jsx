@@ -17,12 +17,11 @@ export function Layout({ children }) {
   return (
     <div class="app-shell">
       <header class="app-header">
-        <a href="/" class="brand" aria-label="dora 首页">
+        <a href="/" class="brand" aria-label="Dora 首页">
           <Logo size={30} />
-          <span>dora</span>
+          <span>Dora</span>
         </a>
         <nav class="app-nav">
-          {link('/', '首页')}
           {isAuthenticated && link('/videos', '视频')}
           {isAuthenticated && link('/github', 'GitHub')}
           {isAuthenticated && link('/posts', '博客')}
