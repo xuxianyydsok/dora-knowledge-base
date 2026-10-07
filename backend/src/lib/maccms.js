@@ -114,6 +114,24 @@ export function parsePlayUrls(raw = '') {
     .filter((eps) => eps.length);
 }
 
+// —— 电影 / 剧集分类 ——
+// 顶层分类 id 各源不统一：多数源 2=剧集 4=动漫，但 jyzy/hhzy 是 1=电视剧 2=电影 17=动漫、
+// subo 是 3=动漫（2026-10-07 逐源实测 ac=list）。按 [2,4] 一刀切会把这些源的
+// 剧集错标成电影、电影错标成剧集。因此先看叶子类目名（各源命名趋同：
+//「内地剧 / 中国动漫 / 剧情片」），名字看不出来再回退 type_id_1。
+const TV_NAME_RE = /(剧$|电视剧|连续剧|短剧|动漫|动画)/;
+const ANIME_MOVIE_NAME_RE = /(动漫电影|动画电影|剧场版)/;
+const MOVIE_NAME_RE = /(电影|片$)/;
+export function mediaTypeOf(raw) {
+  const n = String(raw.type_name || '');
+  if (n) {
+    if (ANIME_MOVIE_NAME_RE.test(n)) return 'movie';   // 动漫电影 / 剧场版是电影
+    if (TV_NAME_RE.test(n)) return 'tv';
+    if (MOVIE_NAME_RE.test(n)) return 'movie';
+  }
+  return [2, 4].includes(Number(raw.type_id_1)) ? 'tv' : 'movie';
+}
+
 // 判断是否为可直连播放的媒体地址
 export function isPlayableUrl(url = '') {
   return /\.(m3u8|mp4)(\?|#|$)/i.test(url);
@@ -139,8 +157,7 @@ export function normalizeVod(raw, source) {
     platform: 'maccms',
     external_id: String(raw.vod_id ?? ''),
     type_name: raw.type_name || null,
-    // 顶层分类 2=连续剧、4=动漫片 视为剧集，其余为电影
-    media_type: [2, 4].includes(Number(raw.type_id_1)) ? 'tv' : 'movie',
+    media_type: mediaTypeOf(raw),
     title: raw.vod_name || '(无标题)',
     original_title: null,
     overview: stripHtml(raw.vod_content) || null,
@@ -266,9 +283,9 @@ const ANIME_CLASS_IDS = {
   lzi: [29, 30, 31],
   ffzy: [29, 30, 31],
   zuid: [29, 30, 31],
-  jyzy: [26],
-  hhzy: [26],
-  subo: [26],
+  jyzy: [24, 25, 26],   // 实测：24=中国动漫 25=日本动漫 26=欧美动漫（2026-10-07 ac=list）
+  hhzy: [24, 25, 26],   // 同上（hhzy 与 jyzy 同族分类树）
+  subo: [24, 25, 26],   // 同上
   zy360new: [38, 39, 40]
 };
 

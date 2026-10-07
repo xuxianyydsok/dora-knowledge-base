@@ -571,7 +571,7 @@ const normKey = (s) => String(s || '')
   .replace(/[\s\-_.·・()（）\[\]【】「」《》"'’“”,，。!！?？]/g, '')
   .toLowerCase();
 
-function musicScore(c, query) {
+function musicScore(c, query, artistTally = null) {
   const title = String(c.title || '');
   const artist = String(c.artist || '');
   const nt = normKey(title);
@@ -594,8 +594,14 @@ function musicScore(c, query) {
     // 因此分三档：字面一致 +55 > 归一化一致 +30 > 归一化包含 +18。
     const rawArtist = artist.trim();
     const rawQuery = String(query || '').trim();
-    if (rawArtist === rawQuery) s += 55;
-    else if (na === nq) s += 30;
+    if (rawArtist === rawQuery) {
+      // 「歌手 == 查询词」是歌手搜索的强信号，但存在反例：蹭热歌名当艺名的账号
+      //（实测搜「孤勇者」，榜首一度是「陷阱之声|孤勇者」——艺名就叫孤勇者的号，
+      // 靠 +55 压过陈奕迅的原唱）。区分办法：真歌手在本次结果池里有几十条曲目，
+      // 冒充号只有一两条，按池内规模分档给分。
+      const n = artistTally ? (artistTally.get(na) || 1) : 99;
+      s += n >= 3 ? 55 : n === 2 ? 22 : 8;
+    } else if (na === nq) s += 30;
     else if (na.includes(nq)) s += 18;
     // 搜歌名：歌名「就是」查询词 > 「以查询词开头」> 「包含查询词」。
     // 三级细分是为了压住蹭词条：「我不是周杰伦」「感谢周杰伦」这类歌名只该拿最小的加成。
@@ -739,7 +745,14 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
   // 排序分两段：先看「相关度 + 版本质量」（musicScore），同分再比采集质量。
   // 只按采集质量排是不够的：源站默认顺序会把「布拉格广场（合唱）」「默 (Live)」
   // 排在「晴天」「稻香」前面 —— 这正是「搜一个歌手出来一堆 Live/翻唱」的根因。
-  merged.sort((a, b) => musicScore(b, q) - musicScore(a, q)
+  // artistTally：预统计池里每个歌手的曲目数，供 musicScore 区分
+  //「真·歌手本人」与「蹭热歌名当艺名的冒充号」。
+  const artistTally = new Map();
+  for (const c of merged) {
+    const k = normKey(c.artist);
+    artistTally.set(k, (artistTally.get(k) || 0) + 1);
+  }
+  merged.sort((a, b) => musicScore(b, q, artistTally) - musicScore(a, q, artistTally)
     || candidateRank(b) - candidateRank(a));
 
   const top = merged.slice(0, capped);

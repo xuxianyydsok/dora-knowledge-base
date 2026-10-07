@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "node tests/run.mjs",
+    "test:unit": "node tests/run.mjs --unit-only",
+    "test:live": "node tests/run.mjs --live-only"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
