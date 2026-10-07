@@ -3611,9 +3611,10 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
 .song-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .song-kicker {
   width: fit-content;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font-family: var(--font-mono);
+  font-size: var(--fs-kicker);
+  font-weight: 500;
+  letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--primary);
 }
@@ -4115,19 +4116,34 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
    此前只有 .page-head 与落地页 Hero 用了衬线展示体，影视 / 音乐 / 详情页的页头
    仍是无衬线粗体 —— 同一站里并存两种「大标题气质」，是质感不统一的主要来源。
    这里把展示级角色一次收口到 --font-display，字重统一 500（Newsreader 只有 400/500）。 */
-.vod-head-title h1,
-.music-head h1,
-.movie-detail-title,
-.detail-title,
-.post-view-title,
-.login-card h1 {
+/* ⚠ 上一稿这里的 .movie-detail-title / .post-view-title / .login-card 是**猜的类名**，
+   实际并不存在（等于没有生效）。改为按真实 DOM 收口：
+     .detail-info h1  影视详情大标题
+     .song-info h1    曲目详情大标题
+     .np-head h1      沉浸播放页标题
+     .post-head h1    博客详情大标题
+     .login-page h1   登录 / 注册
+   字重一律 500 —— Newsreader 只自托管 400/500，写 600+ 会让浏览器合成粗体、边缘发虚。 */
+.detail-info h1,
+.song-info h1,
+.np-head h1,
+.post-head h1,
+.login-page h1 {
   font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: var(--track-display);
-  line-height: 1.08;
+  line-height: 1.1;
 }
-.vod-head-title h1,
-.music-head h1 { font-size: clamp(28px, 3vw, 38px); }
+.detail-info h1 { font-size: clamp(26px, 3vw, 36px); }
+.song-info h1 { font-size: clamp(26px, 3.4vw, 40px); }
+.np-head h1 { font-size: clamp(24px, 3.4vw, 38px); }
+.post-head h1 { font-size: clamp(28px, 3.4vw, 42px); }
+.login-page h1 { font-size: clamp(26px, 3vw, 34px); }
+
+/* 章节标题统一到同一档字号 / 字重，避免「同层级两种大小」 */
+.grid-head h2,
+.m-head h2,
+.panel-head h2 { font-size: var(--fs-title); font-weight: 620; letter-spacing: -0.015em; }
 
 /* 元信息角色：计数 / 时间 / 读数一律等宽 + 表格数字，逐行扫读时不会左右跳动 */
 .result-time,
@@ -4362,7 +4378,7 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-spring);
 }
 .watch-card:hover .watch-play { opacity: 1; transform: scale(1); }
-.watch-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(0, 0, 0, 0.36); }
+.watch-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.4); }
 .watch-bar i { display: block; height: 100%; background: var(--primary); }
 .watch-title { font-size: var(--fs-sm); font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .watch-sub { font-size: var(--fs-caption); color: var(--text-muted); }

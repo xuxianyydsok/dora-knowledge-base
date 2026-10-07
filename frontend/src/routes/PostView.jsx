@@ -29,7 +29,7 @@ export function PostView({ id }) {
         <button onClick={() => route(`/posts/${post.id}/edit`)}>编辑</button>
       </div>
 
-      <header class="stack" style="gap:6px">
+      <header class="stack post-head" style="gap:6px">
         <h1 style="margin:0">{post.title}</h1>
         <div class="row" style="gap:10px">
           <span class="muted">{post.status === 'published' ? '已发布' : '草稿'}</span>

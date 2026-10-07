@@ -31,7 +31,7 @@ export function Login() {
   }
 
   return (
-    <section class="stack" style="max-width:380px;margin:40px auto">
+    <section class="stack login-page" style="max-width:380px;margin:40px auto">
       <h1>{mode === 'signin' ? '登录' : '注册'}</h1>
       <form class="stack" onSubmit={onSubmit}>
         <label>
