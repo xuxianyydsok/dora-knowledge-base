@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
@@ -33,10 +33,23 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # 仅在仓库配了对应 secret 时才同步：空值会把 Worker 上手工配置的密钥覆盖成空串。
         run: |
-          printf '%s' "${{ secrets.SUPABASE_URL }}" | npx wrangler secret put SUPABASE_URL
-          printf '%s' "${{ secrets.SUPABASE_ANON_KEY }}" | npx wrangler secret put SUPABASE_ANON_KEY
-          printf '%s' "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+          if [ -n "${{ secrets.SUPABASE_URL }}" ]; then
+            printf '%s' "${{ secrets.SUPABASE_URL }}" | npx wrangler secret put SUPABASE_URL
+          else
+            echo "skip SUPABASE_URL (not set in repo secrets, keep worker value)"
+          fi
+          if [ -n "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            printf '%s' "${{ secrets.SUPABASE_ANON_KEY }}" | npx wrangler secret put SUPABASE_ANON_KEY
+          else
+            echo "skip SUPABASE_ANON_KEY (not set)"
+          fi
+          if [ -n "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            printf '%s' "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+          else
+            echo "skip SUPABASE_SERVICE_ROLE_KEY (not set)"
+          fi
 
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
