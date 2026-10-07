@@ -7,6 +7,7 @@ import { ViewModeProvider } from './lib/viewMode.jsx';
 import { PlayerProvider } from './lib/player.jsx';
 import { Layout } from './components/Layout.jsx';
 import { MiniPlayer } from './components/MiniPlayer.jsx';
+import { Toaster } from './components/Toaster.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { PointerGlow } from './components/PointerGlow.jsx';
 import { Home } from './routes/Home.jsx';
@@ -75,6 +76,7 @@ export function App() {
               <Shell />
             </Layout>
             <MiniPlayer />
+            <Toaster />
           </PlayerProvider>
         </ViewModeProvider>
       </AuthProvider>
