@@ -4,8 +4,8 @@
 | 项 | 值 |
 | --- | --- |
 | 桶名 | `knowledge-base-assets` |
-| 账户 | `<REDACTED>@gmail.com` |
-| Account ID | `<REDACTED:CF_ACCOUNT_ID>` |
+| 账户 | 见 Cloudflare 控制台（**不写入仓库**） |
+| Account ID | 见 `CLOUDFLARE_ACCOUNT_ID` 环境变量 / 密码管理器（**不写入仓库**） |
 | 存储类别 | Standard |
 | 用途 | 图片封面、博客插图等静态资源 |
 

@@ -21,7 +21,7 @@
 | 前端线上 | `https://dora.xuguochen.de5.net`（Pages 项目 `knowledge-base`，默认域 `knowledge-base-9j0.pages.dev`） |
 | 后端线上 | `https://api.xuguochen.de5.net`（Worker `knowledge-base-api`） |
 | Supabase | 项目 ref `wkpxbyauvnxvmzidbeer`（ap-southeast-2 / PG17）；本地凭证在 `supabase/.env.local`（已 gitignore） |
-| 管理员账号 | `<REDACTED:ADMIN_EMAIL>` / `<REDACTED:ADMIN_PASSWORD>`（uid `22ebc30e-d335-4199-9cfd-597e9402fb9e`，role=admin） |
+| 管理员账号 | 邮箱见 `supabase/.env.local` 的 `ADMIN_EMAIL`（已 gitignore），**密码只存密码管理器、不入仓库**（uid `22ebc30e-d335-4199-9cfd-597e9402fb9e`，role=admin） |
 | 强制规则 | 回复用简体中文；DB 变更必须走 `supabase/migrations` 迁移文件；禁止硬编码密钥；**写操作铁律**：任何写入（更新/删除/进度）必须 `user_id=eq.${user.id}`，管理员只有 `?all=true` 的**读**权限 |
 
 ---
@@ -402,9 +402,10 @@ env -u CODEX_CI -u HTTP_PROXY ... npx wrangler pages deploy dist \
 
 # ── 拿管理员 JWT（线上接口验证用） ────────────────────────────
 cd frontend && set -a && . ./.env.local && set +a
+# ADMIN_EMAIL / ADMIN_PASSWORD 从密码管理器取（勿写入仓库、勿写进命令历史）
 curl -s -x http://127.0.0.1:7897 -X POST "$VITE_SUPABASE_URL/auth/v1/token?grant_type=password" \
   -H "apikey: $VITE_SUPABASE_ANON_KEY" -H "Content-Type: application/json" \
-  -d '{"email":"<REDACTED:ADMIN_EMAIL>","password":"<REDACTED:ADMIN_PASSWORD>"}' \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" \
   | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])"
 
 # 线上验证示例

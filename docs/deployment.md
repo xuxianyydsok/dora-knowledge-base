@@ -99,9 +99,9 @@ CI 部署前端时同样通过 GitHub Secrets 注入这三个变量。
 
 | 项 | 值 |
 | --- | --- |
-| 域名 zone | `xuguochen.de5.net`（Cloudflare，zone id `<REDACTED:CF_ZONE_ID>`） |
+| 域名 zone | `xuguochen.de5.net`（Cloudflare，zone id 见控制台） |
 | 前端（Cloudflare Pages） | `https://dora.xuguochen.de5.net`，项目名 `knowledge-base`，默认域 `knowledge-base-9j0.pages.dev` |
-| 后端（Cloudflare Workers） | `https://api.xuguochen.de5.net`，Worker 名 `knowledge-base-api`，备用域 `knowledge-base-api.<REDACTED>.workers.dev` |
+| 后端（Cloudflare Workers） | `https://api.xuguochen.de5.net`，Worker 名 `knowledge-base-api`，备用域 `<account>.workers.dev`（账号子域见控制台） |
 | CORS 白名单 | `https://dora.xuguochen.de5.net` + 本地开发地址 |
 | Cron | `0 * * * *`（每小时抓取 RSS） |
 
