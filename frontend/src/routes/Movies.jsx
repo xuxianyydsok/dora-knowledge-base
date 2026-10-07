@@ -3,26 +3,22 @@
 // 重构要点（2026-10-07 体验重构）：
 // 1) 页头统一走 PageHeader v2：标题 + 读数条 + 主标签栏，取代原来的 vod-head +
 //    另起一行的切换器 + 上下堆叠的「搜索结果 / 我的收藏」。
-// 2) 浏览模式互斥成 Tab（精选推荐 / 最新入库 / 我的收藏），搜索结果作为第四个 Tab
+// 2) 浏览模式互斥成 Tab（精选推荐 / 最新入库），搜索结果作为第三个 Tab
 //    出现 —— 主区一次只呈现一件事，层级不再打架。
 // 3) 推荐片单由首屏大面板降级为 Tab 内的一行 chips，不再把正文推到两屏之后。
 // 4) 工具条常驻：搜索 + 类型/年份/排序筛选 + 源状态。筛选全部在本地完成，不额外打接口。
 // 5) 源状态抽屉：把 /api/movies/sources/health 的实测结果摊开，正面回答
 //    「为什么这部片搜不到」——这是采集型产品最容易被用户质疑的地方。
-// 6) 继续观看：把已有进度（user_progress）提到「我的收藏」Tab 顶部，一眼可续。
+// 6) 「我的收藏」Tab 已按用户要求下线（2026-10-07）：收藏数据仍在库，
+//    点海报入库后直接跳详情页；本页只承担「发现」职责。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
-import { Card } from '../components/Card.jsx';
-import { GalleryView } from '../components/GalleryView.jsx';
-import { TimelineView } from '../components/TimelineView.jsx';
-import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { VodPoster } from '../components/VodPoster.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { Icon } from '../components/Icon.jsx';
-import { useViewMode } from '../lib/viewMode.jsx';
 import { toastError, toastSuccess } from '../lib/toast.jsx';
 
 // 推荐片单：按国家/地区分组，点击即按片名聚合搜索。
@@ -72,17 +68,14 @@ function yearOf(c) {
 }
 
 export function Movies() {
-  const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState('hot');            // hot | new | mine | search
+  const [mode, setMode] = useState('hot');            // hot | new | search
   const [candidates, setCandidates] = useState([]);
   const [candNote, setCandNote] = useState('');
   const [candSources, setCandSources] = useState([]);
   const [candSourceNames, setCandSourceNames] = useState([]);
   const [candLoading, setCandLoading] = useState(false);
   const [candError, setCandError] = useState('');
-  const [listLoading, setListLoading] = useState(true);
-  const [listError, setListError] = useState('');
   const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState('all');
   const [year, setYear] = useState('all');
@@ -90,21 +83,18 @@ export function Movies() {
   const [drawer, setDrawer] = useState('');           // '' | 'health'
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(false);
-  const { viewMode } = useViewMode();
 
   // localStorage 记住上次停留的 Tab 之外，不做额外持久化：候选数据每次都要重新拉
   const lastQuery = useRef('');
 
+  // 收藏列表数据只在一个地方用：点海报入库后找回刚创建的那条并跳详情。
+  // 「我的收藏」Tab 已下线（2026-10-07，用户要求），本页不再整表渲染收藏。
   async function load() {
-    setListLoading(true); setListError('');
     try {
-      const list = await api.listMovies();
-      setItems(list || []);
-      return list || [];
-    } catch (e) {
-      setListError(e.message);
+      return (await api.listMovies()) || [];
+    } catch {
       return [];
-    } finally { setListLoading(false); }
+    }
   }
 
   async function loadCandidates(nextMode, q = '') {
@@ -125,7 +115,7 @@ export function Movies() {
     } finally { setCandLoading(false); }
   }
 
-  useEffect(() => { load(); loadCandidates('hot'); }, []);
+  useEffect(() => { loadCandidates('hot'); }, []);
 
   // 抽屉打开时锁住背景滚动 + Esc 关闭
   useEffect(() => {
@@ -137,7 +127,6 @@ export function Movies() {
 
   function switchMode(next, q = '') {
     setMode(next);
-    if (next === 'mine') return;
     loadCandidates(next, q);
   }
 
@@ -194,15 +183,6 @@ export function Movies() {
     } finally { setBusy(false); }
   }
 
-  async function remove(m) {
-    if (!confirm(`确定把《${m.title}》从收藏中删除？`)) return;
-    try {
-      await api.deleteMovie(m.id);
-      toastSuccess('已删除');
-      await load();
-    } catch (e) { toastError(`删除失败：${e.message}`); }
-  }
-
   // —— 本地筛选与排序：采集候选一次性取回，切筛选不再打接口 ——
   const years = useMemo(() => {
     const set = new Set();
@@ -222,67 +202,21 @@ export function Movies() {
     return list;
   }, [candidates, media, year, sort]);
 
-  const continueWatching = useMemo(
-    () => items.filter((m) => (m.progress?.progress || 0) > 0 && m.progress.progress < 100),
-    [items]
-  );
-
   const tabs = useMemo(() => {
     const base = [
       { key: 'hot', label: '精选推荐' },
-      { key: 'new', label: '最新入库' },
-      { key: 'mine', label: '我的收藏', count: items.length }
+      { key: 'new', label: '最新入库' }
     ];
     if (mode === 'search') {
       base.push({ key: 'search', label: `「${lastQuery.current}」`, count: shown.length });
     }
     return base;
-  }, [items.length, mode, shown.length]);
+  }, [mode, shown.length]);
 
-  const stats = useMemo(() => {
-    if (mode === 'mine') {
-      return [
-        { label: '收藏条目', value: items.length },
-        { label: '观看中', value: continueWatching.length }
-      ];
-    }
-    return [
-      { label: '命中来源', value: candSources.length || '—' },
-      { label: '候选条目', value: candLoading ? '…' : shown.length }
-    ];
-  }, [mode, items.length, continueWatching.length, candSources.length, candLoading, shown.length]);
-
-  const renderCollected = (m) => {
-    const t = m.title_info || {};
-    const kind = t.media_type === 'tv' ? '剧集' : '电影';
-    return (
-      <Card
-        key={m.id}
-        title={m.title}
-        description={t.overview || m.summary}
-        coverUrl={t.poster_url || m.cover_path}
-        tags={m.tags}
-        meta={
-          <span class="meta-row">
-            <span class="meta-item"><Icon name={t.media_type === 'tv' ? 'tv' : 'movie'} size={13} />{kind}</span>
-            {t.release_date && <span class="meta-item">{String(t.release_date).slice(0, 4)}</span>}
-            {t.rating != null && <span class="meta-item"><Icon name="star" size={13} />{t.rating}</span>}
-            {m.progress?.progress > 0 && <span class="meta-item">已看 {m.progress.progress}%</span>}
-          </span>
-        }
-        onClick={() => route(`/movies/${m.id}`)}
-        footer={
-          <span class="row">
-            <button class="primary" onClick={(e) => { e.stopPropagation(); route(`/movies/${m.id}`); }}>播放</button>
-            <button onClick={(e) => { e.stopPropagation(); route(`/movies/${m.id}/edit`); }}>编辑</button>
-            <button class="danger" onClick={(e) => { e.stopPropagation(); remove(m); }}>删除</button>
-          </span>
-        }
-      />
-    );
-  };
-
-  const isBrowse = mode !== 'mine';
+  const stats = useMemo(() => ([
+    { label: '命中来源', value: candSources.length || '—' },
+    { label: '候选条目', value: candLoading ? '…' : shown.length }
+  ]), [candSources.length, candLoading, shown.length]);
 
   return (
     <section class="movies-page page-col">
@@ -316,30 +250,24 @@ export function Movies() {
           )}
         </form>
 
-        {isBrowse ? (
-          <>
-            <div class="seg">
-              {MEDIA_TABS.map((t) => (
-                <button key={t.key} class={media === t.key ? 'on' : ''} onClick={() => setMedia(t.key)}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            {years.length > 1 && (
-              <select class="toolbar-select" value={year} onChange={(e) => setYear(e.currentTarget.value)} aria-label="年份">
-                <option value="all">全部年份</option>
-                {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
-              </select>
-            )}
-            <select class="toolbar-select" value={sort} onChange={(e) => setSort(e.currentTarget.value)} aria-label="排序">
-              {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        <>
+          <div class="seg">
+            {MEDIA_TABS.map((t) => (
+              <button key={t.key} class={media === t.key ? 'on' : ''} onClick={() => setMedia(t.key)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {years.length > 1 && (
+            <select class="toolbar-select" value={year} onChange={(e) => setYear(e.currentTarget.value)} aria-label="年份">
+              <option value="all">全部年份</option>
+              {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
             </select>
-          </>
-        ) : (
-          <>
-            <ViewSwitch />
-          </>
-        )}
+          )}
+          <select class="toolbar-select" value={sort} onChange={(e) => setSort(e.currentTarget.value)} aria-label="排序">
+            {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+        </>
 
         <span class="spacer" />
         <button type="button" onClick={openHealth} title="查看各采集源实测可用性">
@@ -347,8 +275,8 @@ export function Movies() {
         </button>
       </div>
 
-      {/* —— 浏览模式主区 —— */}
-      {isBrowse && (
+      {/* —— 主区：推荐 / 最新 / 搜索结果 —— */}
+      {(
         <>
           {candError ? (
             <ErrorState
@@ -405,60 +333,6 @@ export function Movies() {
               </div>
 
               {mode === 'hot' && <RecoChips onPick={(name) => { setQuery(name); lastQuery.current = name; switchMode('search', name); }} />}
-            </>
-          )}
-        </>
-      )}
-
-      {/* —— 我的收藏 —— */}
-      {mode === 'mine' && (
-        <>
-          {listError ? (
-            <ErrorState title="收藏列表加载失败" message={listError} onRetry={load} />
-          ) : listLoading ? (
-            <LoadingState shape="card" count={8} />
-          ) : items.length === 0 ? (
-            <EmptyState
-              icon="layers"
-              title="还没有收藏影视"
-              hint="切到「精选推荐」或「最新入库」，点任意海报即可加入。"
-              action={
-                <button class="primary empty-action" onClick={() => switchMode('hot')}>
-                  <Icon name="sparkles" size={14} /> 去看看推荐
-                </button>
-              }
-            />
-          ) : (
-            <>
-              {continueWatching.length > 0 && (
-                <section class="shelf">
-                  <div class="grid-head">
-                    <h2><span class="bar" />继续观看</h2>
-                    <span class="count">{continueWatching.length} 部</span>
-                  </div>
-                  <div class="watch-row">
-                    {continueWatching.map((m) => {
-                      const t = m.title_info || {};
-                      return (
-                        <button key={m.id} type="button" class="watch-card" onClick={() => route(`/movies/${m.id}`)}>
-                          <span class="watch-frame">
-                            {t.poster_url || m.cover_path
-                              ? <img src={t.poster_url || m.cover_path} alt={m.title} loading="lazy" referrerpolicy="no-referrer" />
-                              : <span class="watch-empty"><Icon name="film" size={22} /></span>}
-                            <span class="watch-play"><Icon name="play" size={16} /></span>
-                            <span class="watch-bar"><i style={`width:${Math.min(100, m.progress.progress)}%`} /></span>
-                          </span>
-                          <span class="watch-title" title={m.title}>{m.title}</span>
-                          <span class="watch-sub">已看 {m.progress.progress}%</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
-              {viewMode === 'gallery'
-                ? <GalleryView items={items} renderCard={renderCollected} />
-                : <TimelineView items={items} renderCard={renderCollected} />}
             </>
           )}
         </>
