@@ -80,6 +80,26 @@ export function isFeatureContent(raw = {}, { allowAnime = false } = {}) {
   return /(电影|片|剧)/.test(typeName) || (allowAnime && /(动漫|动画)/.test(typeName));
 }
 
+// 标题相关度：0 最好，数字越大越靠后。
+// 只按「是否以关键词开头」排是不够的：搜「庆余年」时，正片「庆余年第二季」和
+// 衍生短剧「庆余年之风起沧州」都算「以关键词开头」，同分之下源站顺序会把短剧排在正片前面。
+// 这里把「关键词 + 第N季/部/集」单列一档，再由调用方按标题长度升序（正片名更短）兜底，
+// 正片就能稳定排在衍生剧 / 外传之前。
+export function titleRelevance(title, keyword) {
+  const t = String(title || '').replace(/\s/g, '');
+  const k = String(keyword || '').replace(/\s/g, '');
+  if (!k) return 5;
+  if (t === k) return 0;
+  if (t.startsWith(k)) {
+    const rest = t.slice(k.length);
+    if (/^第[一二三四五六七八九十0-9]{1,3}[季部集]/.test(rest)) return 1;  // 庆余年第二季
+    if (/^[（(]?\d{4}/.test(rest)) return 2;                              // 庆余年(2024)
+    return 3;
+  }
+  if (t.includes(k)) return 4;
+  return 5;
+}
+
 // 解析 vod_play_url："线路内 集名$地址#集名$地址"，多线路以 $$$ 分隔
 export function parsePlayUrls(raw = '') {
   const groups = String(raw).split('$$$');
@@ -151,11 +171,13 @@ function filterFeature(list, opts) {
 // 搜索：返回候选列表（不落库）
 // type 为可选的分类 ID（如 29=国产动漫、30=日韩动漫）：
 // 动漫类资源在全局搜索里几乎被淹没，限定分类后命中率显著提高。
-export async function searchMaccms(source, keyword, limit = 20, type = null) {
+export async function searchMaccms(source, keyword, limit = 20, type = null, timeoutMs = 10000) {
   const params = { ac: 'videolist', wd: keyword, pg: 1 };
   if (type) params.t = type;
   const url = buildUrl(source.api, params);
-  const body = await fetchJson(url);
+  // timeoutMs 由调用方按阶段给：动漫类目搜索是一次「锦上添花」的补充，
+  // 个别源（实测量子资源）会挂满 10s，给它 2.5s 就够 —— 超时即放弃，不拖累整批。
+  const body = await fetchJson(url, timeoutMs);
   const list = Array.isArray(body.list) ? body.list : [];
   const items = list.map((raw) => normalizeVod(raw, source));
   return filterFeature(items, { allowAnime: !!type }).slice(0, limit);
@@ -228,7 +250,38 @@ const ANIME_CLASS_RE = /^(国产|日韩|欧美)动漫$/;
 const CLASS_CACHE_TTL = 60 * 60 * 1000;
 const classCache = new Map(); // source.key -> { ids: number[], at: number }
 
+// —— 动漫类目 ID 硬编码表（2026-10-07 实测，由 ac=list 返回的类目名称反查得到）——
+// 为什么硬编码：ac=list 是一次「只为拿类目 ID」的额外往返，12 个源要 0.2~2.0s，
+// 且换 isolate 冷启动时必然重来一遍。这些 ID 极少变动，实测一次固化下来之后，
+// 动漫类目搜索就能与关键词搜索**同时**发起，整段串行等待消失。
+// 表里没有的源（例如用 VOD_SOURCES 自定义的源）仍走下面的 ac=list 动态发现。
+//   ikun 固定为空数组：它没有以「国产/日韩/欧美动漫」命名的类目（实测 ac=list 无匹配），
+//   记录成空数组是为了与「表里没这个源」区分开，避免每次都去网络上白跑一趟。
+const ANIME_CLASS_IDS = {
+  dytt: [29, 30, 31],
+  hongniu: [38],
+  jszy: [26],
+  guangsu: [43],
+  ikun: [],
+  lzi: [29, 30, 31],
+  ffzy: [29, 30, 31],
+  zuid: [29, 30, 31],
+  jyzy: [26],
+  hhzy: [26],
+  subo: [26],
+  zy360new: [38, 39, 40]
+};
+
+// 同步取类目 ID：命中硬编码表返回数组（可能为空数组），未知源返回 null。
+// 调用方据此判断是否需要发起网络发现 —— 默认 12 个源全部命中，零往返。
+export function getAnimeClassIdsSync(source) {
+  if (!Object.prototype.hasOwnProperty.call(ANIME_CLASS_IDS, source.key)) return null;
+  return ANIME_CLASS_IDS[source.key];
+}
+
 export async function getAnimeClassIds(source) {
+  const hard = getAnimeClassIdsSync(source);
+  if (hard) return hard;
   const hit = classCache.get(source.key);
   if (hit && Date.now() - hit.at < CLASS_CACHE_TTL) return hit.ids;
   let ids = [];
@@ -262,6 +315,22 @@ export const DEFAULT_VOD_SOURCES = [
   { key: 'ffzy', name: '非凡资源', api: 'https://api.ffzyapi.com/api.php/provide/vod/' },
   // 最大资源：补动漫条目；偶发返回非 JSON，由 fetchJson 容错
   { key: 'zuid', name: '最大资源', api: 'https://api.zuidapi.com/api.php/provide/vod' },
+  // —— 2026-10-07 二次扩容：候选源实测后新增 4 个（均通过 m3u8 拉流探活）——
+  //   jyzy  金鹰资源  关键词搜索 65~177ms，是全部源里最快的；探活 HTTP 206
+  //   hhzy  豪华资源  139~232ms；探活 HTTP 200 application/vnd.apple.mpegurl
+  //   subo  速播资源  179~267ms；探活 HTTP 200
+  //   zy360new 360资源 1.1~1.5s，但目录最深：「凡人修仙传」11 条，其余源多为 3~5 条
+  // 说明：guangsu / hhzy / subo / jyzy 的上游片库高度重合（同一部剧的片名列表一致），
+  // 但它们各自挂不同 CDN（gsm3u8 / hhm3u8 / subm3u8 / jinyingm3u8），
+  // 多一条线路就多一次「这条播不了换下一条」的机会，因此保留。
+  // 已剔除的候选：wolong / sdzy / aosika（返回非 JSON）、tianwei（3.6~5.4s 过慢）、
+  //   jkun（仅 2 条）、hn2（与 hongniu 同库）、bdzy / wujin（直链 403）、
+  //   mozhua / tyys / p210 / ky / xpzy / mtzy / sszy / tiankong / yhm3u8 / hhzy2 /
+  //   libvio / heimuer（域名不可达或返回空）。
+  { key: 'jyzy', name: '金鹰资源', api: 'http://jyzyapi.com/provide/vod/' },
+  { key: 'hhzy', name: '豪华资源', api: 'https://hhzyapi.com/api.php/provide/vod/' },
+  { key: 'subo', name: '速播资源', api: 'https://subocaiji.com/api.php/provide/vod/' },
+  { key: 'zy360new', name: '360资源', api: 'https://360zyzz.com/api.php/provide/vod/' },
 ];
 
 // 已移除的源（保留记录，便于以后复查是否恢复）：

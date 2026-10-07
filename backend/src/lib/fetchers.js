@@ -5,7 +5,8 @@
 
 import { HttpError } from './response.js';
 import {
-  getVodSources, searchMaccms, detailMaccms, checkMaccms, curatedMaccms, getAnimeClassIds
+  getVodSources, searchMaccms, detailMaccms, checkMaccms, curatedMaccms,
+  getAnimeClassIds, getAnimeClassIdsSync, titleRelevance
 } from './maccms.js';
 import { cinemetaLookup, bangumiLookup, kitsuLookup } from './metadb.js';
 import { getMetingInstances, searchMetingMusic } from './meting.js';
@@ -245,7 +246,8 @@ function audiusStreamUrls(trackId) {
 async function searchAudiusMusic(q, limit) {
   const res = await fetchWithTimeout(
     `https://api.audius.co/v1/tracks/search?query=${encodeURIComponent(q)}&limit=${limit}&app_name=${AUDIUS_APP}`,
-    { headers: { 'User-Agent': UA, Accept: 'application/json' } }
+    { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+    AUDIUS_TIMEOUT_MS
   );
   if (!res.ok) throw new HttpError(502, `音乐元信息接口请求失败 (${res.status})`);
 
@@ -279,7 +281,8 @@ async function searchAudiusMusic(q, limit) {
 async function searchItunesMusic(q, limit) {
   const res = await fetchWithTimeout(
     `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=${limit}`,
-    { headers: { 'User-Agent': UA, Accept: 'application/json' } }
+    { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+    ITUNES_TIMEOUT_MS
   );
   if (!res.ok) throw new HttpError(502, `音乐元信息接口请求失败 (${res.status})`);
 
@@ -307,7 +310,8 @@ async function searchItunesMusic(q, limit) {
 async function searchDeezerMusic(q, limit) {
   const res = await fetchWithTimeout(
     `https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=${limit}`,
-    { headers: { 'User-Agent': UA, Accept: 'application/json' } }
+    { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+    DEEZER_TIMEOUT_MS
   );
   if (!res.ok) throw new HttpError(502, `音乐元信息接口请求失败 (${res.status})`);
 
@@ -355,8 +359,15 @@ async function searchDeezerMusic(q, limit) {
 // ---------------------------------------------------------------
 // 时间预算（毫秒）：外部接口质量参差，用预算把「最坏耗时」钉死，
 // 避免个别慢接口把整次搜索拖到十几秒。
-const MUSIC_BUDGET_MS = 7000;   // 音乐：全部音源并发阶段的整体预算
-const ENRICH_BUDGET_MS = 4000;  // 影视：搜索后元信息补全阶段
+const MUSIC_BUDGET_MS = 6000;   // 音乐：全部音源并发阶段的整体预算
+// 各音源的单独超时：整段预算只是兜底，真正的限流靠这里 ——
+// 任何一路挂住时，其余音源的结果照常返回，而不是一起等到 6s。
+const METING_TIMEOUT_MS = 5000;
+const GD_TIMEOUT_MS = 5000;
+const AUDIUS_TIMEOUT_MS = 5000;
+const ITUNES_TIMEOUT_MS = 4000;
+const DEEZER_TIMEOUT_MS = 4000;
+const ENRICH_BUDGET_MS = 2200;  // 影视：搜索后元信息补全阶段（只补前 4 条，不需要 4s）
 const COVER_BUDGET_MS = 2500;   // 音乐：封面 / 歌手头像补全阶段
 const GD_BASE = 'https://music-api.gdstudio.xyz/api.php';
 export const GD_DEFAULT_SOURCE = 'netease';
@@ -446,7 +457,10 @@ const GD_RESOLVE_LIMIT = 3;
 // （用户点播/收藏时调 POST /api/music/stream 现取直链）。
 // 这样搜索结果数量从「解析成功的那几条（≤3）」变成「源站命中的全部条目」。
 async function searchGdstudioMusic(q, limit, source = GD_DEFAULT_SOURCE) {
-  const list = await gdApi({ types: 'search', source, name: q, count: Math.max(limit, 30), pages: 1 });
+  // 实测取回上限（2026-10-07）：netease count=50 → 50 条，count=100 → HTTP 422；
+  // joox 无论给多少都固定 30 条。故统一按 50 请求，多要的部分由上游自行截断。
+  const list = await gdApi({ types: 'search', source, name: q,
+    count: Math.min(Math.max(limit, 30), 50), pages: 1 }, GD_TIMEOUT_MS);
   if (!Array.isArray(list) || !list.length) return { source: 'gdstudio', candidates: [] };
 
   const rows = list.slice(0, limit);
@@ -539,6 +553,78 @@ function candidateRank(c) {
   return quality * 100 + (PLATFORM_RANK[c.platform] || 0) * 10 + (c.audio_url ? 1 : 0);
 }
 
+// —— 音乐结果重排 ——
+// 源站的搜索顺序对「搜歌手」极不友好。实测（2026-10-07，qijieya / netease，limit=100）：
+//   搜「周杰伦」前 10 条：布拉格广场 / 屋顶 / 想你就写信(Live) / 默(Live) / 因为爱情(Live) ...
+//     —— 前 10 里 6 条是合唱或 Live，晴天、稻香、青花瓷被埋到第 86~92 位；
+//   搜「孤勇者」前 30 条里 12 条带 Live / 童声版 / DJ 版 / 片段 标记。
+// 直接按源站顺序展示，用户看到的就是「一搜歌手全是翻唱和现场版」。
+// 这里按「可播 → 查询词命中（歌手命中权重最高）→ 独唱优先 → 版本噪声降权」重排。
+// ⚠ 只降权、不过滤：Live / 翻唱本身是有价值的资源，只是不该占据最前面。
+const MUSIC_JUNK_RE = /[（(\[][^）)\]]{0,6}(live|演唱会|现场|翻唱|伴奏|纯音乐|remix|重制|demo|铃声|片段|串烧|改编版|深情版|烟嗓|女声版|男声版|童声版|抖音|dj版|加速版|慢速版|广场舞|钢琴版|吉他版|八音盒|纯享|完整版|加长版|剪辑版|混音|对唱版)[^）)\]]{0,8}[）)\]]/i;
+const MUSIC_JUNK_LOOSE_RE = /(live|演唱会|现场版|翻唱|伴奏|dj版|remix|抖音|深情版|女声版|童声版|烟嗓|广场舞)/i;
+const MUSIC_DERIV_RE = /(原唱|原曲|致敬|纪念版|怀旧|合辑|合集|精选|歌单|串烧|音乐台|电台)/;
+
+const normKey = (s) => String(s || '')
+  .replace(/[\s\-_.·・()（）\[\]【】「」《》"'’“”,，。!！?？]/g, '')
+  .toLowerCase();
+
+function musicScore(c, query) {
+  const title = String(c.title || '');
+  const artist = String(c.artist || '');
+  const nt = normKey(title);
+  const na = normKey(artist);
+  const nq = normKey(query);
+  let s = 0;
+
+  // 能直接出声的优先。⚠ 完整音轨与 30 秒试听要分开给分：
+  // iTunes / Deezer 的 previewUrl 人人都有（连「我不是周杰伦」这种蹭词条也有），
+  // 若与 Meting / GD 的完整音轨同分，搜索结果会被一堆试听片段占据。
+  if (c.audio_url) s += 30;
+  else if (c.preview_url) s += 8;
+
+  if (nq) {
+    // 搜歌手：歌手字段**原始字面**完全一致才算「本人」。
+    // ⚠ 不能只比归一化结果：网易云上有大量同名 / 擦边账号
+    //（歌手字段写成「周杰伦.」「周杰伦♚」「东北周杰伦」「周杰伦jay」），
+    // 归一化之后「周杰伦.」就等于「周杰伦」，冒充号会和本人拿同样满分并因源站顺序胜出
+    //（实测榜首变成「可惜故事太长，只有风听我讲 | 周杰伦.」）。
+    // 因此分三档：字面一致 +55 > 归一化一致 +30 > 归一化包含 +18。
+    const rawArtist = artist.trim();
+    const rawQuery = String(query || '').trim();
+    if (rawArtist === rawQuery) s += 55;
+    else if (na === nq) s += 30;
+    else if (na.includes(nq)) s += 18;
+    // 搜歌名：歌名「就是」查询词 > 「以查询词开头」> 「包含查询词」。
+    // 三级细分是为了压住蹭词条：「我不是周杰伦」「感谢周杰伦」这类歌名只该拿最小的加成。
+    if (nt === nq) s += 45;
+    else if (nt.startsWith(nq)) s += 18;
+    else if (nt.includes(nq)) s += 8;
+  }
+
+  // 多源确认：同一首歌同时命中 Meting 与 GD 两个独立上游 → 更可能是正规条目。
+  // 冒充号 / 个人上传通常只存在于单一上游。
+  if ((c.srcCount || 1) >= 2) s += 20;
+
+  // 歌手纯度：搜歌手时优先本人的独唱，合唱降权
+  if (nq && na.includes(nq)) {
+    const parts = artist.split(/[/,、&]/).map((x) => x.trim()).filter(Boolean);
+    s += parts.length === 1 ? 22 : -14;
+  }
+
+  // 版本噪声：remaster / 重制 / 数字修复 这类后缀只是同一首歌的另一版，
+  // 不该盖过原始版本（真·原版通常不带任何后缀）。
+  if (/(remaster|重制|数字修复|母带|高清修复|重录)/i.test(title)) s -= 20;
+
+  if (MUSIC_JUNK_RE.test(title) || MUSIC_JUNK_LOOSE_RE.test(title)) s -= 48;
+  if (MUSIC_DERIV_RE.test(title)) s -= 22;
+  // 带括号补充语的（Live）/（正式版）/（Remix）一律视为非首选版本
+  if (/[（(\[][^）)\]]{2,20}[）)\]]/.test(title)) s -= 12;
+  // 歌名过长通常是合集 / 串烧
+  if (title.length > 26) s -= 12;
+  return s;
+}
+
 // 合并同一首歌的多源结果：播放地址与音质取更优的一侧，封面/专辑/时长等元信息互补
 // （GD音乐台拿不到可直接引用的封面地址，正好由 iTunes / Deezer 的封面补上）
 function mergeCandidate(prev, next) {
@@ -575,8 +661,15 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
   if (!q) throw new HttpError(422, '缺少搜索关键词');
   // 每个上游都请求「至少 30 条」：只有拿到足够多的原始条目，
   // 跨源去重后才有足够结果可展示。（此前 limit 被逐层下传，最终被截到个位数。）
-  const perSource = Math.max(limit, 30);
-  const capped = Math.min(limit, 60);
+  // 原始池要**明显大于**显示条数，否则重排就是空中楼阁：
+  // 实测搜「周杰伦」，正片「晴天」在 netease 里排在第 86 位，
+  // 若只取 limit(40) 条，重排再准也捞不到它 —— 原始池必须够深。
+  // 单源取回上限（2026-10-07 实测）：Meting 支持到 100；GD netease 到 50、joox 固定 30。
+  // 实测：搜「周杰伦」，真·正片「晴天」「青花瓷」「七里香」「稻香」在 netease 里
+  // 排在第 86~92 位，取 80 条仍然够不到 —— 因此直接按上游的能力上限取满 100。
+  // 代价可忽略：Meting 返回 100 条约 500ms，且全部带可直接播放的取流地址。
+  const perSource = Math.min(Math.max(limit * 3, 60), 100);
+  const capped = Math.min(limit, 80);
 
   // 多源并发，任一失败不影响其余：
   //   Meting 公共实例 —— 搜索即带可直接播放的直链，是结果数量的主力
@@ -584,14 +677,21 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
   //   Audius   —— 独立音乐完整音轨（320kbps）
   //   iTunes / Deezer —— 仅 30 秒试听，主要作为元信息与封面来源
   const metingJobs = getMetingInstances(env).flatMap((inst) =>
-    inst.servers.map((server) => searchMetingMusic(inst, server, q, perSource))
+    inst.servers.map((server) => searchMetingMusic(inst, server, q, perSource, METING_TIMEOUT_MS))
   );
 
   // 每个音源都套时间预算：任一慢源不再拖住整次搜索（Meting 公共实例偶发慢响应）。
   // 同一次同步表达式内创建 Promise 并立刻交给 Promise.all，避免未处理的拒绝。
+  // GD音乐台上游：实测只有 netease / joox 可用（其余 source 一律 HTTP 400）。
+  // 两者是**独立片库**：搜「周杰伦」，netease 首条是「布拉格广场」，joox 首条是「星晴」；
+  // 且 joox 的 types=url 返回 br=999 的无损 FLAC（探活 206 audio/x-flac），
+  // 与 netease 的 1619kbps 互为补充 —— 因此两个都查。
+  const gdSources = String(env.GD_MUSIC_SOURCES || 'netease,joox')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+
   const settled = await Promise.all([
     ...metingJobs,
-    searchGdstudioMusic(q, perSource, env.GD_MUSIC_SOURCE || GD_DEFAULT_SOURCE),
+    ...gdSources.map((src) => searchGdstudioMusic(q, perSource, src)),
     searchAudiusMusic(q, perSource),
     searchItunesMusic(q, perSource),
     searchDeezerMusic(q, perSource)
@@ -607,11 +707,15 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
       const key = dedupeKey(c);
       if (index.has(key)) {
         const i = index.get(key);
-        merged[i] = mergeCandidate(merged[i], c);
+        // 记录「同一首歌被几个上游分别命中」：musicScore 用它做多源确认加权。
+        merged[i] = {
+          ...mergeCandidate(merged[i], c),
+          srcCount: (merged[i].srcCount || 1) + 1
+        };
         continue;
       }
       index.set(key, merged.length);
-      merged.push(c);
+      merged.push({ ...c, srcCount: 1 });
     }
   }
 
@@ -630,8 +734,11 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
     };
   }
 
-  // 可完整播放的排前面，试听片段垫底
-  merged.sort((a, b) => candidateRank(b) - candidateRank(a));
+  // 排序分两段：先看「相关度 + 版本质量」（musicScore），同分再比采集质量。
+  // 只按采集质量排是不够的：源站默认顺序会把「布拉格广场（合唱）」「默 (Live)」
+  // 排在「晴天」「稻香」前面 —— 这正是「搜一个歌手出来一堆 Live/翻唱」的根因。
+  merged.sort((a, b) => musicScore(b, q) - musicScore(a, q)
+    || candidateRank(b) - candidateRank(a));
 
   const top = merged.slice(0, capped);
   // 封面补全：GD音乐台不返回可直接引用的封面地址，优先用同曲的 iTunes/Deezer 封面（mergeCandidate 已合）；
@@ -977,11 +1084,17 @@ function movieKey(c) {
 // 并发查询全部配置的采集源，按标题+年份去重，多源结果合并线路。
 // 参见 lib/maccms.js。仅抓取元信息与播放地址字符串。
 // ---------------------------------------------------------------
-// 实测（2026-10-07）除已移除的 zy360 外，各源关键词搜索均在 2.1s 内返回，
-// 类目发现均在 5s 内返回；因此预算收到「比实测最慢值略宽」即可，
-// 既保住正常源，又把个别源抖动时的最坏耗时钉住。
-const KW_BUDGET_MS = 4000;      // 关键词搜索阶段整体预算
-const ANIME_BUDGET_MS = 3200;   // 动漫类目补充阶段预算
+// 实测（2026-10-07，12 个源）：
+//   关键词搜索 单源 0.3~1.9s（个别源抖动时会到 5s）
+//   类目搜索   单源 0.2~1.2s，但量子资源 lzi#29 会挂满 10s
+// 预算按「略宽于常态最慢值」设，超时的源直接放弃、其余照常返回。
+const KW_BUDGET_MS = 2800;          // 关键词搜索阶段整体预算
+const ANIME_BUDGET_MS = 3400;       // 动漫类目补充阶段预算
+const KW_CALL_TIMEOUT_MS = 2600;    // 单源关键词调用的超时（防止一个源挂满 10s）
+// 动漫类目调用给 3.2s：实测「量子资源 lzi#29」在 1.8s~10s 之间大幅抖动，
+// 给 2.5s 会时不时把它的动漫正片（「凡人修仙传」）丢掉，给 3.2s 命中率明显更稳。
+// 常态下它与关键词搜索并行，只有这一路慢；不影响其余 20 个类目任务的返回。
+const ANIME_CALL_TIMEOUT_MS = 3200;
 
 async function searchMaccmsAll(keyword, limit, env) {
   const sources = getVodSources(env);
@@ -990,35 +1103,45 @@ async function searchMaccmsAll(keyword, limit, env) {
   // 若把 limit 直接下传，去重后往往只剩几条 —— 这是「搜一部剧只有很少内容」的主因之一。
   const perSource = Math.max(limit, 20);
 
-  // ① 关键词搜索 与 ② 动漫类目发现 **并发**发起，并各套时间预算。
-  // 两者在同一个同步表达式里创建 Promise 并立刻交给 all，
-  // 既不会出现「中间隔着 await → 未处理的 Promise 拒绝」（会导致整请求中断），
-  // 也不让类目发现串行拖慢整次搜索。
-  const [kwSettled, animeIds] = await Promise.all([
+  // ① 先确定各源的动漫类目 ID。
+  // 默认源表已硬编码 → getAnimeClassIdsSync 同步返回，**零网络往返**；
+  // 只有 VOD_SOURCES 自定义的未知源才需要一次 ac=list 发现（走下面的 await）。
+  const animeJobs = [];
+  const unknownSources = [];
+  for (const s of sources) {
+    const ids = getAnimeClassIdsSync(s);
+    if (ids) {
+      for (const t of ids) animeJobs.push({ source: s, type: t });
+    } else {
+      unknownSources.push(s);
+    }
+  }
+  if (unknownSources.length) {
+    const discovered = await Promise.all(unknownSources.map((s) => getAnimeClassIds(s)
+      .then((ids) => ({ source: s, ids }))));
+    for (const d of discovered) {
+      for (const t of (d.ids || [])) animeJobs.push({ source: d.source, type: t });
+    }
+  }
+
+  // ② 关键词搜索 与 动漫类目搜索 **同时**发起。
+  // 此前是「类目发现 → 类目搜索」两段串行，实测「庆余年」光这两段就要 2.0s + 3.2s；
+  // 类目 ID 硬编码后两段合并成一段，总耗时 = max(关键词, 动漫) 而不是两者之和。
+  // 动漫类目这一步不能省：动漫正片在关键词搜索里几乎被真人剧、短剧和同名作品挤掉
+  //（实测「凡人修仙传」关键词搜索只命中 1 条，按类目搜索合计命中 19 条）。
+  const [kwSettled, animeSettled] = await Promise.all([
     Promise.all(sources.map((s) => withBudget(
-      searchMaccms(s, keyword, perSource), KW_BUDGET_MS, `${s.name} 搜索超时`
+      searchMaccms(s, keyword, perSource, null, KW_CALL_TIMEOUT_MS),
+      KW_BUDGET_MS, `${s.name} 搜索超时`
     ))),
-    Promise.all(sources.map((s) => withBudget(
-      getAnimeClassIds(s), ANIME_BUDGET_MS, `${s.name} 类目发现超时`
+    Promise.all(animeJobs.map((j) => withBudget(
+      searchMaccms(j.source, keyword, perSource, j.type, ANIME_CALL_TIMEOUT_MS),
+      ANIME_BUDGET_MS, `${j.source.name} 动漫类目超时`
     )))
   ]);
 
-  // ③ 动漫类目搜索依赖 ② 的结果，只能在之后发起。
-  // 这一步不能省：动漫正片在关键词搜索里几乎被真人剧、短剧和同名作品挤掉
-  //（实测「凡人修仙传」关键词命中 0 条动漫，按类目命中 7 条）。
-  const animeTasks = [];
-  sources.forEach((s, i) => {
-    const ids = animeIds[i].ok && Array.isArray(animeIds[i].v) ? animeIds[i].v : [];
-    for (const t of ids) {
-      animeTasks.push({ key: s.key, run: () => searchMaccms(s, keyword, perSource, t) });
-    }
-  });
-  const animeSettled = animeTasks.length
-    ? await Promise.all(animeTasks.map((t) => withBudget(t.run(), ANIME_BUDGET_MS)))
-    : [];
-
   const settled = [...kwSettled, ...animeSettled];
-  const keys = [...sources.map((s) => s.key), ...animeTasks.map((t) => t.key)];
+  const keys = [...sources.map((s) => s.key), ...animeJobs.map((j) => j.source.key)];
 
   const sourcesUsed = [];
   const merged = [];
@@ -1059,17 +1182,17 @@ async function searchMaccmsAll(keyword, limit, env) {
 
   // 与关键词的相关度排序：完全同名 > 前缀命中 > 包含 > 其他；同档位保持「先关键词搜索、后类目搜索」的原顺序，
   // 这样「凡人修仙传」「凡人修仙传2020」这类正片会排在「凡人修仙传之XX外传」之前。
-  const kw = String(keyword || '').replace(/\s/g, '');
-  const relevance = (c) => {
-    const t = String(c.title || '').replace(/\s/g, '');
-    if (t === kw) return 0;
-    if (t.startsWith(kw)) return 1;
-    if (t.includes(kw)) return 2;
-    return 3;
-  };
   const ranked = merged
-    .map((c, i) => ({ c, i, r: relevance(c), playable: c.playable_url ? 0 : 1 }))
-    .sort((a, b) => a.r - b.r || a.playable - b.playable || a.i - b.i)
+    .map((c, i) => ({
+      c,
+      i,
+      r: titleRelevance(c.title, keyword),
+      // 同相关度档内按标题长度升序：正片名（「庆余年第二季」）总是短于衍生剧名
+      //（「庆余年之风起沧州」），两者都以关键词开头，只有长度能把正片挑出来。
+      len: String(c.title || '').length,
+      playable: c.playable_url ? 0 : 1
+    }))
+    .sort((a, b) => a.r - b.r || a.len - b.len || a.playable - b.playable || a.i - b.i)
     .map((x) => x.c);
 
   return { sources: sourcesUsed, candidates: ranked, allFailed: settled.every((s) => !s.ok) };
@@ -1131,8 +1254,14 @@ export async function fetchMovieMeta(query, limit = 24, env = {}) {
     const head = primary.candidates.slice(0, capped);
     const enriched = await withBudget(enrichMovieCandidates(head), ENRICH_BUDGET_MS);
     const candidates = enriched.ok ? enriched.v : head;
-    // 新片优先：按上映日期降序，可播放的优先
+    // ⚠ 这里**不能**只按「可播放 + 年份」重排：searchMaccmsAll 已经按相关度排好了序，
+    // 仅按年份重排会把「庆余年第二季」这类正片挤到衍生短剧后面（衍生剧年份通常更新）。
+    // 相关度仍是第一关键字，年份只在同一档内决定先后。
     candidates.sort((a, b) => {
+      const relDiff = titleRelevance(a.title, q) - titleRelevance(b.title, q);
+      if (relDiff !== 0) return relDiff;
+      const lenDiff = String(a.title || '').length - String(b.title || '').length;
+      if (lenDiff !== 0) return lenDiff;
       const playableDiff = Number(!!b.playable_url) - Number(!!a.playable_url);
       if (playableDiff !== 0) return playableDiff;
       const yearA = parseInt((a.release_date || '0000').slice(0, 4)) || 0;

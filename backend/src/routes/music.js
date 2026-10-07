@@ -50,7 +50,7 @@ export async function searchMusicMeta(request, env) {
   const body = await readJson(request);
   const query = requireString(body.query, 'query', { max: 200 });
   // 上限 60：搜歌手要能一次给出整页结果（此前 5 条是「搜出来的东西太少」的主因）
-  const limit = optionalInt(body.limit, 'limit', { min: 1, max: 60 }) ?? 30;
+  const limit = optionalInt(body.limit, 'limit', { min: 1, max: 80 }) ?? 40;
 
   const result = await fetchMusicMeta(query, limit, env);
 

@@ -38,6 +38,24 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
   + '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // 默认实例池：只保留实测「搜索有结果 且 结果自带可播地址」的实例与平台
+//
+// 2026-10-07 二次实测（21 个公共实例 + 20 个上游平台）补充结论：
+//   ① 实例：只有 qijieya 可用。inj0 / mysqil / cenguigui / ohmy / moeyao / 7cu /
+//      vkeys / wolf / kokodayo / sakura / toubie / maou / hfi / chinayang / wuenci /
+//      alcy / nanari / hina / sunyz / qjqq / imeto / dujin / amjun / bytemd / bugpk /
+//      tonk / rainss / xyh / imsyy / nanahira / mgeko / lvmao / zhheo / lcx
+//      全部不可用（连不上 / 404 / 522 / 非 JSON）→ 仍是单实例依赖，
+//      换实例请用环境变量 METING_INSTANCES。
+//   ② 上游平台：migu / ximalaya / joox / spotify / deezer / tidal / qobuz /
+//      soundcloud / fivesing / lizhi / qingting / yinyuetai / apple 在同一关键词下
+//      返回的**曲目集合与 netease 基本一致**（仅排序不同）→ 它们是 netease 的别名，
+//      多挂只会多花一次请求、结果还会被去重吃掉。故只保留 netease + migu
+//      （migu 实测每个关键词能多带 0~6 条 netease 没有的条目，代价约 300ms）。
+//   ③ kugou / tencent 返回的是**真正的独立片库**（搜「周杰伦」给的是晴天/稻香/青花瓷，
+//      比 netease 的合唱与 Live 版本更贴近用户预期），但它们的 type=url 端点返回
+//      空 HTML（200 text/html），拿不到可播地址 —— 且按「歌名+歌手」回查 netease 会
+//      命中翻唱（「晴天(深情版)|Lucky小爱」），会把翻唱冒充原唱，因此**不纳入**。
+//      目录排序上的优势改由 fetchers.js 的 musicScore 重排来补。
 export const DEFAULT_METING_INSTANCES = [
   { key: 'qijieya', base: 'https://api.qijieya.cn/meting/', servers: ['netease', 'migu'] }
 ];
@@ -154,13 +172,17 @@ function metingCandidate(t, instance, server) {
 
 // 搜索：单个实例的单个上游平台。
 // 一次性多取条目（Meting 默认上限 30），前端再做分页 / 筛选。
-export async function searchMetingMusic(instance, server, keyword, limit = 30) {
+// timeoutMs 由调用方按阶段给（见 fetchers.js 的 METING_TIMEOUT_MS）：
+// 单路挂住时不该拖住其余 6 路音源。
+export async function searchMetingMusic(instance, server, keyword, limit = 30, timeoutMs = 5000) {
+  // 实测：qijieya 的 limit 参数是**真的生效**的 —— limit=30/50/100 分别返回 30/50/100 条
+  // （2026-10-07，耗时 358/429/500ms）。此前固定只取 30 条，等于把 70% 的结果留在上游。
   const list = await metingFetchJson(instance.base, {
     server,
     type: 'search',
     id: keyword,
-    limit: Math.max(limit, 30)
-  });
+    limit: Math.min(Math.max(limit, 30), 100)
+  }, timeoutMs);
   const candidates = list
     .filter((t) => t && (t.name || t.title))
     .map((t) => metingCandidate(t, instance, server));

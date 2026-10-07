@@ -186,7 +186,7 @@ export function Music() {
     setSearching(true); setMode('search');
     try {
       // 一次要满一屏：30 条与后端上限对齐（此前 18 条还会被后端各层再截断）
-      const res = await api.searchMusicMeta(q, 30);
+      const res = await api.searchMusicMeta(q, 40);
       setCandidates(res?.candidates || []);
       setSearchNote(res?.note || '');
       setSearchSources(res?.sources || []);

@@ -46,7 +46,7 @@ export async function searchMovieMeta(request, env) {
   const body = await readJson(request);
   const query = requireString(body.query, 'query', { max: 200 });
   // 上限 60：影视搜索要能一次给出足够多的候选（此前 5 条 + 各层再截断，是「搜不出东西」的主因）
-  const limit = optionalInt(body.limit, 'limit', { min: 1, max: 60 }) ?? 24;
+  const limit = optionalInt(body.limit, 'limit', { min: 1, max: 60 }) ?? 30;
 
   const result = await fetchMovieMeta(query, limit, env);
 
@@ -67,7 +67,7 @@ export async function searchMovieMeta(request, env) {
 export async function listMovieLatest(request, env) {
   await requireAuth(request, env);
   const url = new URL(request.url);
-  const limit = optionalInt(url.searchParams.get('limit'), 'limit', { min: 1, max: 60 }) ?? 24;
+  const limit = optionalInt(url.searchParams.get('limit'), 'limit', { min: 1, max: 60 }) ?? 30;
   const sort = url.searchParams.get('sort') === 'new' ? 'new' : 'hot';
   const result = await fetchMovieLatest(limit, env, sort);
   return ok(result, request, env);
