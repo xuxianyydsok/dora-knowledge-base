@@ -26,16 +26,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # wrangler-action 的 command 不支持 <<< herestring（2026-10-07 定位的部署失败根因：
+      # 日志报 Unknown argument: <<<）。secret put 需要 stdin，改用裸 run 步骤 + printf 管道。
       - name: Sync Worker secrets
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: backend
-          command: |
-            secret put SUPABASE_URL <<< "${{ secrets.SUPABASE_URL }}"
-            secret put SUPABASE_ANON_KEY <<< "${{ secrets.SUPABASE_ANON_KEY }}"
-            secret put SUPABASE_SERVICE_ROLE_KEY <<< "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
+        working-directory: backend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          printf '%s' "${{ secrets.SUPABASE_URL }}" | npx wrangler secret put SUPABASE_URL
+          printf '%s' "${{ secrets.SUPABASE_ANON_KEY }}" | npx wrangler secret put SUPABASE_ANON_KEY
+          printf '%s' "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
