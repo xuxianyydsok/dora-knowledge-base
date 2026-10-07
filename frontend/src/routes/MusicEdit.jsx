@@ -67,7 +67,7 @@ export function MusicEdit({ id }) {
       <div class="toolbar">
         <h2 style="margin:0">{isNew ? '添加音乐' : '编辑音乐'}</h2>
       </div>
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
 
       <form class="stack" onSubmit={save}>
         <label>歌曲名称 *<input value={form.title} onInput={(e) => set('title', e.currentTarget.value)} required /></label>

@@ -7,6 +7,7 @@ import { MoviePlayer } from '../components/MoviePlayer.jsx';
 import { TagChip } from '../components/TagChip.jsx';
 import { Icon } from '../components/Icon.jsx';
 
+import { LoadingState, ErrorState } from '../components/StateView.jsx';
 // 采集源的线路标识（vod_play_from）是站点内部代号，展示时换成人能读的源名
 const ROUTE_LABELS = [
   [/lzm3u8|lzi/i, '量子资源'],
@@ -124,8 +125,8 @@ export function MovieView({ id }) {
     );
   }
 
-  if (error && !movie) return <div class="center-box" style="color:var(--danger)">{error}</div>;
-  if (!movie) return <div class="center-box">加载中…</div>;
+  if (error && !movie) return <ErrorState title="影视详情加载失败" message={error} />;
+  if (!movie) return <LoadingState shape="poster" count={6} />;
 
   const year = t.release_date ? String(t.release_date).slice(0, 4) : null;
   const isSeries = t.media_type === 'tv' || episodes.length > 1;
@@ -226,7 +227,7 @@ export function MovieView({ id }) {
         </>
       )}
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
 
       {t.notes && (
         <section class="stack">

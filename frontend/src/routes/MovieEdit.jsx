@@ -68,7 +68,7 @@ export function MovieEdit({ id }) {
       <div class="toolbar">
         <h2 style="margin:0">{isNew ? '添加影视' : '编辑影视'}</h2>
       </div>
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
 
       <form class="stack" onSubmit={save}>
         <div class="row" style="gap:12px;flex-wrap:wrap">

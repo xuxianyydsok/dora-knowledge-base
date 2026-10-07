@@ -50,7 +50,7 @@ export function Backup() {
         sub="导出你名下的分类、标签、资源、博客与收藏为 JSON，或从备份文件恢复。"
       />
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
       {status && <p style="color:var(--primary)">{status}</p>}
 
       <div class="card" style="padding:16px">

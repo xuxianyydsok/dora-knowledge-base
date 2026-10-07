@@ -4,6 +4,7 @@ import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { GraphView } from '../components/GraphView.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { LoadingState, EmptyState } from '../components/StateView.jsx';
 
 export function Graph() {
   const [data, setData] = useState(null);
@@ -40,11 +41,11 @@ export function Graph() {
         <button onClick={load}>刷新</button>
       </PageHeader>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
-      {loading ? <div class="center-box">加载中…</div>
+      {error && <div class="notice danger">{error}</div>}
+      {loading ? <LoadingState shape="card" count={4} />
         : data?.nodes?.length
           ? <GraphView data={data} onSelect={onSelect} />
-          : <div class="center-box">暂无关联数据，先添加一些资源与博客吧。</div>}
+          : <EmptyState icon="graph" title="暂无关联数据" hint="先添加一些资源与博客，图谱会自动把它们连起来。" />}
     </section>
   );
 }

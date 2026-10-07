@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { LoadingState, EmptyState } from '../components/StateView.jsx';
 
 export function AdminUsers() {
   const { user, isAdmin } = useAuth();
@@ -47,7 +48,7 @@ export function AdminUsers() {
   }
 
   if (!isAdmin) {
-    return <div class="center-box">需要管理员权限。</div>;
+    return <EmptyState icon="crown" title="需要管理员权限" hint="该页面仅管理员可见。" />;
   }
 
   const shown = users.filter((u) => {
@@ -79,11 +80,11 @@ export function AdminUsers() {
         <button onClick={load}>刷新</button>
       </PageHeader>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
       {status && <p style="color:var(--primary)">{status}</p>}
 
-      {loading ? <div class="center-box">加载中…</div> : shown.length === 0 ? (
-        <div class="center-box">没有匹配的用户。</div>
+      {loading ? <LoadingState shape="list" /> : shown.length === 0 ? (
+        <EmptyState icon="search" title="没有匹配的用户" hint="换个关键词，或清空搜索条件。" />
       ) : (
         <div class="stack">
           {shown.map((u) => {

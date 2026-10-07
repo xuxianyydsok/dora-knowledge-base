@@ -9,6 +9,7 @@ import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { LoadingState } from '../components/StateView.jsx';
 
 export function Favorites() {
   const [items, setItems] = useState([]);
@@ -82,8 +83,8 @@ export function Favorites() {
         <ViewSwitch />
       </PageHeader>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
-      {loading ? <div class="center-box">加载中…</div> :
+      {error && <div class="notice danger">{error}</div>}
+      {loading ? <LoadingState shape="card" /> :
         viewMode === 'gallery'
           ? <GalleryView items={shown} renderCard={renderCard} />
           : <TimelineView items={shown} renderCard={renderCard} />}

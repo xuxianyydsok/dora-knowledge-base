@@ -8,6 +8,7 @@ import { Icon } from '../components/Icon.jsx';
 import { TagChip } from '../components/TagChip.jsx';
 import { usePlayer } from '../lib/player.jsx';
 
+import { LoadingState, ErrorState } from '../components/StateView.jsx';
 function fmtDuration(sec) {
   if (!Number.isFinite(sec) || sec <= 0) return '';
   const m = Math.floor(sec / 60);
@@ -40,8 +41,8 @@ export function MusicView({ id }) {
   )).slice(0, 12), [all, id, music]);
   const others = useMemo(() => all.filter((m) => m.id !== id).slice(0, 12), [all, id]);
 
-  if (error) return <div class="center-box" style="color:var(--danger)">{error}</div>;
-  if (!music) return <div class="center-box">加载中…</div>;
+  if (error) return <ErrorState title="曲目加载失败" message={error} />;
+  if (!music) return <LoadingState shape="album" count={4} />;
 
   const t = music.track || {};
   const md = music.metadata || {};

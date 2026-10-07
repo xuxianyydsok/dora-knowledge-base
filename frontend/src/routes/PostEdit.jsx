@@ -64,7 +64,7 @@ export function PostEdit({ id }) {
         <button onClick={() => setShowPreview((v) => !v)}>{showPreview ? '隐藏预览' : '显示预览'}</button>
       </div>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
 
       <form class="stack" onSubmit={save}>
         <input placeholder="文章标题" value={form.title} onInput={(e) => set('title', e.currentTarget.value)} required />

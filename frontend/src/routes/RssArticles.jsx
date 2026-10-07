@@ -9,6 +9,7 @@ import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
+import { LoadingState } from '../components/StateView.jsx';
 // preact-router 不解析 query string，这里直接从 location.search 读取 feed_id
 function readFeedIdFromUrl() {
   if (typeof window === 'undefined') return '';
@@ -91,9 +92,13 @@ export function RssArticles() {
   );
 
   return (
-    <section>
+    <section class="page-col">
+      <PageHeader
+        kicker="RSS Reader"
+        title="RSS 条目"
+        sub="按订阅源与未读状态筛选；列表可在画廊与时间流之间切换。"
+      />
       <div class="toolbar">
-        <h2 style="margin:0">RSS 条目</h2>
         <select
           value={feedId}
           onChange={(e) => setFeedId(e.currentTarget.value)}
@@ -114,9 +119,9 @@ export function RssArticles() {
         <ViewSwitch />
       </div>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
 
-      {loading ? <div class="center-box">加载中…</div> :
+      {loading ? <LoadingState shape="list" /> :
         viewMode === 'gallery'
           ? <GalleryView items={items} renderCard={renderCard} />
           : <TimelineView items={items} renderCard={renderCard} />}

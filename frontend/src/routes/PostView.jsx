@@ -6,6 +6,7 @@ import { PostRenderer } from '../components/PostRenderer.jsx';
 import { TagChip } from '../components/TagChip.jsx';
 import { Icon } from '../components/Icon.jsx';
 
+import { LoadingState, ErrorState } from '../components/StateView.jsx';
 export function PostView({ id }) {
   const [post, setPost] = useState(null);
   const [error, setError] = useState('');
@@ -17,8 +18,8 @@ export function PostView({ id }) {
     })();
   }, [id]);
 
-  if (error) return <div class="center-box" style="color:var(--danger)">{error}</div>;
-  if (!post) return <div class="center-box">加载中…</div>;
+  if (error) return <ErrorState title="文章加载失败" message={error} />;
+  if (!post) return <LoadingState shape="text" count={6} />;
 
   return (
     <article class="stack">

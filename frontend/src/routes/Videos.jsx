@@ -6,6 +6,7 @@ import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { LoadingState } from '../components/StateView.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { VideoPlayer } from '../components/VideoPlayer.jsx';
 import { Icon } from '../components/Icon.jsx';
@@ -95,14 +96,14 @@ export function Videos() {
         <button class="primary" type="submit" disabled={busy}>{busy ? '抓取中…' : '添加视频'}</button>
       </form>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
 
       {/* 播放中：只保留播放器，列表整体隐藏，避免播放器下方重复出现同一张卡片 */}
       {playing ? (
         <VideoPlayer video={playing} onClose={() => setPlaying(null)} />
       ) : (
         <>
-          {loading ? <div class="center-box">加载中…</div> :
+          {loading ? <LoadingState shape="card" /> :
             viewMode === 'gallery'
               ? <GalleryView items={items} renderCard={renderCard} empty={<EmptyState icon="video" title="还没有收藏视频" hint="把 B站 / YouTube 链接粘到上方的输入框就能自动抓取。" />} />
               : <TimelineView items={items} renderCard={renderCard} empty={<EmptyState icon="video" title="还没有收藏视频" hint="把 B站 / YouTube 链接粘到上方的输入框就能自动抓取。" />} />}

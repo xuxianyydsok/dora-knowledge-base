@@ -6,6 +6,10 @@
 // 加载完成时版面不会「跳一下」；空态与错误态则共用同一套卡片骨架视觉。
 import { Icon } from './Icon.jsx';
 
+// 状态三件套对外只暴露一个入口：加载 / 空 / 错误都从 StateView 取，
+// 免得各页记不清该从哪个文件 import。
+export { EmptyState } from './EmptyState.jsx';
+
 const SHAPES = {
   poster: { grid: 'poster', item: 'sk-poster', count: 12 },
   album: { grid: 'album', item: 'sk-square', count: 12, lines: ['sk-w70', 'sk-w40'] },

@@ -10,6 +10,7 @@ import { useEffect } from 'preact/hooks';
 import { route } from 'preact-router';
 import { useAuth } from '../lib/auth.jsx';
 
+import { LoadingState } from '../components/StateView.jsx';
 export function ProtectedRoute({ children, ...rest }) {
   const { isAuthenticated, loading } = useAuth();
 
@@ -17,7 +18,7 @@ export function ProtectedRoute({ children, ...rest }) {
     if (!loading && !isAuthenticated) route('/login', true);
   }, [loading, isAuthenticated]);
 
-  if (loading) return <div class="center-box">加载中…</div>;
+  if (loading) return <LoadingState shape="list" count={4} />;
   if (!isAuthenticated) return null;
 
   // 把 path / matches / 路由参数（id、slug…）转发给子组件

@@ -7,6 +7,7 @@ import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { LoadingState } from '../components/StateView.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
@@ -68,9 +69,9 @@ export function Posts() {
         <ViewSwitch />
       </PageHeader>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
 
-      {loading ? <div class="center-box">加载中…</div> :
+      {loading ? <LoadingState shape="card" /> :
         viewMode === 'gallery'
           ? <GalleryView items={items} renderCard={renderCard} empty={<EmptyState icon="blog" title="还没有文章" hint="点右上角「新建文章」写下第一篇。" />} />
           : <TimelineView items={items} renderCard={renderCard} empty={<EmptyState icon="blog" title="还没有文章" hint="点右上角「新建文章」写下第一篇。" />} />}

@@ -42,7 +42,7 @@ export function Login() {
           密码
           <input type="password" value={password} onInput={(e) => setPassword(e.currentTarget.value)} required minLength={6} />
         </label>
-        {error && <p class="muted" style="color:var(--danger)">{error}</p>}
+        {error && <div class="notice danger">{error}</div>}
         <button class="primary" type="submit" disabled={busy}>
           {busy ? '处理中…' : mode === 'signin' ? '登录' : '注册'}
         </button>

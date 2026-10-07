@@ -8,6 +8,7 @@ import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { LoadingState } from '../components/StateView.jsx';
 
 export function Tags() {
   const [items, setItems] = useState([]);
@@ -114,8 +115,8 @@ export function Tags() {
         </div>
       </form>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
-      {loading ? <div class="center-box">加载中…</div> :
+      {error && <div class="notice danger">{error}</div>}
+      {loading ? <LoadingState shape="list" /> :
         viewMode === 'gallery'
           ? <GalleryView items={items} renderCard={renderCard} />
           : <TimelineView items={items} renderCard={renderCard} />}

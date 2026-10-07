@@ -7,6 +7,7 @@ import { api } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { usePlayer } from '../lib/player.jsx';
 
+import { LoadingState, ErrorState } from '../components/StateView.jsx';
 // 解析 LRC：支持 [mm:ss.xx] 与 [mm:ss:xx]，一行多时间戳
 function parseLrc(raw) {
   if (!raw) return [];
@@ -89,8 +90,8 @@ export function MusicLyrics({ id }) {
     onUserScroll.timer = setTimeout(() => setAutoScroll(true), 5000);
   }
 
-  if (error) return <div class="center-box" style="color:var(--danger)">{error}</div>;
-  if (!music) return <div class="center-box">加载中…</div>;
+  if (error) return <ErrorState title="歌词加载失败" message={error} />;
+  if (!music) return <LoadingState shape="list" count={4} />;
 
   const t = music.track || {};
   const cover = t.artwork_url || music.cover_path;

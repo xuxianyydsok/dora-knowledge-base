@@ -6,6 +6,7 @@ import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { LoadingState } from '../components/StateView.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
@@ -93,9 +94,9 @@ export function Github() {
         <button class="primary" type="submit" disabled={busy}>{busy ? '抓取中…' : '添加仓库'}</button>
       </form>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
 
-      {loading ? <div class="center-box">加载中…</div> :
+      {loading ? <LoadingState shape="card" /> :
         viewMode === 'gallery'
           ? <GalleryView items={items} renderCard={renderCard} empty={<EmptyState icon="github" title="还没有收藏仓库" hint="粘贴仓库链接即可抓取 Star、语言与描述。" />} />
           : <TimelineView items={items} renderCard={renderCard} empty={<EmptyState icon="github" title="还没有收藏仓库" hint="粘贴仓库链接即可抓取 Star、语言与描述。" />} />}

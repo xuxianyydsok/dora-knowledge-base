@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { Card } from '../components/Card.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { EmptyState } from '../components/StateView.jsx';
 
 const TYPE_OPTIONS = [
   { value: 'all', label: '全部' },
@@ -78,7 +79,7 @@ export function Search({ q: initialQ }) {
         <button class="primary" type="submit" disabled={loading}>{loading ? '搜索中…' : '搜索'}</button>
       </form>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
       {meta && <p class="muted">关键词「{meta.query}」共 {meta.count} 条结果</p>}
 
       <div class="gallery-grid">
@@ -100,7 +101,7 @@ export function Search({ q: initialQ }) {
           />
         ))}
       </div>
-      {!loading && meta && items.length === 0 && <div class="center-box">未找到匹配结果</div>}
+      {!loading && meta && items.length === 0 && <EmptyState icon="search" title="未找到匹配结果" hint="换个关键词，或减少筛选条件。" />}
     </section>
   );
 }

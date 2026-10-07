@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { PageHeader } from '../components/PageHeader.jsx';
+import { LoadingState, EmptyState } from '../components/StateView.jsx';
 
 export function RssFeeds() {
   const [feeds, setFeeds] = useState([]);
@@ -130,11 +131,15 @@ export function RssFeeds() {
         <button class="primary" type="submit" disabled={busy}>{busy ? '处理中…' : '添加订阅'}</button>
       </form>
 
-      {error && <p style="color:var(--danger)">{error}</p>}
+      {error && <div class="notice danger">{error}</div>}
       {status && <p style="color:var(--primary)">{status}</p>}
 
-      {loading ? <div class="center-box">加载中…</div> : feeds.length === 0 ? (
-        <div class="center-box">还没有订阅源，粘贴一个 RSS 链接开始吧。</div>
+      {loading ? <LoadingState shape="list" /> : feeds.length === 0 ? (
+        <EmptyState
+          icon="rss"
+          title="还没有订阅源"
+          hint="粘贴一个 RSS / Atom 链接，就能开始聚合阅读。"
+        />
       ) : (
         <div class="stack">
           {feeds.map((feed) => (

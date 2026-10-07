@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { api } from '../lib/api.js';
 import { Logo } from '../components/Logo.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { LoadingState } from '../components/StateView.jsx';
 
 // 能力矩阵（对应已交付的 Phase1–5 模块）
 const FEATURES = [
@@ -263,7 +264,7 @@ function Dashboard() {
 
 export function Home() {
   const { isAuthenticated, loading, user } = useAuth();
-  if (loading) return <div class="center-box">加载中…</div>;
+  if (loading) return <LoadingState shape="card" count={6} />;
   if (isAuthenticated) return <Dashboard />;
 
   return (

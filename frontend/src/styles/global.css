@@ -787,12 +787,22 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 
 /* ---------------- 通用工具类 ---------------- */
 .muted { color: var(--text-muted); }
+/* 应用级居中状态块：懒加载分包兜底 / 全屏提示用。
+   列表页的三态已统一走 components/StateView.jsx，这里只保留「整块居中」这一种。 */
 .center-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  min-height: 240px;
+  padding: var(--sp-10) var(--sp-6);
   text-align: center;
-  padding: 72px 20px;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   animation: fade-up var(--dur-slow) var(--ease-out) both;
 }
+.center-box .spinner { width: 20px; height: 20px; border-width: 2.5px; }
 .row { display: flex; gap: 10px; align-items: center; }
 .stack { display: flex; flex-direction: column; gap: 14px; }
 .spacer { flex: 1; }

@@ -57,9 +57,9 @@ function RouterView() {
 
 function Shell() {
   const { loading } = useAuth();
-  if (loading) return <div class="center-box">加载中…</div>;
+  if (loading) return <div class="center-box"><span class="spinner" aria-hidden="true" />正在载入…</div>;
   return (
-    <Suspense fallback={<div class="center-box">加载中…</div>}>
+    <Suspense fallback={<div class="center-box"><span class="spinner" aria-hidden="true" />正在载入…</div>}>
       <RouterView />
     </Suspense>
   );
