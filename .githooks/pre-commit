@@ -1,0 +1,27 @@
+#!/bin/sh
+# 提交前凭据扫描闸门。
+#
+# 启用方式（每个克隆各做一次）：
+#   git config core.hooksPath .githooks
+#
+# 起因：2026-10-08 发现管理员邮箱与密码曾以明文进入仓库并公开。
+# 任何 error 级命中都会阻断提交；确属误报请在行尾加 `secret-scan:allow`。
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: 未找到 node，跳过凭据扫描" >&2
+  exit 0
+fi
+
+if [ ! -f scripts/check-secrets.mjs ]; then
+  echo "pre-commit: scripts/check-secrets.mjs 不存在，跳过凭据扫描" >&2
+  exit 0
+fi
+
+if ! node scripts/check-secrets.mjs --staged; then
+  echo "" >&2
+  echo "提交已阻断：暂存区存在疑似明文凭据。" >&2
+  echo "修复后重试；确属误报请在对应行尾加 '// secret-scan:allow' 并注明理由。" >&2
+  exit 1
+fi
+
+exit 0
