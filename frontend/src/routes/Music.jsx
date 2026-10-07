@@ -51,12 +51,17 @@ function AlbumCard({ item, onPlay, onOpen }) {
 
 // 搜索结果行：横向排布（封面 + 曲目信息 + 音源/音质 + 时长 + 收藏）
 // 用户反馈搜索结果用卡片网格不方便扫读，改为一行一首的列表形式。
-const PLATFORM_LABEL = { gdstudio: 'GD音乐台', audius: 'Audius', itunes: 'iTunes', deezer: 'Deezer' };
+const PLATFORM_LABEL = { gdstudio: 'GD音乐台', meting: 'Meting', audius: 'Audius', itunes: 'iTunes', deezer: 'Deezer' };
 
-function SearchRow({ item, busy, onPlay, onCollect }) {
-  const isPreview = item.quality === 'preview';
+function SearchRow({ item, busy, resolving, onPlay, onCollect }) {
+  // needs_resolve：GD 源命中但直链尚未解析（点播时才现取），必须如实标出来，
+  // 否则用户点下去没反应会以为坏了。已拿到直链的一律按实际音质标注。
+  const pending = !item.audio_url && !!item.needs_resolve;
+  const isPreview = !pending && item.quality === 'preview';
   const isLossless = item.format === 'flac' || (item.bitrate || 0) >= 900;
-  const qualityLabel = isPreview ? '试听' : (isLossless ? '无损' : '完整音轨');
+  const qualityLabel = resolving
+    ? '解析中…'
+    : (pending ? '待解析' : (isPreview ? '试听' : (isLossless ? '无损' : '完整音轨')));
   const rate = item.bitrate
     ? `${item.format === 'flac' ? 'FLAC · ' : ''}${item.bitrate}kbps`
     : (item.format === 'flac' ? 'FLAC' : '');
@@ -86,7 +91,7 @@ function SearchRow({ item, busy, onPlay, onCollect }) {
 
       <span class="result-src">{PLATFORM_LABEL[item.platform] || item.platform}</span>
       {rate && <span class="result-rate">{rate}</span>}
-      <span class={`result-quality${isPreview ? ' preview' : ''}`}>{qualityLabel}</span>
+      <span class={`result-quality${isPreview ? ' preview' : ''}${pending && !resolving ? ' pending' : ''}`}>{qualityLabel}</span>
       <span class="result-time">{fmtDuration(item.duration)}</span>
 
       <button
@@ -107,6 +112,9 @@ export function Music() {
   const [query, setQuery] = useState('');
   const [searchedFor, setSearchedFor] = useState('');
   const [candidates, setCandidates] = useState(null);
+  const [searchNote, setSearchNote] = useState('');   // 后端给的「空结果」说明（区分源不可用 / 确实没搜到）
+  const [searchSources, setSearchSources] = useState([]);
+  const [pendingKey, setPendingKey] = useState('');   // 正在现取直链的那一行
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -129,23 +137,45 @@ export function Music() {
     setQuery(q);
     setBusy(true); setError('');
     try {
-      const res = await api.searchMusicMeta(q, 18);
+      // 一次要满一屏：30 条与后端上限对齐（此前 18 条还会被后端各层再截断）
+      const res = await api.searchMusicMeta(q, 30);
       setCandidates(res.candidates || []);
+      setSearchNote(res.note || '');
+      setSearchSources(res.sources || []);
       setSearchedFor(q);
-    } catch (e) { setError(e.message); setCandidates([]); }
+    } catch (e) {
+      setError(e.message); setCandidates([]); setSearchNote(''); setSearchSources([]);
+    }
     finally { setBusy(false); }
   }
 
   async function addFrom(candidate, { play = true } = {}) {
-    setBusy(true); setError('');
+    const rowKey = `${candidate.platform}-${candidate.external_id}-${candidate.title}`;
+    setBusy(true); setPendingKey(rowKey); setError('');
     try {
+      // 「待解析」条目（GD 源命中但未取直链）：点播这一下才去取。
+      // 好处是搜索本身不消耗 GD「5 分钟 50 次」的解析额度，结果条数才上得去。
+      let audioUrl = candidate.audio_url || null;
+      if (!audioUrl && candidate.needs_resolve) {
+        const fresh = await api.resolveMusicStream({
+          platform: candidate.platform,
+          external_id: candidate.external_id,
+          source: candidate.gd_source,
+          meting_base: candidate.meting_base
+        });
+        audioUrl = fresh?.audio_url || null;
+      }
+      if (play && !audioUrl && !candidate.preview_url) {
+        setError(`「${candidate.title}」暂时拿不到播放地址，换一首或稍后重试`);
+        return;
+      }
       const created = await api.createMusic({
         title: candidate.title,
         artist: candidate.artist,
         album: candidate.album,
         artwork_url: candidate.artwork_url,
         artist_avatar: candidate.artist_avatar,
-        audio_url: candidate.audio_url,
+        audio_url: audioUrl,
         audio_fallbacks: candidate.audio_fallbacks,
         preview_url: candidate.preview_url,
         quality: candidate.quality,
@@ -171,7 +201,7 @@ export function Music() {
         route(`/music/${created.id}/play`);
       }
     } catch (e) { setError(e.message); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setPendingKey(''); }
   }
 
   async function remove(id) {
@@ -216,22 +246,35 @@ export function Music() {
           <div class="shelf-head">
             <h2>「{searchedFor}」的搜索结果</h2>
             <span class="count">{candidates.length} 首</span>
+            {searchSources.length > 0 && (
+              <span class="src-count" title={searchSources.join(' · ')}>{searchSources.length} 个音源</span>
+            )}
             <span class="spacer" />
-            <button onClick={() => { setCandidates(null); setSearchedFor(''); }}>关闭</button>
+            <button onClick={() => { setCandidates(null); setSearchedFor(''); setSearchNote(''); setSearchSources([]); }}>关闭</button>
           </div>
           {candidates.length === 0
-            ? <div class="empty-state"><Icon name="music" size={24} /><p>没有找到相关曲目</p><span>换个关键词试试。</span></div>
+            ? (
+              <div class="empty-state">
+                <Icon name="music" size={24} />
+                <p>没有找到相关曲目</p>
+                <span>{searchNote || '换个关键词试试，或只输入歌名。'}</span>
+              </div>
+            )
             : (
               <div class="result-list">
-                {candidates.map((c) => (
-                  <SearchRow
-                    key={`${c.platform}-${c.external_id}-${c.title}`}
-                    item={c}
-                    busy={busy}
-                    onPlay={() => addFrom(c)}
-                    onCollect={() => addFrom(c, { play: false })}
-                  />
-                ))}
+                {candidates.map((c) => {
+                  const rowKey = `${c.platform}-${c.external_id}-${c.title}`;
+                  return (
+                    <SearchRow
+                      key={rowKey}
+                      item={c}
+                      busy={busy}
+                      resolving={pendingKey === rowKey}
+                      onPlay={() => addFrom(c)}
+                      onCollect={() => addFrom(c, { play: false })}
+                    />
+                  );
+                })}
               </div>
             )}
         </section>

@@ -3227,6 +3227,26 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
   border-color: var(--glass-border);
   background: none;
 }
+/* 待解析：源站已命中、直链按需再取。用虚线中性描边与「试听」的实线降权区分开 */
+.result-quality.pending {
+  color: var(--text-muted);
+  border-color: var(--glass-border);
+  border-style: dashed;
+  background: none;
+}
+
+/* 本次检索实际命中的音源数（悬停可看名单） */
+.src-count {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+}
 
 .result-time {
   flex: 0 0 auto;

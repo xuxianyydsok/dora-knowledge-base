@@ -39,6 +39,8 @@ export function Movies() {
   const [mode, setMode] = useState('hot');          // hot | new | search
   const [recoOpen, setRecoOpen] = useState(false);  // 手机端推荐片单默认收起
   const [candidates, setCandidates] = useState([]);
+  const [candNote, setCandNote] = useState('');        // 后端给的「空结果」说明
+  const [candSources, setCandSources] = useState([]);  // 本次实际命中的采集源
   const [error, setError] = useState('');
   const [loadingList, setLoadingList] = useState(true);
   const [loadingCand, setLoadingCand] = useState(false);
@@ -55,11 +57,17 @@ export function Movies() {
   async function loadCandidates(nextMode, q = '') {
     setLoadingCand(true); setError('');
     try {
+      // 一次要满一屏：30 条检索候选，经跨源按片名去重后仍能剩下十几个不同条目
+      // （此前只取 18 条、且被各层二次截断，是「一部剧只搜出两三条」的主因）
       const res = nextMode === 'search'
-        ? await api.searchMovieMeta(q, 18)
+        ? await api.searchMovieMeta(q, 30)
         : await api.listMovieLatest(`?limit=24&sort=${nextMode === 'new' ? 'new' : 'hot'}`);
       setCandidates(res.candidates || []);
-    } catch (e) { setError(e.message); setCandidates([]); }
+      setCandNote(res.note || '');
+      setCandSources(res.sources || []);
+    } catch (e) {
+      setError(e.message); setCandidates([]); setCandNote(''); setCandSources([]);
+    }
     finally { setLoadingCand(false); }
   }
 
@@ -158,7 +166,7 @@ export function Movies() {
         <div class="vod-head-title">
           <span class="page-kicker">Movie Library</span>
           <h1>影视库</h1>
-          <p>聚合 5 个公开采集源，一次检索、多源比对，即点即播。</p>
+          <p>多源并发检索，一次搜索即可跨源比对片名、线路与画质，点海报即入库并可播。</p>
         </div>
         <form class="vod-search" onSubmit={search}>
           <span class="vod-search-icon"><Icon name="search" size={16} /></span>
@@ -225,6 +233,9 @@ export function Movies() {
       <div class="m-head">
         <h2><span class="bar" />{heading}</h2>
         {!loadingCand && <span class="count">{candidates.length} 条</span>}
+        {!loadingCand && candSources.length > 0 && (
+          <span class="src-count" title={candSources.join(' · ')}>{candSources.length} 个源</span>
+        )}
       </div>
 
       {loadingCand ? (
@@ -235,7 +246,7 @@ export function Movies() {
         <div class="empty-state">
           <Icon name="movie" size={26} />
           <p>{mode === 'search' ? `没有找到「${query.trim()}」相关的电影或剧集` : '暂时没有拿到数据'}</p>
-          <span>换个关键词试试，或稍后重试。</span>
+          <span>{candNote || '换个关键词试试，或稍后重试。'}</span>
         </div>
       ) : (
         <div class="vod-grid">

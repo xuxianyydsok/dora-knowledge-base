@@ -83,7 +83,7 @@ export const api = {
   // 音乐库
   listMusic: (params = '') => request(`/api/music${params}`),
   getMusic: (id) => request(`/api/music/${id}`),
-  searchMusicMeta: (query, limit = 5) => request('/api/music/search', { method: 'POST', body: { query, limit } }),
+  searchMusicMeta: (query, limit = 30) => request('/api/music/search', { method: 'POST', body: { query, limit } }),
   getMusicLyrics: (body) => request('/api/music/lyrics', { method: 'POST', body }),
   // 重新解析可播放直链（第三方直链是会过期的签名地址）
   resolveMusicStream: (body) => request('/api/music/stream', { method: 'POST', body }),
@@ -96,7 +96,7 @@ export const api = {
   // 影视库
   listMovies: (params = '') => request(`/api/movies${params}`),
   getMovie: (id) => request(`/api/movies/${id}`),
-  searchMovieMeta: (query, limit = 5) => request('/api/movies/search', { method: 'POST', body: { query, limit } }),
+  searchMovieMeta: (query, limit = 24) => request('/api/movies/search', { method: 'POST', body: { query, limit } }),
   listMovieLatest: (params = '') => request(`/api/movies/latest${params}`),
   getMovieSourceDetail: (body) => request('/api/movies/source-detail', { method: 'POST', body }),
   getVodSourceHealth: () => request('/api/movies/sources/health'),
