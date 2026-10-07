@@ -24,6 +24,26 @@ const PLATFORM_LABEL = {
   gdstudio: 'GD音乐台', meting: 'Meting', audius: 'Audius', itunes: 'iTunes', deezer: 'Deezer'
 };
 
+// 上游平台的中文名：后端会把来源写成 `meting@<实例>:<平台>` / `gdstudio@<平台>`，
+// 直接展示等于把内部标识甩给用户，这里统一翻成「Meting · 网易云」这种可读形式。
+const UPSTREAM_LABEL = {
+  netease: '网易云', migu: '咪咕', ximalaya: '喜马拉雅', kugou: '酷狗',
+  tencent: 'QQ音乐', joox: 'JOOX', bilibili: '哔哩哔哩', kuwo: '酷我'
+};
+
+function sourceLabel(src) {
+  const s = String(src || '');
+  if (s.startsWith('meting@')) {
+    const server = s.split(':')[1] || '';
+    return `Meting · ${UPSTREAM_LABEL[server] || server || '未知'}`;
+  }
+  if (s.startsWith('gdstudio')) {
+    const up = s.split('@')[1];
+    return up ? `GD音乐台 · ${UPSTREAM_LABEL[up] || up}` : 'GD音乐台';
+  }
+  return PLATFORM_LABEL[s] || s;
+}
+
 const QUALITY_FILTERS = [
   { key: 'all', label: '全部音质' },
   { key: 'lossless', label: '无损' },
@@ -185,7 +205,8 @@ export function Music() {
     setQuery(q);
     setSearching(true); setMode('search');
     try {
-      // 一次要满一屏：30 条与后端上限对齐（此前 18 条还会被后端各层再截断）
+      // 一次要满一屏。40 与后端上限（80）之间留了余量：后端会先取满 100 条原始池、
+      // 跨源去重 + 重排后再截断，所以「要 40 条」实际拿到的是重排后的前 40 条。
       const res = await api.searchMusicMeta(q, 40);
       setCandidates(res?.candidates || []);
       setSearchNote(res?.note || '');
@@ -315,7 +336,7 @@ export function Music() {
   const stats = useMemo(() => {
     if (mode === 'search') {
       return [
-        { label: '命中音源', value: searchSources.length || '—' },
+        { label: '命中音源', value: new Set(searchSources).size || '—' },
         { label: '结果', value: candidates.length },
         { label: '可直接播', value: playable }
       ];
@@ -338,7 +359,7 @@ export function Music() {
       <PageHeader
         kicker="Music Library"
         title="音乐"
-        sub="五个音源并发检索，一次搜索拿到整页结果；跨页面续播，点封面进入同步歌词页。"
+        sub="7 路上游并发检索，原始池取满 100 条后按相关度重排；跨页面续播，点封面进入同步歌词页。"
         stats={stats}
         tabs={tabs}
         activeTab={mode}
@@ -476,9 +497,18 @@ export function Music() {
                 <h2><span class="bar" />{searchedFor} · 搜索结果</h2>
                 <span class="count">{shownResults.length} 首</span>
                 {searchSources.length > 0 && (
-                  <span class="src-count" title={searchSources.join(' · ')}>{searchSources.length} 个音源</span>
+                  <span class="src-count">{new Set(searchSources).size} 个音源命中</span>
                 )}
               </div>
+              {/* 把「命中了哪些音源」直接列出来：用户要的就是「源多」，
+                  只给一个数字等于让他自己去猜。 */}
+              {searchSources.length > 0 && (
+                <div class="src-hits">
+                  {[...new Set(searchSources)].map((s) => (
+                    <span key={s} class="src-hit">{sourceLabel(s)}</span>
+                  ))}
+                </div>
+              )}
               <div class="result-list">
                 {shownResults.map((c) => {
                   const rowKey = `${c.platform}-${c.external_id}-${c.title}`;

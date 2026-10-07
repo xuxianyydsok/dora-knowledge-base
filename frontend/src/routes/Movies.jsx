@@ -78,6 +78,7 @@ export function Movies() {
   const [candidates, setCandidates] = useState([]);
   const [candNote, setCandNote] = useState('');
   const [candSources, setCandSources] = useState([]);
+  const [candSourceNames, setCandSourceNames] = useState([]);
   const [candLoading, setCandLoading] = useState(false);
   const [candError, setCandError] = useState('');
   const [listLoading, setListLoading] = useState(true);
@@ -117,9 +118,10 @@ export function Movies() {
       setCandidates(res?.candidates || []);
       setCandNote(res?.note || '');
       setCandSources(res?.sources || []);
+      setCandSourceNames(res?.source_names || []);
     } catch (e) {
       setCandError(e.message);
-      setCandidates([]); setCandNote(''); setCandSources([]);
+      setCandidates([]); setCandNote(''); setCandSources([]); setCandSourceNames([]);
     } finally { setCandLoading(false); }
   }
 
@@ -287,7 +289,7 @@ export function Movies() {
       <PageHeader
         kicker="Movie Library"
         title="影视库"
-        sub="8 个公开采集源并发检索，一次搜索即可跨源比对片名、线路与画质；点海报即入库并可播。"
+        sub="12 个公开采集源并发检索，同一部片的线路会跨源合并（实测「奥本海默」11 源合并出 19 条线路）。"
         stats={stats}
         tabs={tabs}
         activeTab={mode}
@@ -374,12 +376,20 @@ export function Movies() {
                 </h2>
                 <span class="count">{shown.length} 条</span>
                 {candSources.length > 0 && (
-                  <span class="src-count" title={candSources.join(' · ')}>{candSources.length} 个源</span>
+                  <span class="src-count">{candSources.length} 个源命中</span>
                 )}
                 <span class="spacer" />
                 {media !== 'all' && <FilterChip label={MEDIA_TABS.find((t) => t.key === media)?.label} onClear={() => setMedia('all')} />}
                 {year !== 'all' && <FilterChip label={`${year} 年`} onClear={() => setYear('all')} />}
               </div>
+
+              {/* 把「命中了哪些源」直接列出来：用户要的就是「源多」，
+                  只给一个数字等于让他自己去猜。后端补了 source_names 之后不必在前端再维护一份映射表。 */}
+              {candSourceNames.length > 0 && (
+                <div class="src-hits">
+                  {candSourceNames.map((n) => <span key={n} class="src-hit">{n}</span>)}
+                </div>
+              )}
 
               <div class="vod-grid">
                 {shown.map((c) => (

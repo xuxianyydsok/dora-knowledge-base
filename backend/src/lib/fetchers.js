@@ -482,7 +482,9 @@ async function searchGdstudioMusic(q, limit, source = GD_DEFAULT_SOURCE) {
     }
     return c;
   });
-  return { source: 'gdstudio', candidates };
+  // source 带上游平台：GD 同时查 netease 与 joox，两者片库独立，
+  // 若都写成 'gdstudio'，前端展示「命中了哪些音源」时无法区分。
+  return { source: `gdstudio@${source}`, candidates };
 }
 
 // GD 歌词（LRCLIB 缺词时的兜底，中文流行曲覆盖较好）
@@ -1144,13 +1146,19 @@ async function searchMaccmsAll(keyword, limit, env) {
   const keys = [...sources.map((s) => s.key), ...animeJobs.map((j) => j.source.key)];
 
   const sourcesUsed = [];
+  const sourceNames = [];
+  const keyToName = new Map(sources.map((s) => [s.key, s.name]));
   const merged = [];
   const index = new Map();
   for (let i = 0; i < settled.length; i++) {
     const item = settled[i];
     if (!item.ok || !item.v?.length) continue;
     const srcKey = keys[i];
-    if (!sourcesUsed.includes(srcKey)) sourcesUsed.push(srcKey);
+    if (!sourcesUsed.includes(srcKey)) {
+      sourcesUsed.push(srcKey);
+      const nm = keyToName.get(srcKey);
+      if (nm && !sourceNames.includes(nm)) sourceNames.push(nm);
+    }
     for (const c of item.v) {
       // 同一部片在不同采集源里年份可能不一致（如「觉醒年代」2019/2021），
       // 因此仅按片名去重，避免同一部剧出现多条重复结果。
@@ -1195,7 +1203,12 @@ async function searchMaccmsAll(keyword, limit, env) {
     .sort((a, b) => a.r - b.r || a.len - b.len || a.playable - b.playable || a.i - b.i)
     .map((x) => x.c);
 
-  return { sources: sourcesUsed, candidates: ranked, allFailed: settled.every((s) => !s.ok) };
+  return {
+    sources: sourcesUsed,
+    sourceNames,
+    candidates: ranked,
+    allFailed: settled.every((s) => !s.ok)
+  };
 }
 
 // ---------------------------------------------------------------
@@ -1272,6 +1285,8 @@ export async function fetchMovieMeta(query, limit = 24, env = {}) {
       query: q,
       source: primary.sources.join('+') || 'maccms',
       sources: primary.sources,
+      // 一并给中文源名：前端要显示「哪些源命中了」，不该把 `zy360new` 这种内部键露给用户
+      source_names: primary.sourceNames,
       count: candidates.length,
       candidates
     };

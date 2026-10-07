@@ -3480,7 +3480,7 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
   background: none;
 }
 
-/* 本次检索实际命中的音源数（悬停可看名单） */
+/* 本次检索实际命中的音源数 */
 .src-count {
   flex: 0 0 auto;
   padding: 4px 10px;
@@ -3491,6 +3491,37 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
   font-variant-numeric: tabular-nums;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-pill);
+}
+
+/* —— 命中的来源清单 ——
+   用户点名的诉求是「源要多」，但界面上原本只给一个数字，鼠标悬停才看得到键名。
+   把来源摊成一行 chip，让「多源」变成看得见的事实；左侧绿点表示该源本次有实际命中。 */
+.src-hits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 var(--sp-5);
+}
+.src-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--glass-border);
+  white-space: nowrap;
+}
+.src-hit::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success, #34d399);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success, #34d399) 22%, transparent);
 }
 
 .result-time {
