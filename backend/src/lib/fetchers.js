@@ -515,7 +515,7 @@ function mergeCandidate(prev, next) {
 export async function fetchMusicMeta(query, limit = 5, env = {}) {
   const q = (query || '').trim();
   if (!q) throw new HttpError(422, '缺少搜索关键词');
-  const capped = Math.min(limit, 20);
+  const capped = Math.min(limit, 30);
 
   // 四个源并发，任一失败不影响其余：
   //   GD音乐台 —— 完整曲目主源（网易云源，实测 900~1600kbps FLAC 直链）
@@ -1021,8 +1021,16 @@ export async function fetchMovieMeta(query, limit = 5, env = {}) {
   // 主源：苹果CMS 采集接口（真正的影视资源站，含可直接播放的 m3u8/mp4）
   const primary = await searchMaccmsAll(q, capped, env);
   if (primary.candidates.length) {
-    // 前 4 条补全海报/评分（缺字段时才请求，动漫走 Bangumi/Kitsu）
+    // 前 N 条补全海报/评分（缺字段时才请求，动漫走 Bangumi/Kitsu）
     const candidates = await enrichMovieCandidates(primary.candidates.slice(0, capped));
+    // 新片优先：按上映日期降序，可播放的优先
+    candidates.sort((a, b) => {
+      const playableDiff = Number(!!b.playable_url) - Number(!!a.playable_url);
+      if (playableDiff !== 0) return playableDiff;
+      const yearA = parseInt((a.release_date || '0000').slice(0, 4)) || 0;
+      const yearB = parseInt((b.release_date || '0000').slice(0, 4)) || 0;
+      return yearB - yearA;
+    });
     return {
       query: q,
       source: primary.sources.join('+') || 'maccms',

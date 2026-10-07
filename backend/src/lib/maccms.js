@@ -248,12 +248,15 @@ export async function getAnimeClassIds(source) {
 // 默认采集源（可用环境变量 VOD_SOURCES 覆盖，格式为 JSON 数组）
 // 5 个源并发检索，命中率显著高于单源；代价是单次搜索耗时变长（多源均无结果时才等超时）。
 export const DEFAULT_VOD_SOURCES = [
+  // 以下三个源无防盗链，可直接前端播放，优先使用
+  { key: 'dytt', name: '电影天堂', api: 'https://caiji.dyttzyapi.com/api.php/provide/vod/' },
+  { key: 'zy360', name: '360资源', api: 'https://360zy.com/api.php/provide/vod/' },
+  { key: 'hongniu', name: '红牛资源', api: 'https://www.hongniuzy2.com/api.php/provide/vod/' },
+  // 以下源有防盗链，作为补充资源池
   { key: 'lzi', name: '量子资源', api: 'https://cj.lziapi.com/api.php/provide/vod/' },
   { key: 'ffzy', name: '非凡资源', api: 'https://api.ffzyapi.com/api.php/provide/vod/' },
-  { key: 'dytt', name: '电影天堂', api: 'https://caiji.dyttzyapi.com/api.php/provide/vod/' },
-  // 最大资源：补到 lzi 缺失的「仙逆」「迪迦奥特曼」等动漫条目；偶发返回非 JSON，由 fetchJson 容错
+  // 最大资源：补动漫条目；偶发返回非 JSON，由 fetchJson 容错
   { key: 'zuid', name: '最大资源', api: 'https://api.zuidapi.com/api.php/provide/vod' },
-  { key: 'zy360', name: '360资源', api: 'https://360zy.com/api.php/provide/vod/' }
 ];
 
 // 读取配置的采集源：优先 env.VOD_SOURCES，否则用默认列表
