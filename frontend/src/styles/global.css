@@ -2001,6 +2001,20 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 .vod-sub .vod-score { margin-left: auto; color: #e0b64d; font-weight: 600; font-variant-numeric: tabular-nums; }
 .vod-tags { display: flex; gap: 5px; flex-wrap: wrap; }
 
+/* 类型标记与来源标记同档，但带图标，扫读时能一眼分出电影 / 剧集 / 动漫 */
+.tag-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  border: 1px solid var(--glass-border);
+  white-space: nowrap;
+}
+
 .tag-src {
   font-size: 10.5px;
   padding: 2px 7px;
@@ -2010,6 +2024,46 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   border: 1px solid var(--glass-border);
   white-space: nowrap;
 }
+
+/* —— 海报左下角的「线路 / 源」读数 ——
+   跨源合并后「能换几条线路试」是比评分更实用的判据，压在 .vod-poster::after
+   的底部渐变上，正好落在最暗的区域，白字可读。 */
+.vod-stat {
+  position: absolute;
+  left: 8px; right: 8px; bottom: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.vod-stat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(6, 8, 12, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+.vod-stat-item svg { opacity: 0.72; }
+.vod-stat-item.danger {
+  color: #ffb9b0;
+  border-color: rgba(255, 107, 94, 0.42);
+  background: rgba(46, 12, 12, 0.6);
+}
+
+/* 无直链的条目整卡降饱和：让「能直接播的」在网格里自然浮出来 */
+.vod-card.no-play .vod-poster img { filter: saturate(0.42) brightness(0.82); }
+.vod-card.no-play .vod-poster { background: linear-gradient(160deg, #14161f, #0a0c11 72%); }
 
 .vod-collect {
   position: absolute;

@@ -386,6 +386,7 @@ export function Movies() {
                   <VodPoster
                     key={`${c.source}-${c.external_id}`}
                     item={c}
+                    hot={mode === 'hot'}
                     busy={busy}
                     onOpen={() => addFrom(c)}
                     onCollect={() => addFrom(c)}
