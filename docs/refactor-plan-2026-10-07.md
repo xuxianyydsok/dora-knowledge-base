@@ -176,6 +176,46 @@
 
 **是否拆分 `global.css`**：**本轮不拆**。3646 行单文件确有维护成本，但拆分在无测试保护下回归风险高、收益滞后。本轮只建立「写哪个分区」的规范，把拆分列为独立议题（S6 之后评估）。
 
+### 3.9 字体角色规范（新增 · 来自 Claude 单页对照实测）
+
+本节是对 §3.2–3.3 的补漏：原方案只覆盖了**字号 / 字重 / 颜色**三个维度，漏掉了**字体角色**——而它恰恰是「质感」差距的主要来源。
+
+**对照结论（2026-10-07 实测，1460px 视口）**
+
+与 `D:\aitest\Claude生成\Cabinet of Curves.html` 逐项对比后确认：Dora **已经自托管了正确的两套字体，但只用了一半**。
+
+| 项 | Claude 单页 | Dora 改动前 | Dora 改动后 |
+| --- | --- | --- | --- |
+| 字体角色数 | 3（展示衬线 / 正文无衬线 / 等宽元信息） | **1**（Satoshi 包打天下） | 3 |
+| 最大标题 | 102.4px 衬线 | 62px 无衬线 | 60px 衬线 `Newsreader` |
+| 等宽体地位 | 承担全部数据读数 | 仅代码块 | 承担 kicker / 计数 / 编号 / 日期 |
+| 滚动深度 | 6818px | 2781px | 2787px（本轮未动内容量） |
+
+`frontend/src/styles/fonts.css` 的注释其实早就写明 **Satoshi ≈ Claude 的 Styrene**、**Newsreader ≈ Claude 的 Tiempos**；但 `global.css` 里 `'Newsreader'` 改动前只出现 **1 次**（`.post-content` 博客正文），标题全部走 Satoshi。**自托管的衬线体，是本项目已经买好却一直没用起来的最大一笔质感资产。**
+
+**三角色规范（已落成 token）**
+
+| 角色 | 字体 | token | 用途 | 硬约束 |
+| --- | --- | --- | --- | --- |
+| Display 展示 | Newsreader（衬线） | `--font-display` | Hero 主标题、页头 h1、详情大标题、区块标题、CTA 标题 | **只有 400 / 500 两档字重**，禁用 600+（浏览器会合成伪粗体，边缘发虚）；字距必须走 `--track-display`(-0.012em)，**不能沿用无衬线那套 -0.035em** |
+| UI 正文 | Satoshi（无衬线） | `--font-ui` | 正文、按钮、表单、卡片标题 | 中文自动回退系统无衬线 |
+| Mono 元信息 | ui-monospace | `--font-mono` | kicker、计数、编号、时间戳、规格读数 | 配 `font-variant-numeric: tabular-nums`；中文标签会回退普通无衬线（可接受） |
+
+**实测得到的硬约束（写死在此，避免下轮再踩）**
+
+1. **Hero 主标题字号上限 60px。** 首行「把散落各处的知识资源」是 10 个汉字，在 649px 文本列下：62px 无衬线（-0.035em）刚好 2 行；换成衬线后字距收紧到 -0.012em，**76px 会被挤成 3 行**，只有 ≤60px 才回到 2 行。字号不是越大越好，必须以「不破坏既有断行」为准。
+2. **衬线细笔画 + 渐变文字会发虚。** `.hero-grad` 那套渐变在无衬线粗笔画上没问题，压在衬线的横画上会明显变淡（实测对比 B 与 D 两版）。本轮**保留渐变**（不动既有视觉语言）；若后续觉得发虚，可换成「实色标题 + 主色强调词」，实测观感更干净。
+3. **`Newsreader` 无中文字形**，中文标题实际由系统衬线（Songti SC / Noto Serif SC / 宋体）渲染。因此「衬线中文标题」本质是一处**审美取向变更**（从「现代 SaaS」偏向「编辑 / 书卷」）。本轮先在落地页与仪表盘落地，**若认可再推广到全部 25 页**。
+
+**本轮已改（`global.css`，共 10 处）**
+
+- token：`--font-ui` / `--font-display` / `--font-mono` / `--track-display` / `--track-ui` / `--track-mono`
+- `.display` 工具类：把「展示级标题」这个角色写进样式本身，页面只加类名即可
+- **Display 化**：`.hero-title`、`.page-head-text h1`、`.section-head h2`、`.cta h2`、`.console-greet h1`
+- **Mono 化**：`.page-kicker`、`.hero-stat strong`、`.hero-stat span`、`.step-n`、`.console-kicker`
+
+**验收证据**：真实构建产物在 1460px 视口实测 —— `hero-title` = Newsreader 60px / 500 / 2 行、`section-head h2` = Newsreader 38px / 500、`cta h2` = Newsreader 36px / 500、`.step-n` = ui-monospace 30px / 500、`.console-greet h1` = Newsreader 38px / 500，且 `scrollWidth == clientWidth`（无横向溢出）。夹具页（左=改动前 / 右=改动后）逐条对照的运行时解析结果一并留档。
+
 ---
 
 ## 4. P0-B：影视库 `/movies` 重排

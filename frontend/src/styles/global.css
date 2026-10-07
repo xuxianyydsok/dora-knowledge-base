@@ -42,6 +42,19 @@
   --dur-fast: 0.18s;
   --dur: 0.32s;
   --dur-slow: 0.6s;
+
+  /* —— 字体角色（三字体分工，详见 docs/refactor-plan-2026-10-07.md §3.9）——
+     Display：Newsreader 衬线体，仅用于最大号展示标题（Hero 主标题 / 页头 h1 / 详情标题）
+     UI     ：Satoshi 无衬线体，正文、按钮、表单、卡片标题
+     Mono   ：等宽体，kicker / 计数 / 时间戳 / 规格读数等「元信息」角色
+     ⚠ Newsreader 仅自托管 400 / 500 两档字重，展示标题禁用 600+（浏览器合成粗体边缘发虚）。 */
+  --font-ui: 'Satoshi', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-display: 'Newsreader', Georgia, 'Songti SC', 'Source Han Serif SC', 'Noto Serif SC', serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --track-display: -0.012em;
+  --track-ui: -0.02em;
+  --track-mono: 0.06em;
 }
 
 [data-theme='dark'] {
@@ -76,9 +89,8 @@ html, body {
   padding: 0;
   min-height: 100%;
   color: var(--text);
-  /* Satoshi 为拉丁字形，中文自动回退到系统无衬线体 */
-  font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI',
-    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  /* UI 角色：Satoshi 为拉丁字形，中文自动回退到系统无衬线体 */
+  font-family: var(--font-ui);
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -129,6 +141,15 @@ body.has-pointer .pointer-glow { opacity: 1; }
 h1, h2, h3, h4 { letter-spacing: -0.02em; line-height: 1.25; }
 h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 700; }
 h2 { font-size: clamp(21px, 2.4vw, 27px); font-weight: 650; }
+
+/* 展示级标题（Display 角色）：Hero 主标题 / 页头 h1 / 详情大标题共用。
+   衬线体的字距不能用无衬线那套大负值（否则笔画挤在一起），统一走 --track-display。 */
+.display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: var(--track-display);
+  line-height: 1.08;
+}
 
 a {
   color: var(--primary);
@@ -851,10 +872,11 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 
 .hero-title {
   margin: 0 0 20px;
-  font-size: clamp(34px, 5.2vw, 62px);
-  font-weight: 750;
-  letter-spacing: -0.035em;
-  line-height: 1.1;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5.4vw, 60px);
+  font-weight: 500;
+  letter-spacing: var(--track-display);
+  line-height: 1.06;
 }
 .hero-grad {
   position: relative;
@@ -896,18 +918,25 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   padding-top: 26px;
   border-top: 1px solid var(--glass-border);
 }
-.hero-stat { display: flex; flex-direction: column; gap: 3px; }
+.hero-stat { display: flex; flex-direction: column; gap: 4px; }
 .hero-stat strong {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
   background: linear-gradient(135deg, var(--text), color-mix(in srgb, var(--text) 55%, var(--primary)));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
-.hero-stat span { font-size: 13px; color: var(--text-muted); }
+.hero-stat span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--track-mono);
+  color: var(--text-muted);
+}
 
 /* —— Hero 玻璃预览 —— */
 .hero-visual {
@@ -1015,7 +1044,14 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 /* —— 通用区块 —— */
 .section { display: flex; flex-direction: column; gap: 34px; }
 .section-head { max-width: 640px; }
-.section-head h2 { margin: 0 0 10px; font-size: clamp(24px, 3vw, 34px); font-weight: 700; }
+.section-head h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3.2vw, 38px);
+  font-weight: 500;
+  letter-spacing: var(--track-display);
+  line-height: 1.15;
+}
 .section-head p { margin: 0; font-size: 16px; line-height: 1.7; }
 
 /* —— 功能矩阵 —— */
@@ -1118,7 +1154,9 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 }
 .step-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-md); }
 .step-n {
-  font-size: 30px; font-weight: 800; letter-spacing: -0.04em;
+  font-family: var(--font-mono);
+  font-size: 30px; font-weight: 500; letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
   background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 30%, transparent));
   -webkit-background-clip: text; background-clip: text; color: transparent;
   display: block; margin-bottom: 10px;
@@ -1142,7 +1180,14 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   box-shadow: var(--shadow-lg), inset 0 1px 0 var(--glass-highlight);
   display: flex; flex-direction: column; align-items: center; gap: 16px;
 }
-.cta h2 { margin: 8px 0 0; font-size: clamp(23px, 3vw, 32px); font-weight: 700; }
+.cta h2 {
+  margin: 8px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3.2vw, 36px);
+  font-weight: 500;
+  letter-spacing: var(--track-display);
+  line-height: 1.15;
+}
 .cta p { margin: 0; }
 .cta .hero-actions { margin: 12px 0 0; justify-content: center; }
 
@@ -1222,9 +1267,10 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--text-muted);
-  letter-spacing: 0.01em;
+  letter-spacing: var(--track-mono);
 }
 .console-badge {
   display: inline-flex;
@@ -1242,10 +1288,11 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 [data-theme='dark'] .console-badge { color: #fbbf24; }
 .console-greet h1 {
   margin: 0;
-  font-size: clamp(26px, 2.4vw, 34px);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 2.6vw, 38px);
+  font-weight: 500;
+  letter-spacing: var(--track-display);
+  line-height: 1.12;
 }
 .console-greet p { margin: 0; font-size: 14.5px; }
 .console-greet strong { color: var(--text); font-weight: 650; }
@@ -2898,9 +2945,10 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--primary);
 }
@@ -2920,10 +2968,11 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
 .page-head-text { display: flex; flex-direction: column; gap: 8px; }
 .page-head-text h1 {
   margin: 0;
-  font-size: clamp(28px, 3vw, 38px);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.1;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 3.2vw, 42px);
+  font-weight: 500;
+  letter-spacing: var(--track-display);
+  line-height: 1.08;
 }
 .page-head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
