@@ -7,6 +7,7 @@ import { ok, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchMusicMeta, fetchLyrics, resolveGdstudioUrl, GD_DEFAULT_SOURCE } from '../lib/fetchers.js';
+import { getMetingInstances, metingStreamUrl } from '../lib/meting.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool
 } from '../lib/validate.js';
@@ -48,7 +49,8 @@ export async function searchMusicMeta(request, env) {
   const { db, user } = await requireAuth(request, env);
   const body = await readJson(request);
   const query = requireString(body.query, 'query', { max: 200 });
-  const limit = optionalInt(body.limit, 'limit', { min: 1, max: 20 }) ?? 5;
+  // 上限 60：搜歌手要能一次给出整页结果（此前 5 条是「搜出来的东西太少」的主因）
+  const limit = optionalInt(body.limit, 'limit', { min: 1, max: 60 }) ?? 30;
 
   const result = await fetchMusicMeta(query, limit, env);
 
@@ -90,6 +92,28 @@ export async function resolveMusicStream(request, env) {
   const externalId = requireString(body.external_id, 'external_id', { max: 200 });
   const gdSource = optionalString(body.source, 'source', { max: 40 })
     || env.GD_MUSIC_SOURCE || GD_DEFAULT_SOURCE;
+
+  // Meting：搜索结果自带取流地址，且该地址是稳定的 302 端点（不像 GD 是签名链接），
+  // 这里主要用于「换实例」场景——按服务端配置的实例地址重建取流地址。
+  // base 一律取服务端配置里的实例地址，不信任客户端传值，避免被用作请求代理。
+  if (platform === 'meting') {
+    const wanted = optionalString(body.meting_base, 'meting_base', { max: 300 }) ?? null;
+    const instances = getMetingInstances(env);
+    const inst = (wanted && instances.find((i) => i.base === wanted)) || instances[0];
+    if (!inst) throw new HttpError(503, 'Meting 实例未配置');
+    if (!externalId) throw new HttpError(422, '缺少 external_id');
+    // Meting 的取流地址是稳定地址（302 端点，浏览器跟随跳转即得音频），
+    // 因此按实例地址直接重建即可，不必发网络请求 —— 也就没有「过期」问题。
+    return ok({
+      platform,
+      external_id: externalId,
+      source: gdSource,
+      audio_url: metingStreamUrl(inst.base, gdSource, externalId),
+      bitrate: null,
+      file_size: null,
+      quality: 'full'
+    }, request, env);
+  }
 
   if (platform !== 'gdstudio') {
     throw new HttpError(422, `该音源不支持重新解析：${platform || 'unknown'}`);

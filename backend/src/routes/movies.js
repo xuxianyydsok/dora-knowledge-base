@@ -45,7 +45,8 @@ export async function searchMovieMeta(request, env) {
   const { db, user } = await requireAuth(request, env);
   const body = await readJson(request);
   const query = requireString(body.query, 'query', { max: 200 });
-  const limit = optionalInt(body.limit, 'limit', { min: 1, max: 20 }) ?? 5;
+  // 上限 60：影视搜索要能一次给出足够多的候选（此前 5 条 + 各层再截断，是「搜不出东西」的主因）
+  const limit = optionalInt(body.limit, 'limit', { min: 1, max: 60 }) ?? 24;
 
   const result = await fetchMovieMeta(query, limit, env);
 

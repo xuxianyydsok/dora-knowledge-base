@@ -8,8 +8,24 @@ import {
   getVodSources, searchMaccms, detailMaccms, checkMaccms, curatedMaccms, getAnimeClassIds
 } from './maccms.js';
 import { cinemetaLookup, bangumiLookup, kitsuLookup } from './metadb.js';
+import { getMetingInstances, searchMetingMusic } from './meting.js';
 
 const UA = 'knowledge-base-app/0.1 (+https://github.com/)';
+
+// 给单个任务套一个「时间预算」：超出预算就返回失败哨兵，而不是让整批一起等它。
+// 外部采集源质量参差，个别源经常挂满超时，把整次搜索拖到十几秒 ——
+// 用预算把每个阶段钉死上限，慢源直接放弃，其余源的结果照常返回。
+//（与 fetchWithTimeout 的区别：那个是单次请求超时，这个是「一批任务的整体阶段预算」。）
+function withBudget(promise, ms, label = '外部接口超时') {
+  let timer;
+  const guard = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ ok: false, e: new HttpError(504, label) }), ms);
+  });
+  return Promise.race([
+    Promise.resolve(promise).then((v) => ({ ok: true, v }), (e) => ({ ok: false, e })),
+    guard
+  ]).finally(() => clearTimeout(timer));
+}
 
 // 带超时的 fetch：避免外部接口不可达时请求长时间悬挂
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
@@ -337,6 +353,11 @@ async function searchDeezerMusic(q, limit) {
 //      故已收藏曲目播放失败时由前端调 POST /api/music/stream 按 external_id 重新解析。
 // 仅保存播放地址字符串，不下载音频文件、后端不转发音频流。
 // ---------------------------------------------------------------
+// 时间预算（毫秒）：外部接口质量参差，用预算把「最坏耗时」钉死，
+// 避免个别慢接口把整次搜索拖到十几秒。
+const MUSIC_BUDGET_MS = 7000;   // 音乐：全部音源并发阶段的整体预算
+const ENRICH_BUDGET_MS = 4000;  // 影视：搜索后元信息补全阶段
+const COVER_BUDGET_MS = 2500;   // 音乐：封面 / 歌手头像补全阶段
 const GD_BASE = 'https://music-api.gdstudio.xyz/api.php';
 export const GD_DEFAULT_SOURCE = 'netease';
 const GD_URL_TTL = 10 * 60 * 1000;
@@ -418,19 +439,35 @@ function gdCandidate(t, source, resolved) {
 // 每条结果要消耗 1 次 types=url 额度，因此只解析最靠前的几条（其余结果拿不到地址会被丢弃）。
 const GD_RESOLVE_LIMIT = 3;
 
-// 搜索：并发解析前几条直链（限频考虑，不做全量解析）
+// 搜索：并发解析最靠前的几条直链（限频考虑，不做全量解析）
+// 关键改动（2026-10-07）：**未解析出直链的条目不再丢弃**。
+// GD 的 types=search 不消耗解析额度，只有 types=url 才消耗（5 分钟 50 次共享配额），
+// 因此可以多拿条目、只解析 Top 3，其余标记 needs_resolve 交给前端按需解析
+// （用户点播/收藏时调 POST /api/music/stream 现取直链）。
+// 这样搜索结果数量从「解析成功的那几条（≤3）」变成「源站命中的全部条目」。
 async function searchGdstudioMusic(q, limit, source = GD_DEFAULT_SOURCE) {
-  const list = await gdApi({ types: 'search', source, name: q, count: Math.max(limit, 10), pages: 1 });
+  const list = await gdApi({ types: 'search', source, name: q, count: Math.max(limit, 30), pages: 1 });
   if (!Array.isArray(list) || !list.length) return { source: 'gdstudio', candidates: [] };
 
-  const top = list.slice(0, Math.min(limit, GD_RESOLVE_LIMIT));
+  const rows = list.slice(0, limit);
+  const top = rows.slice(0, GD_RESOLVE_LIMIT);
   const settled = await Promise.allSettled(
     top.map((t) => resolveGdstudioUrl(t.url_id || t.id, source))
   );
-  const candidates = top
-    .map((t, i) => gdCandidate(t, source, settled[i].status === 'fulfilled' ? settled[i].value : null))
-    // 解析不到直链的条目直接丢弃：这类结果无法播放，留着只会干扰收藏
-    .filter((c) => c.audio_url);
+  const resolved = new Map();
+  top.forEach((t, i) => {
+    const info = settled[i].status === 'fulfilled' ? settled[i].value : null;
+    if (info?.url) resolved.set(String(t.url_id || t.id), info);
+  });
+
+  const candidates = rows.map((t) => {
+    const c = gdCandidate(t, source, resolved.get(String(t.url_id || t.id)) || null);
+    if (!c.audio_url) {
+      c.needs_resolve = true;   // 前端据此在点播时调 /api/music/stream
+      c.quality = 'full';       // 上游是完整曲目，只是直链还没取
+    }
+    return c;
+  });
   return { source: 'gdstudio', candidates };
 }
 
@@ -483,12 +520,23 @@ function dedupeKey(c) {
   return `${norm(c.title)}|${norm(c.artist)}`;
 }
 
-// 音质优先级：完整曲目 > 试听片段；同档位按音源可信度（GD音乐台 > Audius > Deezer/iTunes）
-const QUALITY_RANK = { full: 2, preview: 1 };
-const PLATFORM_RANK = { gdstudio: 3, audius: 2, deezer: 1, itunes: 1 };
+// 音质优先级：完整曲目 > 试听片段；同档位按音源可信度。
+// meting 与 gdstudio 都是完整曲目，audius 次之，itunes/deezer 只有 30 秒试听。
+// 这里 gdstudio 略高于 meting，原因只有一个：**音质**。
+//   实测 GD 返回 1619kbps FLAC（约 64MB/首），而 Meting 默认实例只给 netease 的 MP3
+//   （br 参数被忽略，且 type=url 只是 302 跳到 m801.music.126.net 的 .mp3）。
+// 但 GD 的直链是签名地址、会过期，且解析有「5 分钟 50 次」额度限制，
+// 因此**未解析出直链的 GD 仍然降档**（见 candidateRank 的 needs_resolve），
+// 不会把一堆「点了还要等解析」的条目顶到 Meting 的稳定结果前面。
+const QUALITY_RANK = { full: 3, preview: 1 };
+const PLATFORM_RANK = { gdstudio: 4, meting: 3, audius: 2, deezer: 1, itunes: 1 };
 
+// 综合排序分 = 质量档 ×100 + 音源 ×10 + 是否已拿到直链。
+// 「待解析（GD 未取直链）」降一档但仍高于试听片段：它有完整曲目的潜力，
+// 且点播时会即时解析，不该被 30 秒试听挤到后面。
 function candidateRank(c) {
-  return (QUALITY_RANK[c.quality] || 0) * 10 + (PLATFORM_RANK[c.platform] || 0);
+  const quality = c.needs_resolve ? 2 : (QUALITY_RANK[c.quality] || 0);
+  return quality * 100 + (PLATFORM_RANK[c.platform] || 0) * 10 + (c.audio_url ? 1 : 0);
 }
 
 // 合并同一首歌的多源结果：播放地址与音质取更优的一侧，封面/专辑/时长等元信息互补
@@ -505,36 +553,57 @@ function mergeCandidate(prev, next) {
     duration: better.duration || other.duration,
     release_year: better.release_year || other.release_year,
     genre: better.genre || other.genre,
-    audio_url: better.audio_url,
-    audio_fallbacks: better.audio_fallbacks || [],
+    // 直链取「有」的一侧：合并双方只要任一侧解析出了直链就应保留下来
+    audio_url: better.audio_url || other.audio_url,
+    // 落败一侧的地址并入备用列表 —— 兼顾「音质」与「链路稳定」：
+    // GD 的签名直链会过期，而 Meting 的取流地址是稳定的 302 端点，
+    // 两者互为兜底，播放器在主地址失败时可依次重试。
+    audio_fallbacks: [...new Set([
+      ...(better.audio_fallbacks || []),
+      ...(other.audio_url ? [other.audio_url] : []),
+      ...(other.audio_fallbacks || [])
+    ])].filter((u) => u && u !== (better.audio_url || other.audio_url)).slice(0, 5),
     // 试听片段保留为最后兜底：主直链失效时播放器仍能出声
-    preview_url: better.preview_url || null
+    preview_url: better.preview_url || null,
+    // 合并后若已有直链，就不再是「待解析」
+    needs_resolve: !(better.audio_url || other.audio_url)
   };
 }
 
-export async function fetchMusicMeta(query, limit = 5, env = {}) {
+export async function fetchMusicMeta(query, limit = 30, env = {}) {
   const q = (query || '').trim();
   if (!q) throw new HttpError(422, '缺少搜索关键词');
-  const capped = Math.min(limit, 30);
+  // 每个上游都请求「至少 30 条」：只有拿到足够多的原始条目，
+  // 跨源去重后才有足够结果可展示。（此前 limit 被逐层下传，最终被截到个位数。）
+  const perSource = Math.max(limit, 30);
+  const capped = Math.min(limit, 60);
 
-  // 四个源并发，任一失败不影响其余：
+  // 多源并发，任一失败不影响其余：
+  //   Meting 公共实例 —— 搜索即带可直接播放的直链，是结果数量的主力
   //   GD音乐台 —— 完整曲目主源（网易云源，实测 900~1600kbps FLAC 直链）
   //   Audius   —— 独立音乐完整音轨（320kbps）
   //   iTunes / Deezer —— 仅 30 秒试听，主要作为元信息与封面来源
-  const settled = await Promise.allSettled([
-    searchGdstudioMusic(q, capped, env.GD_MUSIC_SOURCE || GD_DEFAULT_SOURCE),
-    searchAudiusMusic(q, capped),
-    searchItunesMusic(q, capped),
-    searchDeezerMusic(q, capped)
-  ]);
+  const metingJobs = getMetingInstances(env).flatMap((inst) =>
+    inst.servers.map((server) => searchMetingMusic(inst, server, q, perSource))
+  );
+
+  // 每个音源都套时间预算：任一慢源不再拖住整次搜索（Meting 公共实例偶发慢响应）。
+  // 同一次同步表达式内创建 Promise 并立刻交给 Promise.all，避免未处理的拒绝。
+  const settled = await Promise.all([
+    ...metingJobs,
+    searchGdstudioMusic(q, perSource, env.GD_MUSIC_SOURCE || GD_DEFAULT_SOURCE),
+    searchAudiusMusic(q, perSource),
+    searchItunesMusic(q, perSource),
+    searchDeezerMusic(q, perSource)
+  ].map((p) => withBudget(p, MUSIC_BUDGET_MS)));
 
   const sources = [];
   const merged = [];
   const index = new Map();
   for (const item of settled) {
-    if (item.status !== 'fulfilled' || !item.value.candidates.length) continue;
-    sources.push(item.value.source);
-    for (const c of item.value.candidates) {
+    if (!item.ok || !item.v?.candidates.length) continue;
+    sources.push(item.v.source);
+    for (const c of item.v.candidates) {
       const key = dedupeKey(c);
       if (index.has(key)) {
         const i = index.get(key);
@@ -547,8 +616,18 @@ export async function fetchMusicMeta(query, limit = 5, env = {}) {
   }
 
   if (!merged.length) {
-    const reason = settled.find((s) => s.status === 'rejected');
-    throw reason?.reason || new HttpError(502, '音乐元信息接口请求失败');
+    // 同影视：区分「源不可用」与「确实没搜到」，避免正常空结果被报成错误
+    const allFailed = settled.every((s) => !s.ok);
+    return {
+      query: q,
+      source: 'none',
+      sources: [],
+      count: 0,
+      candidates: [],
+      note: allFailed
+        ? '音乐接口暂时不可用，请稍后重试'
+        : '未找到匹配的曲目，试试「歌名 歌手」或只输入歌名'
+    };
   }
 
   // 可完整播放的排前面，试听片段垫底
@@ -561,14 +640,14 @@ export async function fetchMusicMeta(query, limit = 5, env = {}) {
     .filter((c) => !c.artwork_url && c.platform === 'gdstudio' && c.gd_pic_id)
     .slice(0, 3);
   if (needCover.length) {
-    await Promise.all(needCover.map(async (c) => {
+    await withBudget(Promise.all(needCover.map(async (c) => {
       c.artwork_url = await resolveGdstudioCover(c.gd_pic_id, c.gd_source).catch(() => null);
-    }));
+    })), COVER_BUDGET_MS);
   }
   // 歌手头像补全：只查第一条，失败静默（TheAudioDB 限频很低）
   if (top[0] && !top[0].artist_avatar) {
-    const profile = await fetchArtistProfile(top[0].artist);
-    if (profile?.avatar) top[0].artist_avatar = profile.avatar;
+    const profile = await withBudget(fetchArtistProfile(top[0].artist), COVER_BUDGET_MS);
+    if (profile.ok && profile.v?.avatar) top[0].artist_avatar = profile.v.avatar;
   }
 
   return {
@@ -898,43 +977,68 @@ function movieKey(c) {
 // 并发查询全部配置的采集源，按标题+年份去重，多源结果合并线路。
 // 参见 lib/maccms.js。仅抓取元信息与播放地址字符串。
 // ---------------------------------------------------------------
+// 实测（2026-10-07）除已移除的 zy360 外，各源关键词搜索均在 2.1s 内返回，
+// 类目发现均在 5s 内返回；因此预算收到「比实测最慢值略宽」即可，
+// 既保住正常源，又把个别源抖动时的最坏耗时钉住。
+const KW_BUDGET_MS = 4000;      // 关键词搜索阶段整体预算
+const ANIME_BUDGET_MS = 3200;   // 动漫类目补充阶段预算
+
 async function searchMaccmsAll(keyword, limit, env) {
   const sources = getVodSources(env);
+  // 每个源都要求「至少 20 条」：跨源按片名去重后条目会大幅缩水
+  //（同一部剧在 9 个源各占一条，去重后只剩 1 条），
+  // 若把 limit 直接下传，去重后往往只剩几条 —— 这是「搜一部剧只有很少内容」的主因之一。
+  const perSource = Math.max(limit, 20);
 
-  // 每个源两路并发：
-  //   ① 普通关键词搜索（电影 / 电视剧主力）
-  //   ② 该源自己的「国产/日韩/欧美动漫」类目搜索 —— 动漫正片在关键词搜索里几乎被真人剧、
-  //      短剧和同名作品挤掉（实测「凡人修仙传」关键词 0 条动漫，按类目 4 条）。
-  //      类目 ID 各源不一致，由 lib/maccms.js 的 getAnimeClassIds 通过 ac=list 动态发现并缓存。
-  const jobs = sources.map((s) => ({ source: s, run: searchMaccms(s, keyword, limit) }));
-  const animeIds = await Promise.all(sources.map((s) => getAnimeClassIds(s).catch(() => [])));
+  // ① 关键词搜索 与 ② 动漫类目发现 **并发**发起，并各套时间预算。
+  // 两者在同一个同步表达式里创建 Promise 并立刻交给 all，
+  // 既不会出现「中间隔着 await → 未处理的 Promise 拒绝」（会导致整请求中断），
+  // 也不让类目发现串行拖慢整次搜索。
+  const [kwSettled, animeIds] = await Promise.all([
+    Promise.all(sources.map((s) => withBudget(
+      searchMaccms(s, keyword, perSource), KW_BUDGET_MS, `${s.name} 搜索超时`
+    ))),
+    Promise.all(sources.map((s) => withBudget(
+      getAnimeClassIds(s), ANIME_BUDGET_MS, `${s.name} 类目发现超时`
+    )))
+  ]);
+
+  // ③ 动漫类目搜索依赖 ② 的结果，只能在之后发起。
+  // 这一步不能省：动漫正片在关键词搜索里几乎被真人剧、短剧和同名作品挤掉
+  //（实测「凡人修仙传」关键词命中 0 条动漫，按类目命中 7 条）。
+  const animeTasks = [];
   sources.forEach((s, i) => {
-    for (const t of animeIds[i]) jobs.push({ source: s, run: searchMaccms(s, keyword, limit, t) });
+    const ids = animeIds[i].ok && Array.isArray(animeIds[i].v) ? animeIds[i].v : [];
+    for (const t of ids) {
+      animeTasks.push({ key: s.key, run: () => searchMaccms(s, keyword, perSource, t) });
+    }
   });
+  const animeSettled = animeTasks.length
+    ? await Promise.all(animeTasks.map((t) => withBudget(t.run(), ANIME_BUDGET_MS)))
+    : [];
 
-  const settled = await Promise.allSettled(jobs.map((j) => j.run));
+  const settled = [...kwSettled, ...animeSettled];
+  const keys = [...sources.map((s) => s.key), ...animeTasks.map((t) => t.key)];
 
   const sourcesUsed = [];
   const merged = [];
   const index = new Map();
   for (let i = 0; i < settled.length; i++) {
     const item = settled[i];
-    if (item.status !== 'fulfilled' || !item.value.length) continue;
-    const srcKey = jobs[i].source.key;
+    if (!item.ok || !item.v?.length) continue;
+    const srcKey = keys[i];
     if (!sourcesUsed.includes(srcKey)) sourcesUsed.push(srcKey);
-    for (const c of item.value) {
+    for (const c of item.v) {
       // 同一部片在不同采集源里年份可能不一致（如「觉醒年代」2019/2021），
       // 因此仅按片名去重，避免同一部剧出现多条重复结果。
       const key = movieKey(c);
       if (index.has(key)) {
         // 同一条目出现在多个源：合并线路，优先保留有可播放地址的版本
         const prev = merged[index.get(key)];
-        const routes = [...prev.routes, ...c.routes];
-        const playable = prev.playable_url || c.playable_url;
         merged[index.get(key)] = {
           ...prev,
-          playable_url: playable,
-          routes,
+          playable_url: prev.playable_url || c.playable_url,
+          routes: [...prev.routes, ...c.routes],
           // 取更完整的元信息：评分、简介、海报、集数
           rating: prev.rating ?? c.rating,
           overview: prev.overview || c.overview,
@@ -968,7 +1072,7 @@ async function searchMaccmsAll(keyword, limit, env) {
     .sort((a, b) => a.r - b.r || a.playable - b.playable || a.i - b.i)
     .map((x) => x.c);
 
-  return { sources: sourcesUsed, candidates: ranked };
+  return { sources: sourcesUsed, candidates: ranked, allFailed: settled.every((s) => !s.ok) };
 }
 
 // ---------------------------------------------------------------
@@ -1013,16 +1117,20 @@ async function enrichMovieCandidates(candidates, limit = 4) {
   return [...enriched, ...tail];
 }
 
-export async function fetchMovieMeta(query, limit = 5, env = {}) {
+export async function fetchMovieMeta(query, limit = 24, env = {}) {
   const q = (query || '').trim();
   if (!q) throw new HttpError(422, '缺少搜索关键词');
-  const capped = Math.min(limit, 20);
+  const capped = Math.min(limit, 60);
 
   // 主源：苹果CMS 采集接口（真正的影视资源站，含可直接播放的 m3u8/mp4）
   const primary = await searchMaccmsAll(q, capped, env);
   if (primary.candidates.length) {
     // 前 N 条补全海报/评分（缺字段时才请求，动漫走 Bangumi/Kitsu）
-    const candidates = await enrichMovieCandidates(primary.candidates.slice(0, capped));
+    // 补全（Cinemeta/Bangumi/Kitsu）走外部库，同样套时间预算：
+    // 「补一张海报」不该把整次搜索从 6 秒拖到十几秒。超时就先用采集源自带的海报与评分。
+    const head = primary.candidates.slice(0, capped);
+    const enriched = await withBudget(enrichMovieCandidates(head), ENRICH_BUDGET_MS);
+    const candidates = enriched.ok ? enriched.v : head;
     // 新片优先：按上映日期降序，可播放的优先
     candidates.sort((a, b) => {
       const playableDiff = Number(!!b.playable_url) - Number(!!a.playable_url);
@@ -1052,7 +1160,22 @@ export async function fetchMovieMeta(query, limit = 5, env = {}) {
     sources.push(item.value.source);
     merged.push(...item.value.candidates);
   }
-  if (!merged.length) throw new HttpError(502, '影视元信息接口请求失败，请检查采集源配置');
+  if (!merged.length) {
+    // 「搜不到」与「源挂了」是两件事，不该都表现为 502 报错：
+    // 前者对用户是正常结果（换个词就行），后者才值得提示稍后重试。
+    // 返回空结果 + note，前端据此渲染空状态并给出可操作建议。
+    const allFailed = primary.allFailed;
+    return {
+      query: q,
+      source: 'none',
+      sources: [],
+      count: 0,
+      candidates: [],
+      note: allFailed
+        ? '采集源暂时不可用，请稍后重试'
+        : '未找到匹配的影视资源，试试更短的关键词或换个说法'
+    };
+  }
   merged.sort((a, b) => Number(!!b.playable_url) - Number(!!a.playable_url));
   return {
     query: q,

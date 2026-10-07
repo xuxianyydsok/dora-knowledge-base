@@ -248,16 +248,27 @@ export async function getAnimeClassIds(source) {
 // 默认采集源（可用环境变量 VOD_SOURCES 覆盖，格式为 JSON 数组）
 // 5 个源并发检索，命中率显著高于单源；代价是单次搜索耗时变长（多源均无结果时才等超时）。
 export const DEFAULT_VOD_SOURCES = [
-  // 以下三个源无防盗链，可直接前端播放，优先使用
+  // —— 第一梯队：无防盗链，前端可直接播放（实测 m3u8 探活返回 200）——
+  // 顺序即优先级：靠前的源其线路会先进入候选，跨源合并时更容易被保留。
   { key: 'dytt', name: '电影天堂', api: 'https://caiji.dyttzyapi.com/api.php/provide/vod/' },
-  { key: 'zy360', name: '360资源', api: 'https://360zy.com/api.php/provide/vod/' },
   { key: 'hongniu', name: '红牛资源', api: 'https://www.hongniuzy2.com/api.php/provide/vod/' },
-  // 以下源有防盗链，作为补充资源池
+  // 2026-10-07 实测新增：三个源均命中且直链可播（「庆余年」8/8/3 条，「流浪地球」5/5/3 条）
+  { key: 'jszy', name: '极速资源', api: 'https://jszyapi.com/api.php/provide/vod/' },
+  { key: 'guangsu', name: '光速资源', api: 'https://api.guangsuapi.com/api.php/provide/vod/' },
+  { key: 'ikun', name: '艾坤资源', api: 'https://ikunzyapi.com/api.php/provide/vod/' },
+  // —— 第二梯队：有 Referer 白名单防盗链，仅作资源池补充 ——
+  // 命中率不低，但直链需后端注入 Referer 才能播（见方案 §7），当前用于「多线路」与元信息补全。
   { key: 'lzi', name: '量子资源', api: 'https://cj.lziapi.com/api.php/provide/vod/' },
   { key: 'ffzy', name: '非凡资源', api: 'https://api.ffzyapi.com/api.php/provide/vod/' },
   // 最大资源：补动漫条目；偶发返回非 JSON，由 fetchJson 容错
   { key: 'zuid', name: '最大资源', api: 'https://api.zuidapi.com/api.php/provide/vod' },
 ];
+
+// 已移除的源（保留记录，便于以后复查是否恢复）：
+//   zy360 360资源 https://360zy.com/api.php/provide/vod/
+//     2026-10-07 三次实测均不可用（超时 → HTTP 5xx → 10s 超时），
+//     且其单源耗时（13.3s）超过其余 8 个源之和，会把搜索阶段预算直接顶满、
+//     把典型搜索耗时从 ~3s 拖到 ~11s。移除后其余源实测均在 2.1s 内返回。
 
 // 读取配置的采集源：优先 env.VOD_SOURCES，否则用默认列表
 export function getVodSources(env = {}) {
