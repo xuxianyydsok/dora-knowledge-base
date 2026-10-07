@@ -185,7 +185,7 @@ export function MovieView({ id }) {
       {/* 线路与剧集选择 */}
       {routes.length > 0 && (
         <>
-          <div class="section-head">
+          <div class="grid-head">
             <h2><span class="bar" />{isSeries ? '剧集列表' : '播放线路'}</h2>
             <span class="count">
               {routes.length > 1 ? `${routes.length} 条线路` : '1 条线路'}

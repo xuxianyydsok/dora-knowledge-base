@@ -765,7 +765,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   opacity: 0.9;
 }
 .card-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 7px; flex: 1; position: relative; z-index: 1; }
-.card-title { font-weight: 620; font-size: 15.5px; margin: 0; letter-spacing: -0.01em; }
+.card-title { font-weight: 620; font-size: var(--fs-lead); margin: 0; letter-spacing: -0.012em; }
 .card-desc {
   font-size: 13px; color: var(--text-muted); margin: 0;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
@@ -1090,15 +1090,17 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 /* —— 通用区块 —— */
 .section { display: flex; flex-direction: column; gap: 34px; }
 .section-head { max-width: 640px; }
+/* 落地页章节标题：站在 hero(60) 与卡片标题(17) 之间的一档。
+   原为 clamp(26px,3.2vw,38px)，与 hero 只差一档、层级被压平，收到 --fs-h2。 */
 .section-head h2 {
   margin: 0 0 10px;
   font-family: var(--font-display);
-  font-size: clamp(26px, 3.2vw, 38px);
+  font-size: var(--fs-h2);
   font-weight: 500;
   letter-spacing: var(--track-display);
   line-height: 1.15;
 }
-.section-head p { margin: 0; font-size: 16px; line-height: 1.7; }
+.section-head p { margin: 0; font-size: var(--fs-lead); line-height: 1.72; }
 
 /* —— 功能矩阵 —— */
 .feature-grid {
@@ -1144,7 +1146,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   transform: scale(1.1) rotate(-6deg);
   box-shadow: 0 8px 22px color-mix(in srgb, var(--tone, var(--primary)) 32%, transparent);
 }
-.feature-card h3 { margin: 0 0 8px; font-size: 17px; font-weight: 650; }
+.feature-card h3 { margin: 0 0 8px; font-size: var(--fs-title); font-weight: 620; letter-spacing: -0.015em; }
 .feature-card p { margin: 0; font-size: 13.5px; line-height: 1.7; }
 
 /* —— 能力列表 —— */
@@ -1177,7 +1179,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   transition: transform var(--dur) var(--ease-spring);
 }
 .cap-card:hover .cap-icon { transform: scale(1.08); }
-.cap-card h4 { margin: 0 0 4px; font-size: 15px; font-weight: 620; }
+.cap-card h4 { margin: 0 0 4px; font-size: var(--fs-lead); font-weight: 620; letter-spacing: -0.012em; }
 .cap-card p { margin: 0; font-size: 13px; line-height: 1.65; }
 
 /* —— 步骤 —— */
@@ -1207,7 +1209,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   -webkit-background-clip: text; background-clip: text; color: transparent;
   display: block; margin-bottom: 10px;
 }
-.step-card h4 { margin: 0 0 6px; font-size: 16px; font-weight: 640; }
+.step-card h4 { margin: 0 0 6px; font-size: var(--fs-title); font-weight: 620; letter-spacing: -0.015em; }
 .step-card p { margin: 0; font-size: 13px; line-height: 1.65; }
 
 /* —— CTA —— */
@@ -1382,7 +1384,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   box-shadow: var(--shadow-sm), inset 0 1px 0 var(--glass-highlight);
 }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.panel-head h2 { margin: 0; font-size: 15.5px; font-weight: 640; letter-spacing: -0.01em; }
+.panel-head h2 { margin: 0; font-size: var(--fs-title); font-weight: 620; letter-spacing: -0.015em; }
 .panel-more {
   display: inline-flex;
   align-items: center;
@@ -4140,9 +4142,11 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .post-head h1 { font-size: clamp(28px, 3.4vw, 42px); }
 .login-page h1 { font-size: clamp(26px, 3vw, 34px); }
 
-/* 章节标题统一到同一档字号 / 字重，避免「同层级两种大小」 */
+/* 应用内章节标题：全站唯一一档 —— 无衬线 var(--fs-title) / 620。
+   衬线展示体只留给「页级 h1」与落地页章节。此前 MovieView 直接把落地页的
+   .section-head 拿来当「剧集列表」标题，26~38px 衬线挤在详情页里，与相邻的
+   17px 无衬线对不上；现已改回 .grid-head。 */
 .grid-head h2,
-.m-head h2,
 .panel-head h2 { font-size: var(--fs-title); font-weight: 620; letter-spacing: -0.015em; }
 
 /* 元信息角色：计数 / 时间 / 读数一律等宽 + 表格数字，逐行扫读时不会左右跳动 */
@@ -4152,8 +4156,6 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .meta-item,
 .timeline-date,
 .stat b { font-variant-numeric: tabular-nums; }
-.m-head .count,
-.shelf-head .count,
 .timeline-date {
   font-family: var(--font-mono);
   font-size: var(--fs-kicker);
@@ -4234,17 +4236,16 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 }
 
 /* ---------------- 区块标题行 ---------------- */
-/* .m-head 是上一版的写法，本版统一叫 .grid-head；两者外观一致，保留别名以便渐进迁移 */
-.grid-head,
-.m-head {
+/* 应用内唯一的区块标题写法。上一版的 .m-head 已在全站替换为 .grid-head
+   （jsx 使用数为 0），这里不再保留别名，避免又出现「两套外观一样但名字不同」的写法。 */
+.grid-head {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
   margin: 0 0 14px;
 }
-.grid-head h2,
-.m-head h2 {
+.grid-head h2 {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -4253,10 +4254,16 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   font-weight: 620;
   letter-spacing: -0.015em;
 }
-.grid-head h2 .bar,
-.m-head h2 .bar { flex: 0 0 auto; width: 3px; height: 15px; border-radius: 2px; background: var(--primary); }
+.grid-head h2 .bar { flex: 0 0 auto; width: 3px; height: 15px; border-radius: 2px; background: var(--primary); }
+/* 计数属于「读数列」角色：等宽 + 表格数字，逐行扫读时不左右跳 */
 .grid-head .count,
-.m-head .count { font-size: var(--fs-caption); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.panel-head .count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-kicker);
+  letter-spacing: var(--track-mono);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 
 /* 已生效筛选：给一个可点掉的 chip，用户不会忘了自己筛过什么 */
 .filter-chip {
