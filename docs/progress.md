@@ -304,6 +304,13 @@ display(await tab.screenshot({ format: 'webp' }));
 - 长远方案：后端新增m3u8代理接口，转发时携带正确Referer，解决所有防盗链源的播放问题
 - 目前3个无防盗链源已覆盖大部分热门剧集，先保证基础可用
 
+## 2.11 NewsNow 热榜接入（2026-10-09）
+
+- 新增独立 Worker `newsnow-api`（源码 newsnext/newsnow，MIT，`CF_PAGES=1` 构建后取 `_worker.js` 以模块方式上传），域名 `news.xuguochen.de5.net`；未启用 D1/登录/缓存。
+- 后端：`backend/src/routes/news.js` + `lib/newsSources.js`（47 个源）。`GET /api/news/sources`、`GET /api/news/:id`，需登录；经 service binding `NEWSNOW` 调用，边缘缓存 5 分钟。
+- 前端：导航「视频」前新增「NewsNow」，路由 `/news`（`routes/News.jsx`），按栏目（精选/国内/国际/科技/财经/体育）展示玻璃卡片热榜。
+- 已知：GitHub Actions 部署自 2026-10-07 起失败（疑似仓库 Secrets 中 Cloudflare 令牌在安全轮换后失效）。
+
 ## 3. 下一步（按优先级，接手即可开工）
 
 1. **继续累积影音接口清单**：用户手上还有若干份「影音接口清单」文件，会陆续给路径。

@@ -19,6 +19,7 @@ import * as music from './routes/music.js';
 import * as movies from './routes/movies.js';
 import * as rss from './routes/rss.js';
 import * as admin from './routes/admin.js';
+import * as news from './routes/news.js';
 
 // 路由表：[method, pattern, handler]
 // pattern 中 :name 表示路径参数；handler 依次接收 (request, env, param1, param2, ...)
@@ -97,6 +98,10 @@ const routes = [
   ['PUT', '/api/movies/:id/progress', movies.saveMovieProgress],
 
   // RSS 订阅
+  // NewsNow 热榜（代理自部署的 newsnow-api）
+  ['GET', '/api/news/sources', news.listNewsSources],
+  ['GET', '/api/news/:id', news.getNews],
+
   ['GET', '/api/rss/feeds', rss.listFeeds],
   ['POST', '/api/rss/feeds', rss.createFeed],
   ['GET', '/api/rss/feeds/:id', rss.getFeed],

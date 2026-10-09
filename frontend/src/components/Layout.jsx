@@ -12,7 +12,7 @@ import { Icon } from './Icon.jsx';
 import { useAuth } from '../lib/auth.jsx';
 
 const PRIMARY = [
-  ['/videos', '视频'], ['/github', 'GitHub'], ['/posts', '博客'],
+  ['/news', 'NewsNow'], ['/videos', '视频'], ['/github', 'GitHub'], ['/posts', '博客'],
   ['/music', '音乐'], ['/movies', '影视'], ['/rss', 'RSS']
 ];
 

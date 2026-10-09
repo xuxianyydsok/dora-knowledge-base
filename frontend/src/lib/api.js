@@ -107,6 +107,10 @@ export const api = {
   saveMovieProgress: (id, body) => request(`/api/movies/${id}/progress`, { method: 'PUT', body }),
 
   // RSS 订阅
+  // NewsNow 热榜
+  listNewsSources: () => request('/api/news/sources'),
+  getNews: (id) => request(`/api/news/${encodeURIComponent(id)}`),
+
   listFeeds: (params = '') => request(`/api/rss/feeds${params}`),
   getFeed: (id) => request(`/api/rss/feeds/${id}`),
   createFeed: (body) => request('/api/rss/feeds', { method: 'POST', body }),

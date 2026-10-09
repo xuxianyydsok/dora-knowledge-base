@@ -16,6 +16,11 @@ CORS_ORIGINS = "https://dora.xuguochen.de5.net,http://localhost:5173,http://127.
 [triggers]
 crons = ["0 * * * *"]
 
+# NewsNow 热榜服务（独立 Worker，源码 newsnext/newsnow，MIT），通过 service binding 内部调用
+[[services]]
+binding = "NEWSNOW"
+service = "newsnow-api"
+
 # R2 存储桶绑定（存放封面/插图，仅存路径字符串）
 [[r2_buckets]]
 binding = "R2_BUCKET"
