@@ -7,6 +7,7 @@ import { GalleryView } from '../components/GalleryView.jsx';
 import { TimelineView } from '../components/TimelineView.jsx';
 import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { PageHeader } from '../components/PageHeader.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 
 import { LoadingState } from '../components/StateView.jsx';
