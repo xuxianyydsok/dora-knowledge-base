@@ -154,3 +154,51 @@ export async function getConsole(request, env) {
     now: new Date().toISOString()
   }, request, env);
 }
+
+// GET /api/graph/board —— 无限画板：博客星域 + GitHub 星域 + 跨域连线
+// posts: [id,title,cat,tags[],date]；repos: [id,title,one_line,cat,lang,stars,url]
+// links: [postId, repoId, keyword]（博客标签 与 仓库语言/topics/AI 关键词 同名即相连）
+export async function getBoard(request, env) {
+  const { db, user } = await requireAuth(request, env);
+  const uf = { user_id: `eq.${user.id}` };
+  const [posts, cats, tags, postTags, repos] = await Promise.all([
+    db.select('posts', qs({ select: 'id,title,category_id,published_at,created_at', ...uf, ...(user.isGuest ? { status: 'eq.published' } : {}) })),
+    db.select('categories', qs({ select: 'id,name,slug', ...uf, order: 'sort_order.asc' })),
+    db.select('tags', qs({ select: 'id,name,slug', ...uf })),
+    db.select('post_tags', qs({ select: 'post_id,tag_id', ...uf })),
+    db.select('resources', qs({
+      select: 'id,title,url,ai_one:metadata->ai->>one_line,ai_tags:metadata->ai->tags,ai_kw:metadata->ai->keywords,lang:metadata->>language,topics:metadata->topics,stars:metadata->stars',
+      ...uf, type: 'eq.github', limit: '3000'
+    }))
+  ]);
+  const tagName = new Map(tags.map((t) => [t.id, t.name]));
+  const catName = new Map(cats.map((c) => [c.id, c.name]));
+  const ptags = new Map();
+  postTags.forEach((l) => { if (!ptags.has(l.post_id)) ptags.set(l.post_id, []); ptags.get(l.post_id).push(tagName.get(l.tag_id)); });
+
+  const P = posts.map((p) => ({
+    id: p.id, title: p.title, cat: catName.get(p.category_id) || '未分类',
+    tags: (ptags.get(p.id) || []).filter(Boolean), date: (p.published_at || p.created_at || '').slice(0, 10)
+  }));
+  const R = repos.map((r) => ({
+    id: r.id, title: r.title, url: r.url, one: r.ai_one || '', lang: r.lang || '',
+    cat: (Array.isArray(r.ai_tags) && r.ai_tags[0]) || '待解读', stars: Number(r.stars) || 0,
+    kw: [r.lang, ...(Array.isArray(r.topics) ? r.topics : []), ...(Array.isArray(r.ai_kw) ? r.ai_kw : [])].filter(Boolean).map((x) => String(x).toLowerCase())
+  }));
+
+  // 跨域连线：每个博客标签最多连 6 个仓库（星数高的优先），每篇文章最多 3 条
+  const byKw = new Map();
+  R.forEach((r) => r.kw.forEach((k) => { if (!byKw.has(k)) byKw.set(k, []); byKw.get(k).push(r); }));
+  byKw.forEach((list) => list.sort((a, b) => b.stars - a.stars));
+  const links = [];
+  P.forEach((p) => {
+    let n = 0;
+    for (const t of p.tags) {
+      const list = byKw.get(String(t).toLowerCase());
+      if (!list) continue;
+      for (const r of list.slice(0, 2)) { if (n >= 3) break; links.push([p.id, r.id, t]); n++; }
+    }
+  });
+  R.forEach((r) => { delete r.kw; });
+  return ok({ posts: P, repos: R, links }, request, env);
+}
