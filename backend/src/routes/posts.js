@@ -110,6 +110,16 @@ export async function listPosts(request, env) {
     ...filters,
     order: 'updated_at.desc'
   }));
+  // 博客首页（cosolar 风格）卡片要显示标签：一次性取出这些文章的 tag_id（2026-10-09）
+  if (url.searchParams.get('with_tags') === 'true' && rows.length) {
+    const links = await db.select('post_tags', qs({ select: 'post_id,tag_id', ...userFilter(user, all) }));
+    const byPost = new Map();
+    for (const l of links) {
+      if (!byPost.has(l.post_id)) byPost.set(l.post_id, []);
+      byPost.get(l.post_id).push(l.tag_id);
+    }
+    for (const r of rows) r.tag_ids = byPost.get(r.id) || [];
+  }
   return ok(rows, request, env);
 }
 

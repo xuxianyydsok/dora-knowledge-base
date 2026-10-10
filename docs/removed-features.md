@@ -45,3 +45,9 @@
 1. `backend/wrangler.toml` 把 `PUBLIC_MODE` 改为 `"false"`（只改这一项后端就恢复全部要求登录）。
 2. 前端：去掉 `app.jsx` 里各路由的 `guest`，`Layout.jsx` 恢复 `isAuthenticated &&` 判断与「登录」按钮，`Home.jsx` 按钮改回 `/login`。
 3. 推送到 `main`，CI 自动部署前后端。
+
+## 博客列表的「画廊 / 时间流」视图切换（已移除，2026-10-09）
+
+**原因**：用户要求博客换成 halo-theme-cosolar 风格（Hark 推荐、用户同意）。新首页是固定的 cosolar 布局（精选轮播 + 卡片列表 + 侧边栏），不再提供视图切换。
+**影响**：`/posts` 不再使用 `GalleryView` / `TimelineView` / `ViewSwitch`（组件本身仍保留，其它页面在用）。
+**恢复**：从 git 历史取回 `frontend/src/routes/Posts.jsx`（提交 6159db1 及之前的版本）。
