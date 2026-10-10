@@ -515,3 +515,10 @@ curl -s -x http://127.0.0.1:7897 --max-time 90 -X POST https://api.xuguochen.de5
 - 影视源 13→6（guangsu/subo/hhzy/ikun/zy360new/mdzy），全部 5 部测试片可播；移除明细见 removed-features.md。线路名映射补上新源。
 - 音乐源复测全部可用，未改。
 - AI 解读：cron 判断改为非 */5 即解读，打开 Workers observability 日志。
+
+### 2.25 图谱改为「知识库控制台」（2026-10-09）
+- 导航：图谱从「更多」移出，常显在「影视」后面。
+- `/graph` 新版：顶部状态条（数字滚动 + 时钟）、中间流动管线图（左：博客分类与影视/音乐/视频/GitHub 来源 → 中间总线 → 右：标签与 GitHub 应用分类；Canvas 光点沿曲线流动，悬停高亮、点击跳转）、底部四块仪表盘（实时日志 / 分布 / 365 天热力图 / AI 解读进度）。每 60 秒刷新，新事件闪烁并触发光点脉冲；标签页隐藏时暂停。
+- 本页固定深色（用户选方案 A）。旧 D3 力导向图保留为「经典视图」标签。
+- 后端新增 `GET /api/graph/console`（`backend/src/routes/graph.js#getConsole`），游客可读。
+- `/github?cat=分类名` 支持从图谱直接筛选。

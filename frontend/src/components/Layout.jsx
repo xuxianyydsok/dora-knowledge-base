@@ -1,6 +1,6 @@
 // 全局基础布局：单行顶栏（品牌 · 一级导航 · 更多菜单 · 搜索/主题/通知 · 头像菜单） + 主内容区
 //
-// 设计取舍：顶栏只平铺**内容模块**入口；工具类入口（收藏/图谱/分类/标签）收进「更多」，
+// 设计取舍：顶栏只平铺**内容模块**入口；工具类入口（收藏/分类/标签）收进「更多」；图谱 2026-10-09 起常显在影视后面，
 // 账号相关（设置/备份/用户管理/退出）收进头像菜单。
 // 之前是 12 项平铺 + 邮箱/退出挤在同一行，窄一点就折成两行、层级混乱。
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -13,11 +13,11 @@ import { useAuth } from '../lib/auth.jsx';
 
 const PRIMARY = [
   ['/news', 'NewsNow'], ['/videos', '视频'], ['/github', 'GitHub'], ['/posts', '博客'],
-  ['/music', '音乐'], ['/movies', '影视']
+  ['/music', '音乐'], ['/movies', '影视'], ['/graph', '图谱']
 ];
 
 const TOOLS = [
-  ['/favorites', '收藏', 'heart'], ['/graph', '图谱', 'graph'],
+  ['/favorites', '收藏', 'heart'],
   ['/categories', '分类', 'list'], ['/tags', '标签', 'tag']
 ];
 

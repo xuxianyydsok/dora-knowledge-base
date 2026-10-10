@@ -113,6 +113,7 @@ const routes = [
 
   // 关联图谱
   ['GET', '/api/graph', graph.getGraph],
+  ['GET', '/api/graph/console', graph.getConsole],
 
   // 收藏夹
   ['GET', '/api/favorites', favorites.listFavorites],

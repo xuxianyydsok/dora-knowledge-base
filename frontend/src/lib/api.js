@@ -129,6 +129,7 @@ export const api = {
 
   // 关联图谱
   getGraph: (params = '') => request(`/api/graph${params}`),
+  getGraphConsole: () => request('/api/graph/console'),
 
   // 收藏夹
   listFavorites: (params = '') => request(`/api/favorites${params}`),

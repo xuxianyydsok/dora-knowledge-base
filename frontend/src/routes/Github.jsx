@@ -38,7 +38,7 @@ export function Github() {
   const [items, setItems] = useState(null);
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
-  const [cat, setCat] = useState('');      // '' 全部 / '__pending' 待解读 / 分类名
+  const [cat, setCat] = useState(() => new URLSearchParams(location.search).get('cat') || '');      // '' 全部 / '__pending' 待解读 / 分类名
   const [langAll, setLangAll] = useState(false);
   const [lang, setLang] = useState('');
   const [platform, setPlatform] = useState('');
