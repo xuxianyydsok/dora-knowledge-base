@@ -142,15 +142,6 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
         </div>
       </header>
 
-      {/* —— 分类导航：单行横向滚动 —— */}
-      <nav class="cs-nav">
-        <button class={cat === 'all' && !tag ? 'on' : ''} onClick={() => setCat('all')}>全部</button>
-        {usedCats.map((c) => (
-          <button key={c.id} class={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>
-            {c.name}<small>{catCount.get(c.id)}</small>
-          </button>
-        ))}
-      </nav>
 
       {/* —— 精选轮播 —— */}
       {cur && cat === 'all' && !tag && !q && (
@@ -186,6 +177,7 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
             <h3>
               {tag ? `# ${tagMap.get(tag)?.name}` : cat !== 'all' ? catMap.get(cat)?.name : '最新文章'}
               <small>{list.length} 篇</small>
+              {(cat !== 'all' || tag) && <button class="cs-clear" onClick={() => setCat('all')}>× 查看全部</button>}
             </h3>
             <div class="cs-seg">
               <button class={sort === 'new' ? 'on' : ''} onClick={() => setSort('new')}>最新</button>

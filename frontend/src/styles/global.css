@@ -4876,6 +4876,7 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .cs-nav { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); padding-right: 30px; }
 .cs-nav > button { flex: none; white-space: nowrap; }
 .cs-nav > button small { margin-left: 4px; font-size: 11px; opacity: 0.6; font-weight: 500; }
+.cs-clear { border: none; background: none; padding: 0 0 0 4px; color: var(--cs); cursor: pointer; font-size: 13px; font-weight: 500; }
 
 /* 首页顶部横幅（高清背景 + 大搜索框；多张背景时淡入淡出轮换） */
 .cs-banner { position: relative; min-height: 320px; border-radius: var(--radius-lg); overflow: hidden; display: flex; align-items: center;

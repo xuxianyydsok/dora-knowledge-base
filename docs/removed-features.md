@@ -70,3 +70,9 @@
 **现在的行为**：`/github` 为紧凑列表 + 语言/话题筛选 + 搜索 + 排序；数据由 Worker 定时任务每天同步（`backend/src/lib/githubStars.js`），站长可点「立即同步」。
 **注意**：同步会删除 resources 表里不在 GitHub Star 中的 github 类型记录（包括以前手动添加的）。
 **恢复**：从 git 历史取回 `frontend/src/routes/Github.jsx`（f8abbc1 版本）；后端 `POST /api/github`、`PATCH/DELETE /api/github/:id` 仍保留未删。要停掉同步：`backend/wrangler.toml` 把 `crons` 改回 `[]`。
+
+## 博客首页横幅下方的分类横栏（已移除，2026-10-09）
+
+**原因**：用户觉得横幅和文章之间的分类横栏不美观，要求去掉。
+**现在的行为**：分类入口保留在横幅里的「分类」页、右侧栏「专题类别」和移动端底部工具栏；按分类/标签筛选时，列表标题旁有「× 查看全部」。
+**恢复**：从 git 历史取回 `frontend/src/routes/Posts.jsx` 中 `.cs-nav` 那段（a587551 版本）。
