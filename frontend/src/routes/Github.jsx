@@ -53,6 +53,28 @@ export function Github() {
   }
   useEffect(() => { load(); }, []);
 
+  // 有待解读的仓库就立即连续解读（每次 8 个并行），不再等定时任务；离开页面即停
+  const [aiRun, setAiRun] = useState(null);
+  const pendingCount = (items || []).filter((r) => !r.ai).length;
+  useEffect(() => {
+    if (!items || !pendingCount || aiRun) return undefined;
+    let alive = true;
+    (async () => {
+      setAiRun({ msg: `AI 正在解读，剩余 ${pendingCount} 个…` });
+      try {
+        for (let i = 0; i < 60 && alive; i++) {
+          const r = await api.analyzeGithub();
+          if (!alive) break;
+          if (r.done) setItems((await api.listGithub()) || []);
+          if (r.stopped) { setAiRun({ msg: '今日免费 AI 额度已用完，明天打开页面继续', done: true }); return; }
+          if (!r.remaining || !r.done) { setAiRun({ msg: r.remaining ? `剩余 ${r.remaining} 个暂时解读失败` : 'AI 解读全部完成', done: true }); return; }
+          setAiRun({ msg: `AI 正在解读，剩余 ${r.remaining} 个…` });
+        }
+      } catch (e) { if (alive) setAiRun({ msg: `AI 解读中断：${e.message}`, done: true }); }
+    })();
+    return () => { alive = false; };
+  }, [items === null]);
+
   async function syncNow() {
     const run = `manual-${Date.now()}`;
     try {
@@ -158,6 +180,7 @@ export function Github() {
             )}
           </div>
           {sync?.msg && <p class="gh-sync-msg">{sync.msg}</p>}
+          {aiRun?.msg && <p class="gh-sync-msg">✦ {aiRun.msg}</p>}
         </div>
 
         <div class="gh-box gh-bar">

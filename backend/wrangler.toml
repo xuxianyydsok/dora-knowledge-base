@@ -16,7 +16,7 @@ GITHUB_STARS_USER = "xuxianyydsok"   # /github 页同步此账号的 GitHub Star
 
 [triggers]
 # GitHub Star 同步：每天 UTC 02:00–03:55（北京时间 10:00）每 5 分钟一页；AI 解读：每分钟 2 个
-crons = ["*/5 2-3 * * *", "* * * * *"]
+crons = ["*/5 2-3 * * *"]
 
 # Workers AI（GitHub 收藏中文解读，免费额度）
 [ai]

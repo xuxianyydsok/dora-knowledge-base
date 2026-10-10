@@ -522,3 +522,6 @@ curl -s -x http://127.0.0.1:7897 --max-time 90 -X POST https://api.xuguochen.de5
 - 本页固定深色（用户选方案 A）。旧 D3 力导向图保留为「经典视图」标签。
 - 后端新增 `GET /api/graph/console`（`backend/src/routes/graph.js#getConsole`），游客可读。
 - `/github?cat=分类名` 支持从图谱直接筛选。
+
+### 2.26 GitHub AI 解读改为即时（2026-10-09）
+- 去掉每分钟 Cron；新增 `POST /api/github/analyze`（游客可触发，只处理未解读仓库，8 个并行）。GitHub 页加载后若有待解读，自动循环调用并实时刷新，状态显示在同步按钮下方。

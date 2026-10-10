@@ -9,6 +9,7 @@ import { fetchGithubMeta } from '../lib/fetchers.js';
 import { requireString, optionalString, requireUuid, optionalBool } from '../lib/validate.js';
 import { setResourceTags, withTags, validateTagIds } from '../lib/resources.js';
 import { syncStarsPage, selectAllGithubLite } from '../lib/githubStars.js';
+import { analyzePending } from '../lib/githubAi.js';
 
 const TABLE = 'resources';
 const TYPE = 'github';
@@ -168,4 +169,10 @@ export async function deleteGithub(request, env, id) {
   }));
   if (!rows.length) throw new HttpError(404, '仓库收藏不存在或无权限');
   return ok({ id }, request, env);
+}
+
+// POST /api/github/analyze —— 立即解读一批待解读仓库（游客也可触发，只处理还没解读的，不改其他数据）
+export async function analyzeGithub(request, env) {
+  await requireAuth(request, env);
+  return ok(await analyzePending(env), request, env);
 }

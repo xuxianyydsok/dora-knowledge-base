@@ -10,7 +10,7 @@ export const MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
 export const CATEGORIES = ['Web应用', '移动应用', '桌面应用', '数据库', 'AI与机器学习', '开发工具', '安全工具', '游戏',
   '设计工具', '效率工具', '教育学习', '社交网络', '数据分析', '媒体工具'];
 const PLATFORMS = ['mac', 'windows', 'linux', 'ios', 'android', 'docker', 'web', 'cli'];
-const PER_RUN = 2;
+const PER_RUN = 8;
 
 function buildPrompt(m, readme) {
   const info = [
@@ -86,17 +86,18 @@ export async function analyzeOne(env, row) {
   return { ...parseAnswer(r), model: MODEL, analyzed_at: new Date().toISOString() };
 }
 
-// 定时任务：每分钟解读 PER_RUN 个
-export async function analyzePending(env) {
+// 按需解读：一次并行处理 limit 个待解读仓库（每个约 3 个子请求，免费版单次上限 50）
+// 由 POST /api/github/analyze 触发（打开 GitHub 页有待解读就连续调用），以及 Star 同步后顺手跑一批。
+export async function analyzePending(env, limit = PER_RUN) {
   if (!env.AI) return { skipped: 'no AI binding' };
   const db = new SupabaseClient(env);
+  const pendingQ = { type: 'eq.github', 'metadata->ai': 'is.null', or: '(metadata->>ai_tries.is.null,metadata->>ai_tries.lt.3)' };
   const rows = await db.select('resources', qs({
-    select: 'id,title,metadata', type: 'eq.github', 'metadata->ai': 'is.null',
-    or: '(metadata->>ai_tries.is.null,metadata->>ai_tries.lt.3)',
-    order: 'metadata->>starred_at.desc.nullslast', limit: String(PER_RUN)
+    select: 'id,title,metadata', ...pendingQ,
+    order: 'metadata->>starred_at.desc.nullslast', limit: String(limit)
   }));
-  let done = 0;
-  for (const row of rows) {
+  let done = 0; let stopped = null;
+  await Promise.all(rows.map(async (row) => {
     const meta = row.metadata || {};
     try {
       const ai = await analyzeOne(env, row);
@@ -104,10 +105,11 @@ export async function analyzePending(env) {
       done++;
     } catch (e) {
       const msg = String(e?.message || e);
-      // 免费额度用完 / 限流：本轮停止，不记失败
-      if (/neuron|4006|quota|limit|429|capacity/i.test(msg)) return { done, stopped: msg };
+      // 免费额度用完 / 限流：不记失败
+      if (/neuron|4006|quota|limit|429|capacity/i.test(msg)) { stopped = msg; return; }
       await db.update('resources', qs({ id: `eq.${row.id}` }), { metadata: { ...meta, ai_tries: (meta.ai_tries || 0) + 1, ai_error: msg.slice(0, 200) } });
     }
-  }
-  return { done };
+  }));
+  const left = await db.select('resources', qs({ select: 'id', ...pendingQ, limit: '1000' }));
+  return { done, remaining: left.length, ...(stopped ? { stopped } : {}) };
 }

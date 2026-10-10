@@ -96,3 +96,9 @@
 - 现存 6 个：guangsu、subo、hhzy、ikun、zy360new、mdzy（均 5/5）。
 - 恢复：把对应条目加回 `backend/src/lib/maccms.js` 的 DEFAULT_VOD_SOURCES，或用环境变量 VOD_SOURCES（JSON 数组）覆盖。注意：403 的源在中国大陆直连网络下可能可播，若以后在大陆无代理访问可复测。
 - 音乐源同日复测（晴天/稻香/海阔天空/孤勇者）：GD 音乐台 netease、Meting qijieya netease/migu 全部 4/4 可播，保持不变；文档里的 Vercel 网易云 API 拿不到播放地址、LX 音源脚本只能在洛雪客户端用，未采用。
+
+## 2026-10-09 移除：GitHub AI 解读的每分钟定时任务
+- 内容：`backend/wrangler.toml` 的 `* * * * *` Cron（每分钟解读 2 个）。
+- 原因：用户要求“不要搞定时任务，直接让它解读”。
+- 现在：`POST /api/github/analyze` 一次并行解读 8 个；打开 GitHub 页有待解读就自动连续调用直到完成；每日 Star 同步后也顺手解读一批。
+- 恢复：在 crons 里加回 `"* * * * *"`，并在 `index.js` 的 scheduled 中对非 `*/5` 的 Cron 调用 `analyzePending(env, 2)`。
