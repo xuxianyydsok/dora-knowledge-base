@@ -3,6 +3,7 @@
 // · 图片点击放大（滚轮/按钮缩放、拖动、ESC 关闭）· 长文排版
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
+import { createPortal } from 'preact/compat';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { PostRenderer } from '../components/PostRenderer.jsx';
@@ -197,23 +198,27 @@ export function PostView({ id }) {
         )}
       </div>
 
-      {toc.length > 0 && (
-        <button class="pv-toc-fab" onClick={() => setTocOpen(true)} aria-label="目录"><Icon name="list" size={18} /></button>
-      )}
-      {tocOpen && (
-        <div class="pv-drawer" onClick={() => setTocOpen(false)}>
+      {tocOpen && createPortal(
+        <div class="pv-drawer cs" onClick={() => setTocOpen(false)}>
           <div class="pv-drawer-panel" onClick={(e) => e.stopPropagation()}>
             <div class="cs-box-head"><Icon name="list" size={14} /> 文章目录</div>
             {tocList}
           </div>
-        </div>
+        </div>, document.body
       )}
-      <button class="pv-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="回到顶部"
-        style={{ opacity: progress > 3 ? 1 : 0, pointerEvents: progress > 3 ? 'auto' : 'none' }}>
-        <Icon name="chevronDown" size={18} />
-      </button>
+      {createPortal(
+        <div class="cs pv-floats">
+          {toc.length > 0 && (
+            <button class="pv-toc-fab" onClick={() => setTocOpen(true)} aria-label="目录"><Icon name="list" size={18} /></button>
+          )}
+          <button class="pv-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="回到顶部"
+            style={{ opacity: progress > 3 ? 1 : 0, pointerEvents: progress > 3 ? 'auto' : 'none' }}>
+            <Icon name="chevronDown" size={18} />
+          </button>
+        </div>, document.body
+      )}
 
-      {viewer && <ImageViewer src={viewer} onClose={() => setViewer('')} />}
+      {viewer && createPortal(<ImageViewer src={viewer} onClose={() => setViewer('')} />, document.body)}
     </article>
   );
 }
