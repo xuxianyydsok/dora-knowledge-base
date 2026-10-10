@@ -1,7 +1,7 @@
 // 全局基础布局：单行顶栏（品牌 · 一级导航 · 更多菜单 · 搜索/主题/通知 · 头像菜单） + 主内容区
 //
 // 设计取舍：顶栏只平铺**内容模块**入口；工具类入口（收藏/分类/标签）收进「更多」；图谱 2026-10-09 起常显在影视后面，
-// 账号相关（设置/备份/用户管理/退出）收进头像菜单。
+// 图片展/时间轴 2026-10-10 起也升为一级（用户要求不藏在「更多」里）；账号相关（设置/备份/用户管理/退出）收进头像菜单。
 // 之前是 12 项平铺 + 邮箱/退出挤在同一行，窄一点就折成两行、层级混乱。
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useRouter } from 'preact-router';
@@ -13,13 +13,12 @@ import { useAuth } from '../lib/auth.jsx';
 
 const PRIMARY = [
   ['/news', 'NewsNow'], ['/github', 'GitHub'], ['/posts', '博客'],
-  ['/music', '音乐'], ['/movies', '影视'], ['/graph', '图谱']
+  ['/music', '音乐'], ['/movies', '影视'], ['/graph', '图谱'],
+  ['/gallery', '图片展'], ['/timeline', '时间轴']
 ];
 
 const TOOLS = [
   ['/favorites', '收藏', 'heart'],
-  ['/gallery', '图片展', 'grid'],
-  ['/timeline', '时间轴', 'clock'],
   ['/categories', '分类', 'list'], ['/tags', '标签', 'tag']
 ];
 
@@ -92,7 +91,7 @@ export function Layout({ children }) {
           <span>Dora</span>
         </a>
 
-        {/* 窄屏（≤920px）不再用三横线抽屉，一级导航直接横向滚动（2026-10-09，见 docs/removed-features.md） */}
+        {/* 窄屏（≤1080px）不再用三横线抽屉，一级导航直接横向滚动（2026-10-09，阈值 2026-10-10 由 920px 上调，见 docs/removed-features.md） */}
         <nav class="app-nav">
           {PRIMARY.map(([href, label]) => link(href, label))}
           {(
