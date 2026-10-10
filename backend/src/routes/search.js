@@ -1,5 +1,5 @@
 // 资源全文检索
-// 支持博客(posts)与资源(resources：video/github/music/movie/rss_article)多类型检索
+// 支持博客(posts)与资源(resources：video/github/music/movie)多类型检索
 // 权限：普通用户仅检索自己的数据；管理员可传 ?all=true 检索全部
 
 import { ok, HttpError } from '../lib/response.js';
@@ -20,7 +20,7 @@ export async function search(request, env) {
   requireEnum(type, 'type', ['all', 'post', 'resource']);
 
   const resourceType = url.searchParams.get('resource_type');
-  if (resourceType) requireEnum(resourceType, 'resource_type', ['video', 'github', 'music', 'movie', 'rss_article']);
+  if (resourceType) requireEnum(resourceType, 'resource_type', ['video', 'github', 'music', 'movie']);
 
   const limit = Math.min(Number(url.searchParams.get('limit')) || 20, 50);
   const all = url.searchParams.get('all') === 'true' && user.isAdmin;

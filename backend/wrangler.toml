@@ -11,10 +11,9 @@ workers_dev = true
 # CORS 白名单（逗号分隔）：正式前端域名 + 本地开发地址
 CORS_ORIGINS = "https://dora.xuguochen.de5.net,http://localhost:5173,http://127.0.0.1:5173"
 
-# Cron 定时任务：每小时抓取一次 RSS 订阅源
-# 抓取逻辑内置「截止时间 + 单次上限」分批处理，规避 Workers 30s 超时
+# 不使用 Cron（RSS 模块已移除，显式清空已有定时触发器）
 [triggers]
-crons = ["0 * * * *"]
+crons = []
 
 # NewsNow 热榜服务（独立 Worker，源码 newsnext/newsnow，MIT），通过 service binding 内部调用
 [[services]]

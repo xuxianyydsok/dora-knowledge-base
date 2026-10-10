@@ -17,8 +17,7 @@ const RESOURCE_TYPES = [
   { value: 'video', label: '视频' },
   { value: 'github', label: 'GitHub' },
   { value: 'music', label: '音乐' },
-  { value: 'movie', label: '影视' },
-  { value: 'rss_article', label: 'RSS' }
+  { value: 'movie', label: '影视' }
 ];
 
 export function Search({ q: initialQ }) {

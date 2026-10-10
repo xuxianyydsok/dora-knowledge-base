@@ -15,14 +15,13 @@ const FEATURES = [
   { icon: 'github', tone: 'slate', title: 'GitHub 收藏', desc: '保存仓库并抓取 Star、语言、描述，一键刷新最新数据。' },
   { icon: 'movie', tone: 'violet', title: '影视库', desc: '电影 / 剧集元数据抓取（海报、简介、类型、上映时间），HTML5 播放与观看进度。' },
   { icon: 'music', tone: 'teal', title: '音乐收藏', desc: '歌曲元信息搜索、封面与播放地址管理，内置音频播放器与进度记忆。' },
-  { icon: 'rss', tone: 'amber', title: 'RSS 订阅', desc: '定时抓取、未读标记、OPML 导入导出，新文章自动推送通知中心。' },
 ];
 
 const CAPABILITIES = [
   { icon: 'search', title: '全文检索', desc: '跨博客与全部资源类型统一搜索。' },
   { icon: 'graph', title: '关联图谱', desc: '可视化博客、资源与标签的关联关系。' },
   { icon: 'star', title: '跨类型收藏夹', desc: '把不同模块的资源收进同一个收藏夹。' },
-  { icon: 'bell', title: '通知中心', desc: 'RSS 新条目、播放链接失效自动告警。' },
+  { icon: 'bell', title: '通知中心', desc: '播放链接失效自动告警。' },
   { icon: 'palette', title: '主题与配色', desc: '浅色 / 暗色切换，支持自定义配色云端同步。' },
   { icon: 'backup', title: 'JSON 备份', desc: '一键导出 / 导入，数据始终掌握在自己手里。' },
 ];
@@ -51,7 +50,7 @@ function Hero({ isAuthenticated }) {
         </h1>
 
         <p class="hero-sub">
-          博客、学习视频、GitHub 仓库、音乐、影视与 RSS 订阅，
+          博客、学习视频、GitHub 仓库、音乐与影视，
           统一收藏、统一检索、统一可视化。内置管理员 MCP 端点，让 AI 帮你维护内容。
         </p>
 
@@ -102,7 +101,7 @@ function Hero({ isAuthenticated }) {
           </div>
         </div>
         <div class="mock-float mock-float-a"><Icon name="blog" size={15} /> 新建博客</div>
-        <div class="mock-float mock-float-b"><Icon name="bell" size={15} /> RSS 有新文章</div>
+        <div class="mock-float mock-float-b"><Icon name="bell" size={15} /> 链接失效提醒</div>
       </div>
     </section>
   );
@@ -114,8 +113,7 @@ const MODULES = [
   { key: 'videos', label: '学习视频', icon: 'video', tone: 'rose', to: '/videos', detail: () => '/videos', load: () => api.listVideos() },
   { key: 'github', label: 'GitHub', icon: 'github', tone: 'slate', to: '/github', detail: () => '/github', load: () => api.listGithub() },
   { key: 'music', label: '音乐', icon: 'music', tone: 'teal', to: '/music', detail: (x) => `/music/${x.id}`, load: () => api.listMusic() },
-  { key: 'movies', label: '影视', icon: 'movie', tone: 'violet', to: '/movies', detail: (x) => `/movies/${x.id}`, load: () => api.listMovies() },
-  { key: 'rss', label: 'RSS 订阅', icon: 'rss', tone: 'amber', to: '/rss', detail: () => '/rss', load: () => api.listFeeds() }
+  { key: 'movies', label: '影视', icon: 'movie', tone: 'violet', to: '/movies', detail: (x) => `/movies/${x.id}`, load: () => api.listMovies() }
 ];
 
 // 工具入口：顶栏收进「更多」后，控制台保留一键直达

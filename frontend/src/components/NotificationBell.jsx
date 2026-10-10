@@ -4,7 +4,6 @@ import { api } from '../lib/api.js';
 import { Icon } from './Icon.jsx';
 
 const TYPE_META = {
-  rss_new: { label: 'RSS', icon: 'rss' },
   link_broken: { label: '链接失效', icon: 'linkBroken' },
   system: { label: '系统', icon: 'settings' }
 };

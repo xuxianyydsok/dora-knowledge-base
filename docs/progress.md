@@ -311,6 +311,13 @@ display(await tab.screenshot({ format: 'webp' }));
 - 前端：导航「视频」前新增「NewsNow」，路由 `/news`（`routes/News.jsx`），按栏目（精选/国内/国际/科技/财经/体育）展示玻璃卡片热榜。
 - 已知：GitHub Actions 部署自 2026-10-07 起失败（疑似仓库 Secrets 中 Cloudflare 令牌在安全轮换后失效）。
 
+## 2.12 移除 RSS 模块（2026-10-09，用户决定，不保留数据）
+
+- 删除后端 routes/rss.js、lib/rss.js、lib/rssSync.js 及全部 /api/rss 路由；Worker 不再有 scheduled 处理器，wrangler.toml `crons = []`。
+- 删除前端 RssFeeds/RssArticles 页面、导航 RSS 按钮、api 方法、首页卡片、搜索/图谱/通知里的 RSS 类型。
+- 迁移 `20261009000014_drop_rss.sql`：删 rss_feeds/rss_articles 表、rss_new 通知，resources.type 去掉 rss_article。
+- 文档中其余 RSS 描述为历史记录，以本节为准。
+
 ## 3. 下一步（按优先级，接手即可开工）
 
 1. **继续累积影音接口清单**：用户手上还有若干份「影音接口清单」文件，会陆续给路径。

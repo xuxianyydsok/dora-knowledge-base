@@ -158,7 +158,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        type: { type: 'string', enum: ['video', 'github', 'music', 'movie', 'rss_article'] },
+        type: { type: 'string', enum: ['video', 'github', 'music', 'movie'] },
         limit: { type: 'number', default: 20 }
       }
     }

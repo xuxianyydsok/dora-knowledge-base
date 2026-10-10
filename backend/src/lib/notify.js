@@ -1,5 +1,5 @@
 // 通知写入辅助
-// 通知类型：rss_new（RSS 新文章）/ link_broken（播放链接失效）/ system（系统）
+// 通知类型：link_broken（播放链接失效）/ system（系统）
 // 权限：写入始终绑定目标用户 user_id，保证数据隔离
 
 import { qs } from './supabase.js';

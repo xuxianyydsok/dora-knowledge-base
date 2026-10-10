@@ -23,8 +23,6 @@ const MusicPlayer = lazy(() => import('./MusicPlayer.jsx').then((m) => ({ defaul
 const Movies = lazy(() => import('./Movies.jsx').then((m) => ({ default: m.Movies })));
 const MovieView = lazy(() => import('./MovieView.jsx').then((m) => ({ default: m.MovieView })));
 const MovieEdit = lazy(() => import('./MovieEdit.jsx').then((m) => ({ default: m.MovieEdit })));
-const RssFeeds = lazy(() => import('./RssFeeds.jsx').then((m) => ({ default: m.RssFeeds })));
-const RssArticles = lazy(() => import('./RssArticles.jsx').then((m) => ({ default: m.RssArticles })));
 const News = lazy(() => import('./News.jsx').then((m) => ({ default: m.News })));
 const AdminUsers = lazy(() => import('./AdminUsers.jsx').then((m) => ({ default: m.AdminUsers })));
 
@@ -33,5 +31,5 @@ export {
   Search, Graph, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
-  Movies, MovieView, MovieEdit, RssFeeds, RssArticles, AdminUsers, News
+  Movies, MovieView, MovieEdit, AdminUsers, News
 };

@@ -1,6 +1,6 @@
 // HTML 博客系统
 // 正文仅存原生 HTML，支持自定义标签 katex-inline/katex-block/three-scene/mermaid-chart/chart-2d
-// 支持关联资源（视频/GitHub/音乐/影视/RSS）与分类、标签
+// 支持关联资源（视频/GitHub/音乐/影视）与分类、标签
 // 权限：普通用户仅操作自己的文章；管理员可 ?all=true 查看全部
 
 import { ok, readJson, HttpError } from '../lib/response.js';

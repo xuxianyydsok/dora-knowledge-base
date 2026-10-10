@@ -1,5 +1,5 @@
 // 通知中心
-// 通知类型：rss_new（RSS 新文章）/ link_broken（播放链接失效）/ system（系统）
+// 通知类型：link_broken（播放链接失效）/ system（系统）
 // 支持未读计数、标记已读/未读、全部已读、删除
 // 权限：普通用户仅自己的通知；管理员可 ?all=true 查看全部
 
@@ -9,9 +9,9 @@ import { qs } from '../lib/supabase.js';
 import { requireString, optionalString, requireUuid, requireEnum } from '../lib/validate.js';
 import { checkLink } from '../lib/linkcheck.js';
 
-const TYPES = ['rss_new', 'link_broken', 'system'];
+const TYPES = ['link_broken', 'system'];
 
-// GET /api/notifications?unread=true&type=rss_new&limit=50
+// GET /api/notifications?unread=true&type=link_broken&limit=50
 export async function listNotifications(request, env) {
   const { db, user } = await requireAuth(request, env);
   const url = new URL(request.url);

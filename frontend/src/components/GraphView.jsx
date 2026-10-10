@@ -7,7 +7,7 @@ const NODE_COLORS = {
 };
 const RESOURCE_COLORS = {
   video: '#e5484d', github: '#8b5cf6', music: '#22c55e',
-  movie: '#f59e0b', rss_article: '#06b6d4'
+  movie: '#f59e0b'
 };
 
 function nodeColor(node) {

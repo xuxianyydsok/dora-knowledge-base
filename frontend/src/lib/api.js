@@ -106,28 +106,9 @@ export const api = {
   getMovieProgress: (id) => request(`/api/movies/${id}/progress`),
   saveMovieProgress: (id, body) => request(`/api/movies/${id}/progress`, { method: 'PUT', body }),
 
-  // RSS 订阅
   // NewsNow 热榜
   listNewsSources: () => request('/api/news/sources'),
   getNews: (id) => request(`/api/news/${encodeURIComponent(id)}`),
-
-  listFeeds: (params = '') => request(`/api/rss/feeds${params}`),
-  getFeed: (id) => request(`/api/rss/feeds/${id}`),
-  createFeed: (body) => request('/api/rss/feeds', { method: 'POST', body }),
-  updateFeed: (id, body) => request(`/api/rss/feeds/${id}`, { method: 'PATCH', body }),
-  deleteFeed: (id) => request(`/api/rss/feeds/${id}`, { method: 'DELETE' }),
-  fetchFeedNow: (id) => request(`/api/rss/feeds/${id}/fetch`, { method: 'POST' }),
-  fetchAllFeeds: (batchSize = 10) => request('/api/rss/fetch-all', { method: 'POST', body: { batch_size: batchSize } }),
-  listRssArticles: (params = '') => request(`/api/rss/articles${params}`),
-  markRssArticle: (id, isRead) => request(`/api/rss/articles/${id}`, { method: 'PATCH', body: { is_read: isRead } }),
-  markAllRssRead: (feedId) => request('/api/rss/articles/read-all', { method: 'POST', body: feedId ? { feed_id: feedId } : {} }),
-  importOpml: (opml) => request('/api/rss/opml', { method: 'POST', body: { opml } }),
-  // OPML 导出返回 text/xml，需单独处理（附带 JWT）
-  exportOpml: async () => {
-    const res = await fetch(`${API_BASE_URL}/api/rss/opml`, { headers: await authHeader() });
-    if (!res.ok) throw new ApiError(res.status, `导出失败 (${res.status})`);
-    return res.text();
-  },
 
   // 全文检索
   search: (q, params = '') => request(`/api/search?q=${encodeURIComponent(q)}${params}`),

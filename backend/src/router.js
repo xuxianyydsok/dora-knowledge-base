@@ -17,7 +17,6 @@ import * as backup from './routes/backup.js';
 import * as preferences from './routes/preferences.js';
 import * as music from './routes/music.js';
 import * as movies from './routes/movies.js';
-import * as rss from './routes/rss.js';
 import * as admin from './routes/admin.js';
 import * as news from './routes/news.js';
 
@@ -97,23 +96,10 @@ const routes = [
   ['GET', '/api/movies/:id/progress', movies.getMovieProgress],
   ['PUT', '/api/movies/:id/progress', movies.saveMovieProgress],
 
-  // RSS 订阅
   // NewsNow 热榜（代理自部署的 newsnow-api）
   ['GET', '/api/news/sources', news.listNewsSources],
   ['GET', '/api/news/:id', news.getNews],
 
-  ['GET', '/api/rss/feeds', rss.listFeeds],
-  ['POST', '/api/rss/feeds', rss.createFeed],
-  ['GET', '/api/rss/feeds/:id', rss.getFeed],
-  ['PATCH', '/api/rss/feeds/:id', rss.updateFeed],
-  ['DELETE', '/api/rss/feeds/:id', rss.deleteFeed],
-  ['POST', '/api/rss/feeds/:id/fetch', rss.fetchFeedNow],
-  ['POST', '/api/rss/fetch-all', rss.fetchAllFeeds],
-  ['GET', '/api/rss/articles', rss.listArticles],
-  ['PATCH', '/api/rss/articles/:id', rss.updateArticle],
-  ['POST', '/api/rss/articles/read-all', rss.markArticlesRead],
-  ['GET', '/api/rss/opml', rss.exportOpml],
-  ['POST', '/api/rss/opml', rss.importOpml],
 
   // 全文检索
   ['GET', '/api/search', search.search],
