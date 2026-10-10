@@ -295,7 +295,7 @@ search 的 resources 分支、graph 的 resources 节点）此前**完全没有*
 
 ## 2.33 影视/音乐播放可靠性修复（2026-10-10，分支 fix/media-playback-reliability）
 
-修复用户反馈的「搜了一部电影，全部显示片源无法解析」。**没有 commit / push，也没有动数据库。**
+修复用户反馈的「搜了一部电影，全部显示片源无法解析」。**没有动数据库**（存量数据不自动批量修）。
 
 ### 根因（主代理线上实测确认）
 
@@ -332,6 +332,21 @@ search 的 resources 分支、graph 的 resources 节点）此前**完全没有*
    `Music.jsx` 不再把 `page_url` 当播放地址；`MusicView.jsx` 显示 `url_stale` 提示；
    `api.js` 新增 `refreshMovieSource`。
 6. **测试**：`backend/tests/run.mjs` 新增 6 个纯离线用例（直链判定、线路过滤、兜底、默认源、音频归一、重匹配阈值）。
+
+### 提交与上线（2026-10-10）
+
+| 项 | 值 |
+| --- | --- |
+| 功能提交 | `74c8a42` fix(media): 影视/音乐源可靠性修复——剔除死源、新增 360zy、重匹配片源接口 |
+| 合并提交（main） | `87e13f8` merge: 影视/音乐源可靠性修复（`--no-ff`，无冲突） |
+| push | `58f80ce..87e13f8 main -> main` |
+| GitHub Actions | Deploy Backend ✅ / Deploy Frontend ✅ / Quality Checks ✅ / Secret Scan ✅（均 success） |
+| 线上接口 | `https://api.xuguochen.de5.net/health` → **200**（`{"status":"ok",...}`）；`https://dora.xuguochen.de5.net/` → **200** |
+| 线上产物 | 前端主包与 `MovieView-*.js` 分块均含 `refresh-source` / 「重新匹配片源」，已随部署更新 |
+
+> 说明：任务书给的 `https://api.xuguochen.de5.net/api/health` 实际返回 404——
+> 该 Worker 的健康检查真实路径是 `/health`（见 `backend/src/router.js:208`）；
+> `dora.xuguochen.de5.net/api/health` 返回 200 是前端 SPA 的 index.html 兜底，不是真实接口。
 
 ### 验证结果（本机，2026-10-10）
 
