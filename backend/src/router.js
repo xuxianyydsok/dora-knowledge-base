@@ -19,6 +19,7 @@ import * as music from './routes/music.js';
 import * as movies from './routes/movies.js';
 import * as admin from './routes/admin.js';
 import * as news from './routes/news.js';
+import * as douban from './routes/douban.js';
 
 // 路由表：[method, pattern, handler]
 // pattern 中 :name 表示路径参数；handler 依次接收 (request, env, param1, param2, ...)
@@ -88,6 +89,8 @@ const routes = [
   ['POST', '/api/movies', movies.createMovie],
   ['POST', '/api/movies/search', movies.searchMovieMeta],
   ['GET', '/api/movies/latest', movies.listMovieLatest],
+  ['GET', '/api/movies/douban', douban.listDouban],
+  ['GET', '/api/img/douban', douban.doubanImage],
   ['GET', '/api/movies/sources/health', movies.getVodSourceHealth],
   ['POST', '/api/movies/source-detail', movies.getMovieSourceDetail],
   ['GET', '/api/movies/:id', movies.getMovie],

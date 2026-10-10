@@ -11,10 +11,14 @@
 //    「为什么这部片搜不到」——这是采集型产品最容易被用户质疑的地方。
 // 6) 「我的收藏」Tab 已按用户要求下线（2026-10-07）：收藏数据仍在库，
 //    点海报入库后直接跳详情页；本页只承担「发现」职责。
+// 7) 2026-10-09 UI 升级（方案 C）：频道栏 精选/电视剧/电影/动漫/综艺 走 MovieHome
+//    （豆瓣片单 + 高清海报 + 首屏轮播 + 分类海报墙）；「最新入库」与搜索仍走采集源网格。
+//    点任意豆瓣海报 = 用片名在采集源里搜索。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { VodPoster } from '../components/VodPoster.jsx';
+import { MovieHome, CHANNELS } from '../components/MovieHome.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
@@ -69,7 +73,8 @@ function yearOf(c) {
 
 export function Movies() {
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState('hot');            // hot | new | search
+  const [mode, setMode] = useState('featured');       // 频道 key | new | search
+  const [library, setLibrary] = useState([]);
   const [candidates, setCandidates] = useState([]);
   const [candNote, setCandNote] = useState('');
   const [candSources, setCandSources] = useState([]);
@@ -115,7 +120,7 @@ export function Movies() {
     } finally { setCandLoading(false); }
   }
 
-  useEffect(() => { loadCandidates('hot'); }, []);
+  useEffect(() => { load().then(setLibrary); }, []);
 
   // 抽屉打开时锁住背景滚动 + Esc 关闭
   useEffect(() => {
@@ -127,8 +132,19 @@ export function Movies() {
 
   function switchMode(next, q = '') {
     setMode(next);
-    loadCandidates(next, q);
+    if (!CHANNELS[next]) loadCandidates(next, q);
   }
+
+  // 豆瓣海报 → 按片名去采集源搜索
+  function pickDouban(item) {
+    setQuery(item.title);
+    lastQuery.current = item.title;
+    setMedia('all'); setYear('all');
+    switchMode('search', item.title);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  const isChannel = !!CHANNELS[mode];
 
   function search(e) {
     e?.preventDefault?.();
@@ -204,7 +220,7 @@ export function Movies() {
 
   const tabs = useMemo(() => {
     const base = [
-      { key: 'hot', label: '精选推荐' },
+      ...Object.entries(CHANNELS).map(([key, c]) => ({ key, label: c.label })),
       { key: 'new', label: '最新入库' }
     ];
     if (mode === 'search') {
@@ -223,8 +239,8 @@ export function Movies() {
       <PageHeader
         kicker="Movie Library"
         title="影视库"
-        sub="12 个公开采集源并发检索，同一部片的线路会跨源合并（实测「奥本海默」11 源合并出 19 条线路）。"
-        stats={stats}
+        sub="热播剧、国产剧、美剧、电影、动漫、综艺一站浏览；点海报即在 12 个采集源里搜索播放。"
+        stats={isChannel ? undefined : stats}
         tabs={tabs}
         activeTab={mode}
         onTab={(k) => { if (k === 'search') return; switchMode(k); }}
@@ -250,7 +266,7 @@ export function Movies() {
           )}
         </form>
 
-        <>
+        {!isChannel && <>
           <div class="seg">
             {MEDIA_TABS.map((t) => (
               <button key={t.key} class={media === t.key ? 'on' : ''} onClick={() => setMedia(t.key)}>
@@ -267,7 +283,7 @@ export function Movies() {
           <select class="toolbar-select" value={sort} onChange={(e) => setSort(e.currentTarget.value)} aria-label="排序">
             {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
-        </>
+        </>}
 
         <span class="spacer" />
         <button type="button" onClick={openHealth} title="查看各采集源实测可用性">
@@ -275,8 +291,10 @@ export function Movies() {
         </button>
       </div>
 
-      {/* —— 主区：推荐 / 最新 / 搜索结果 —— */}
-      {(
+      {isChannel && <MovieHome channel={mode} onPick={pickDouban} library={library} />}
+
+      {/* —— 主区：最新入库 / 搜索结果（采集源） —— */}
+      {!isChannel && (
         <>
           {candError ? (
             <ErrorState

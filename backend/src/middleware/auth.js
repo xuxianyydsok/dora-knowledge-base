@@ -17,14 +17,20 @@ function extractToken(request) {
 }
 
 // 访客可只读访问的接口（不含 /progress 等个人数据）
+// 少数「只读但用 POST」的检索接口，访客也可调用
+const PUBLIC_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics']);
 const PUBLIC_READ = /^\/api\/(categories|tags|favorites|videos|github|posts|music|movies|news|search|graph)(\/|$)/;
 
 let ownerCache = null;
 
 async function guestContext(request, env) {
-  if (env.PUBLIC_MODE !== 'true' || request.method !== 'GET') return null;
+  if (env.PUBLIC_MODE !== 'true') return null;
   const { pathname } = new URL(request.url);
-  if (!PUBLIC_READ.test(pathname) || pathname.endsWith('/progress')) return null;
+  if (request.method === 'POST') {
+    if (!PUBLIC_POST.has(pathname)) return null;
+  } else if (request.method !== 'GET' || !PUBLIC_READ.test(pathname) || pathname.endsWith('/progress')) {
+    return null;
+  }
 
   const db = new SupabaseClient(env);
   if (!ownerCache) {

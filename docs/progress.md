@@ -323,6 +323,15 @@ display(await tab.screenshot({ format: 'webp' }));
 - 网站对外展示，暂停强制登录：未登录可只读浏览站长内容（博客仅已发布），写操作仍需登录；顶栏隐藏登录按钮。
 - 开关：`backend/wrangler.toml` 的 `PUBLIC_MODE`。详细改动与恢复方法见 `docs/removed-features.md`（RSS 删除记录也在里面）。
 
+## 2.14 影视库 UI 升级（方案 C，2026-10-09）
+
+- 频道栏：精选 / 电视剧 / 电影 / 动漫 / 综艺 / 最新入库（采集源）；搜索结果仍是采集源网格。
+- `frontend/src/components/MovieHome.jsx`：首屏大图轮播（虚化高清海报背景 + 清晰海报 + 缩略图切换，6 秒轮播）、「我的片库」行、分类海报行（横滑 + 查看更多展开成海报墙）。点海报 = 用片名在采集源搜索。
+- 数据：后端 `routes/douban.js`。`GET /api/movies/douban`（豆瓣 /j/search_subjects，边缘缓存 30 分钟）；`GET /api/img/douban`（带 Referer 中转豆瓣海报，m=540×810 / l=1080×1620，缓存 30 天，无需登录）。
+- 访客模式补充：`/api/movies/search`、`/api/movies/source-detail`、`/api/music/search`、`/api/music/lyrics` 这几个只读 POST 也对访客开放（后端 PUBLIC_POST，前端 GUEST_POST）。
+- 未做：豆瓣没有排播数据，参考图里的「本周追剧」日历暂未实现；豆瓣没有「国漫」分类，动漫频道只有日本番剧与动画电影。
+- 已知：访客点采集源结果会走「加入片库」（写操作）而失败，访客播放流程需单独设计。
+
 ## 3. 下一步（按优先级，接手即可开工）
 
 1. **继续累积影音接口清单**：用户手上还有若干份「影音接口清单」文件，会陆续给路径。

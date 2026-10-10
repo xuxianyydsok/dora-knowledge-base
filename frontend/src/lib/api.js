@@ -17,11 +17,14 @@ export class ApiError extends Error {
   }
 }
 
+// 访客模式下允许的只读 POST 检索接口（与后端 PUBLIC_POST 保持一致）
+const GUEST_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics']);
+
 async function request(path, { method = 'GET', body } = {}) {
   const auth = await authHeader();
   // 访客模式（未登录）只能读：进度上报静默跳过，其余写操作给出明确提示
   if (!auth.Authorization && path.endsWith('/progress')) return null;   // 访客不读写个人进度
-  if (!auth.Authorization && method !== 'GET') {
+  if (!auth.Authorization && method !== 'GET' && !GUEST_POST.has(path)) {
     throw new ApiError(401, '访客模式只能浏览，修改内容需要站长登录');
   }
   const headers = {
@@ -104,6 +107,9 @@ export const api = {
   getMovie: (id) => request(`/api/movies/${id}`),
   searchMovieMeta: (query, limit = 30) => request('/api/movies/search', { method: 'POST', body: { query, limit } }),
   listMovieLatest: (params = '') => request(`/api/movies/latest${params}`),
+  // 豆瓣片单（type=tv|movie，tag 见后端 DOUBAN_TAGS）
+  listDouban: (type, tag, limit = 24, start = 0) =>
+    request(`/api/movies/douban?type=${type}&tag=${encodeURIComponent(tag)}&limit=${limit}&start=${start}`),
   getMovieSourceDetail: (body) => request('/api/movies/source-detail', { method: 'POST', body }),
   getVodSourceHealth: () => request('/api/movies/sources/health'),
   createMovie: (body) => request('/api/movies', { method: 'POST', body }),
