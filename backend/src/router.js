@@ -21,6 +21,7 @@ import * as admin from './routes/admin.js';
 import * as news from './routes/news.js';
 import * as douban from './routes/douban.js';
 import * as musicCharts from './routes/musicCharts.js';
+import * as assets from './routes/assets.js';
 import { vodProxy } from './routes/vodProxy.js';
 
 // 路由表：[method, pattern, handler]
@@ -75,6 +76,12 @@ const routes = [
   ['GET', '/api/posts/:id', posts.getPost],
   ['PATCH', '/api/posts/:id', posts.updatePost],
   ['DELETE', '/api/posts/:id', posts.deletePost],
+
+  // 图片素材（R2）：上传/列出/删除需管理员；按 id 读取完全公开
+  ['POST', '/api/assets', assets.uploadAsset],
+  ['GET', '/api/assets', assets.listAssets],
+  ['GET', '/api/assets/:id', assets.getAsset],
+  ['DELETE', '/api/assets/:id', assets.deleteAsset],
 
   // 音乐收藏库
   ['GET', '/api/music', music.listMusic],

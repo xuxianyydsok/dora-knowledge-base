@@ -99,6 +99,52 @@ async function requestText(path, { timeout = 20000 } = {}) {
   }
 }
 
+// 图片上传：现有 request() 只会 JSON.stringify 并写死 Content-Type，
+// 无法传 multipart/form-data，因此单独用 XMLHttpRequest（fetch 拿不到上传进度）。
+// 注意：不要手动设 Content-Type，浏览器会自动补 multipart boundary。
+export async function uploadAsset(file, { onProgress } = {}) {
+  const auth = await authHeader();
+  if (!auth.Authorization) {
+    throw new ApiError(401, '上传图片需要站长登录');
+  }
+
+  return await new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}/api/assets`);
+    xhr.timeout = 60000; // 图片上传比普通请求慢，给 60s
+    xhr.setRequestHeader('Authorization', auth.Authorization);
+
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+
+    xhr.onload = () => {
+      let payload = null;
+      if (xhr.responseText) {
+        try {
+          payload = JSON.parse(xhr.responseText);
+        } catch {
+          reject(new ApiError(xhr.status, `服务返回了无法识别的响应 (${xhr.status})`, 'invalid_response'));
+          return;
+        }
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(payload?.data);
+      } else {
+        reject(new ApiError(xhr.status, payload?.error || `上传失败 (${xhr.status})`));
+      }
+    };
+    xhr.onerror = () => reject(new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error'));
+    xhr.ontimeout = () => reject(new ApiError(0, '上传超时（60 秒）', 'timeout'));
+    xhr.onabort = () => reject(new ApiError(0, '上传已取消', 'aborted'));
+
+    xhr.send(form);
+  });
+}
+
 export const api = {
   // 分类
   listCategories: (params = '') => request(`/api/categories${params}`),
@@ -142,6 +188,11 @@ export const api = {
   createPost: (body) => request('/api/posts', { method: 'POST', body }),
   updatePost: (id, body) => request(`/api/posts/${id}`, { method: 'PATCH', body }),
   deletePost: (id) => request(`/api/posts/${id}`, { method: 'DELETE' }),
+
+  // 图片素材（R2）
+  listAssets: (params = '') => request(`/api/assets${params}`),
+  deleteAsset: (id) => request(`/api/assets/${id}`, { method: 'DELETE' }),
+  assetUrl: (id) => `${API_BASE_URL}/api/assets/${id}`,
 
   // 音乐库
   listMusic: (params = '') => request(`/api/music${params}`),

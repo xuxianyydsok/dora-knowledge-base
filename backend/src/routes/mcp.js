@@ -16,6 +16,8 @@ import { fetchVideoMeta, fetchGithubMeta } from '../lib/fetchers.js';
 import { slugify, requireString } from '../lib/validate.js';
 import { setResourceTags, validateTagIds } from '../lib/resources.js';
 import { detectHeavyTags } from './posts.js';
+import { storeImage, fallbackPublicBase } from './assets.js';
+import { decodeBase64 } from '../lib/imageType.js';
 
 // ---------------------------------------------------------------
 // MCP 工具定义（供 AI 发现）
@@ -160,6 +162,41 @@ const TOOLS = [
       properties: {
         type: { type: 'string', enum: ['video', 'github', 'music', 'movie'] },
         limit: { type: 'number', default: 20 }
+      }
+    }
+  },
+  {
+    name: 'list_assets',
+    description: '列出管理员本人上传的图片素材（用于选封面/插图）',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', default: 20, description: '返回条数，上限 100' }
+      }
+    }
+  },
+  {
+    name: 'set_post_cover',
+    description: '把某个素材设为某篇文章的封面（写入 posts.cover_path）',
+    inputSchema: {
+      type: 'object',
+      required: ['post_id', 'asset_id'],
+      properties: {
+        post_id: { type: 'string', description: '文章 UUID' },
+        asset_id: { type: 'string', description: '素材 UUID' }
+      }
+    }
+  },
+  {
+    name: 'upload_image',
+    description: '以 base64 上传一张图片（JPEG/PNG/WebP/AVIF，≤10MB），返回素材元数据与公开 URL',
+    inputSchema: {
+      type: 'object',
+      required: ['filename', 'content_type', 'data_base64'],
+      properties: {
+        filename: { type: 'string', description: '原始文件名（仅作展示）' },
+        content_type: { type: 'string', description: '声明的 MIME，需与文件魔数一致' },
+        data_base64: { type: 'string', description: '图片字节的 base64 编码' }
       }
     }
   }
@@ -406,6 +443,56 @@ const handlers = {
     filters.limit = String(Math.min(Number(args.limit) || 20, 100));
     const rows = await db.select('resources', qs(filters));
     return { items: rows, count: rows.length };
+  },
+
+  async list_assets(db, user, args) {
+    // 始终限定本人，避免把其他用户素材列给 AI
+    const rows = await db.select('assets', qs({
+      select: 'id,public_url,original_name,mime_type,size,width,height,created_at',
+      user_id: `eq.${user.id}`,
+      order: 'created_at.desc',
+      limit: String(Math.min(Number(args.limit) || 20, 100))
+    }));
+    return { items: rows, count: rows.length };
+  },
+
+  async set_post_cover(db, user, args) {
+    const postId = requireString(args.post_id, 'post_id', { max: 64 });
+    const assetId = requireString(args.asset_id, 'asset_id', { max: 64 });
+    // 校验文章与素材均属于本人，否则 404（不泄漏他人数据是否存在）
+    const posts = await db.select('posts', qs({ select: 'id', id: `eq.${postId}`, user_id: `eq.${user.id}` }));
+    if (!posts.length) throw new HttpError(404, '文章不存在');
+    const assets = await db.select('assets', qs({ select: 'id,public_url', id: `eq.${assetId}`, user_id: `eq.${user.id}` }));
+    if (!assets.length) throw new HttpError(404, '素材不存在');
+    const coverPath = assets[0].public_url;
+    await db.update('posts', qs({ id: `eq.${postId}`, user_id: `eq.${user.id}` }), { cover_path: coverPath });
+    return { post_id: postId, cover_path: coverPath };
+  },
+
+  async upload_image(db, user, args, env) {
+    const filename = requireString(args.filename, 'filename', { max: 300 });
+    const contentType = requireString(args.content_type, 'content_type', { max: 100 });
+    const b64 = requireString(args.data_base64, 'data_base64', { max: 40 * 1024 * 1024 });
+    // 解码 base64（纯 Web API，Worker 与 Node 通用）
+    const bytes = decodeBase64(b64);
+    if (!bytes) throw new HttpError(422, 'data_base64 不是合法的 base64');
+    if (!bytes.length) throw new HttpError(422, 'data_base64 解码后为空');
+    // 复用 REST 上传的同一套校验 + 落库逻辑（不复制校验）
+    const row = await storeImage(env, db, user, {
+      bytes,
+      filename,
+      contentType,
+      origin: fallbackPublicBase(env)
+    });
+    return {
+      id: row.id,
+      public_url: row.public_url,
+      object_key: row.object_key,
+      mime_type: row.mime_type,
+      size: row.size,
+      width: row.width,
+      height: row.height
+    };
   }
 };
 

@@ -70,6 +70,60 @@
 4. 备份 v2 的导入仍是逐条写入（非事务），大批量导入可能较慢；失败时可能部分写入。
 5. 未做无限画板（本轮只筑安全与质量底座）。
 
+## 2.30 图片素材系统 R2（2026-10-10，分支 feat/r2-assets）
+
+在最新 main（`aae903a`）上实现第一版图片素材系统：R2 存二进制、`assets` 表存元数据、
+公开按 id 读取、上传/删除/引用保护齐备。**没有 commit / push**。
+
+### 本轮完成
+
+1. **新增 `backend/src/lib/imageType.js`**（纯函数、无 IO，便于离线单测）：
+   `sniffImageType`（魔数识别 JPEG/PNG/WebP/AVIF）、`resolveImageType`（魔数与声明 MIME 一致性）、
+   `imageDimensions`（PNG IHDR / JPEG SOF / WebP VP8·VP8L·VP8X；**AVIF 不解析，恒为 null**）、
+   `sanitizeFilename`（去穿越/分隔符/控制字符，≤120 字符）、`buildObjectKey`、`sha256Hex`、`isWithinLimit`。
+   任何尺寸解析异常都返回 `{width:null,height:null}`，绝不抛错导致上传失败。
+2. **新增 `backend/src/routes/assets.js`**：4 条接口 —— `POST /api/assets`（上传，requireAdmin）、
+   `GET /api/assets`（分页列出，requireAdmin）、`GET /api/assets/:id`（**公开读取字节，不鉴权**）、
+   `DELETE /api/assets/:id`（删除，被引用返回 409 并带 `referenced_by`）。
+   核心落库逻辑抽为 `storeImage()`，供 REST 与 MCP 共用。
+3. **`backend/src/router.js`** 注册 4 条路由（`/api/posts` 之后）。
+4. **新增迁移 `supabase/migrations/20261010000015_assets.sql`**：建 `public.assets`（含全部字段与注释）、
+   索引 `(user_id, created_at desc)`、RLS 策略（本人读写 + `is_admin()` 全权，风格照抄现有表）；
+   仅新增、未改历史迁移，未硬编码任何真实域名。
+5. **`backend/src/routes/mcp.js`** 新增 3 个工具：`list_assets`、`set_post_cover`、`upload_image`
+   （base64 上传，复用 `storeImage`，不复制校验逻辑）；不提供删除素材工具。
+6. **`backend/tests/run.mjs`** 新增 7 个纯离线 UNIT 用例（类型嗅探 / MIME 一致性 / 大小上限边界 /
+   尺寸解析 / 文件名清洗 / object_key），使用内嵌真实 1x1 字节，不碰网络与 R2。
+7. **前端 `frontend/src/lib/api.js`**：新增 `uploadAsset(file,{onProgress})`（XMLHttpRequest，
+   60s 超时，带 Authorization，不手设 Content-Type）、`listAssets`、`deleteAsset`、`assetUrl`。
+8. **前端 `frontend/src/routes/PostEdit.jsx`**：新增轻量封面区（预览 / 拖拽 + 点击上传 / 进度 /
+   「复制图片链接」/「插入到正文」/「最近素材」）；编辑已有文章时回填 `cover_path`，保存时一并提交。
+   （`sanitizeHtml.js` 已白名单 `img` 的 `src`/`alt`，无需改动。）
+9. **文档**：重写 `docs/storage.md`（已实现 / 计划中分明），本节。
+
+### 验证结果（本机，2026-10-10）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端确定性 + 契约测试 | `cd backend && npm run test:unit` | ✅ 41/41 通过（新增 7 项图片用例全过） |
+| 前端生产构建 | `cd frontend && npm run build` | ✅ 通过（`built in 34.18s`） |
+| 凭据扫描 | `node scripts/check-secrets.mjs` | ✅ 通过 |
+| 空白字符检查 | `git diff --check` | ✅ 通过 |
+| 后端语法检查 | `node --check`（4 个改动文件） | ✅ 通过 |
+
+> 另用 mock db/R2 离线跑通 `storeImage()`：object key = `assets/<uid>/2026/<uuid>.png`、
+> `public_url` 回填正确、MIME 不符与 SVG 均按 415 拒绝。
+
+### 下一步
+- 迁移 `20261010000015` 需经 CI（或人工）在 Supabase 应用后才生效。
+- 前端封面区的**视觉与真机上传**未做端到端验证（本机无法连真实 R2/Supabase）。
+
+### 坑与注意
+- **公开读取必须走 `assets.id`，不能暴露 R2 object key**，否则 R2 会变成任意 key 探测器。
+- `storeImage` 先插占位 `public_url` 再回填真实地址：因为 URL 需要表主键 `id`，插入前拿不到。
+- AVIF 尺寸恒为 null，前端不要依赖 `width`/`height` 做布局计算。
+- PostEdit 的拖放区用 `var(--primary)` 高亮（该主题无 `--accent` 变量）。
+
 ---
 
 ## 0. 项目速览

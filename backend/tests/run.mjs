@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 
 import * as maccms from '../src/lib/maccms.js';
 import * as fetchers from '../src/lib/fetchers.js';
+import * as imageType from '../src/lib/imageType.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, '..');
@@ -130,6 +131,123 @@ async function unit() {
       `简介清洗失败: ${JSON.stringify(out.overview)}`);
     assert(!/<[^>]+>/.test(out.overview || ''), `简介仍含 HTML 标签: ${out.overview}`);
     return `overview=${out.overview}`;
+  });
+
+  // ---- 图片素材：类型嗅探 / 尺寸解析 / 文件名清洗 / object key（纯离线） ----
+  // 内嵌真实最小字节（PIL 生成，1x1），不依赖网络与 R2。
+  const PNG_1x1 = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgEpEDAABoAD1UCKP3AAAAAElFTkSuQmCC',
+    'base64'
+  );
+  const JPEG_1x1 = Buffer.from(
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDxGiiitjI//9k=',
+    'base64'
+  );
+  const WEBP_1x1 = Buffer.from(
+    'UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoBAAEAAUAmJZQCdAFAAAD+/DeBV/fU6D4r4AAA',
+    'base64'
+  );
+
+  await test('sniffImageType: 真实字节头识别 JPEG/PNG/WebP', async () => {
+    assert(imageType.sniffImageType(PNG_1x1)?.mime === 'image/png', 'PNG 未识别');
+    assert(imageType.sniffImageType(JPEG_1x1)?.mime === 'image/jpeg', 'JPEG 未识别');
+    assert(imageType.sniffImageType(WEBP_1x1)?.mime === 'image/webp', 'WebP 未识别');
+    return '3 种格式均识别';
+  });
+
+  await test('sniffImageType: SVG/GIF/HTML/文本/空字节 → null', async () => {
+    assert(imageType.sniffImageType(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>')) === null, 'SVG 应被拒');
+    assert(imageType.sniffImageType(Buffer.from('GIF89a000000000000')) === null, 'GIF 应被拒');
+    assert(imageType.sniffImageType(Buffer.from('<!DOCTYPE html><html></html>')) === null, 'HTML 应被拒');
+    assert(imageType.sniffImageType(Buffer.from('hello world plain text')) === null, '纯文本应被拒');
+    assert(imageType.sniffImageType(new Uint8Array(0)) === null, '空字节应被拒');
+    return '5 个非图片输入全部拒绝';
+  });
+
+  await test('resolveImageType: 魔数与声明 MIME 不一致必须拒绝', async () => {
+    assert(imageType.resolveImageType(PNG_1x1, 'image/jpeg') === null, 'PNG 字节 + image/jpeg 声明应拒绝');
+    assert(imageType.resolveImageType(JPEG_1x1, 'image/png') === null, 'JPEG 字节 + image/png 声明应拒绝');
+    assert(imageType.resolveImageType(PNG_1x1, 'image/png')?.mime === 'image/png', '一致的声明应放行');
+    assert(imageType.resolveImageType(PNG_1x1, '')?.mime === 'image/png', '空声明应以魔数为准');
+    return '3 拒绝 + 2 放行';
+  });
+
+  await test('大小上限：MAX_IMAGE_BYTES 边界（不分配 10MB 内存）', async () => {
+    const limit = imageType.MAX_IMAGE_BYTES;
+    assert(limit === 10 * 1024 * 1024, `上限应为 10MB，实得 ${limit}`);
+    assert(imageType.isWithinLimit(limit), '等于上限应通过');
+    assert(!imageType.isWithinLimit(limit + 1), '超过上限应拒绝');
+    assert(!imageType.isWithinLimit(0), '空文件应拒绝');
+    return `limit=${limit}`;
+  });
+
+  await test('imageDimensions: 1x1 PNG/JPEG/WebP 解析正确，垃圾字节返回 null 不抛错', async () => {
+    assert(JSON.stringify(imageType.imageDimensions(PNG_1x1, 'image/png')) === '{"width":1,"height":1}', 'PNG 尺寸错误');
+    assert(JSON.stringify(imageType.imageDimensions(JPEG_1x1, 'image/jpeg')) === '{"width":1,"height":1}', 'JPEG 尺寸错误');
+    assert(JSON.stringify(imageType.imageDimensions(WEBP_1x1, 'image/webp')) === '{"width":1,"height":1}', 'WebP 尺寸错误');
+    // AVIF 未实现，恒为 null
+    assert(imageType.imageDimensions(PNG_1x1, 'image/avif').width === null, 'AVIF 应返回 null');
+    // 垃圾字节不得抛错
+    const junk = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+    const dim = imageType.imageDimensions(junk, 'image/png');
+    assert(dim.width === null && dim.height === null, '垃圾字节应返回 {null,null}');
+    return '3 格式正确 + AVIF/垃圾字节安全返回 null';
+  });
+
+  await test('sanitizeFilename: 目录穿越/分隔符/超长名被清洗', async () => {
+    const cases = ['../../etc/passwd', 'a/b\\c.png', '..\\..\\win.png', '%2e%2e%2fetc%2fpasswd'];
+    for (const raw of cases) {
+      const out = imageType.sanitizeFilename(raw, 'png');
+      assert(!out.includes('/'), `仍含 /: ${out}`);
+      assert(!out.includes('\\'), `仍含 \\: ${out}`);
+      assert(!out.includes('..'), `仍含 ..: ${out}`);
+    }
+    const long = imageType.sanitizeFilename('x'.repeat(300) + '.png', 'png');
+    assert(long.length <= 120, `超长名未截断: ${long.length}`);
+    assert(long.endsWith('.png'), `截断丢失扩展名: ${long}`);
+    // 清洗后为空时回退 image.<ext>
+    assert(imageType.sanitizeFilename('...', 'webp') === 'image.webp', '空名应回退 image.<ext>');
+    return '4 穿越用例 + 超长 + 空名';
+  });
+
+  await test('buildObjectKey: assets/<user_id>/<YYYY>/<uuid>.<ext> 且不含用户文件名', async () => {
+    const uid = '11111111-2222-3333-4444-555555555555';
+    const key = imageType.buildObjectKey(uid, 'png', new Date('2026-10-10T00:00:00Z'));
+    assert(key.startsWith('assets/'), `应以 assets/ 开头: ${key}`);
+    assert(key.includes(uid), `应包含 user_id: ${key}`);
+    assert(/\.png$/.test(key), `应以合法扩展名结尾: ${key}`);
+    assert(/assets\/[^/]+\/\d{4}\/[0-9a-f-]{36}\.png$/.test(key), `格式不符: ${key}`);
+    assert(!key.includes('passwd') && !key.includes('..'), 'key 不应含用户输入');
+    return key;
+  });
+
+  await test('decodeBase64: atob 路径正确解码、拒绝非法输入、不破坏二进制', async () => {
+    const pngB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgEpEDAABoAD1UCKP3AAAAAElFTkSuQmCC';
+    const bytes = imageType.decodeBase64(pngB64);
+    assert(bytes instanceof Uint8Array, '应返回 Uint8Array');
+    assert([...bytes.slice(0, 8)].join(',') === '137,80,78,71,13,10,26,10', `PNG 魔数不符: ${[...bytes.slice(0, 8)].join(',')}`);
+
+    // data URL 前缀
+    const withPrefix = imageType.decodeBase64(`data:image/png;base64,${pngB64}`);
+    assert(withPrefix && withPrefix.length === bytes.length && withPrefix[1] === 0x50, 'data URL 前缀解码失败');
+
+    // 含空白字符
+    const spaced = imageType.decodeBase64(`${pngB64.slice(0, 8)}\n ${pngB64.slice(8)}`);
+    assert(spaced && spaced.length === bytes.length, '空白字符应被忽略');
+
+    // 非法输入 → null
+    assert(imageType.decodeBase64('!!!not base64!!!') === null, '非法字符应返回 null');
+    assert(imageType.decodeBase64('') === null, '空字符串应返回 null');
+    assert(imageType.decodeBase64('abc') === null, '长度不合法应返回 null');
+    assert(imageType.decodeBase64(null) === null, '非字符串应返回 null');
+    assert(imageType.decodeBase64('data:image/png,abc') === null, '非 base64 data URL 应返回 null');
+
+    // 非 ASCII 字节（JPEG 头 FF D8 FF）不能被 UTF-8 编码破坏
+    const jpegHead = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).toString('base64');
+    const jpegBytes = imageType.decodeBase64(jpegHead);
+    assert(jpegBytes && jpegBytes[0] === 0xff && jpegBytes[1] === 0xd8 && jpegBytes[2] === 0xff,
+      `JPEG 头字节被破坏: ${jpegBytes ? [...jpegBytes].join(',') : null}`);
+    return '解码/前缀/空白/非法/二进制 6 组断言全过';
   });
 }
 
