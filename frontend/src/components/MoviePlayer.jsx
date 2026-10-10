@@ -5,6 +5,19 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon.jsx';
 import { api } from '../lib/api.js';
+import { API_BASE_URL } from '../lib/config.js';
+
+// 代理兜底：部分资源站分片放在 999/9999/65 等非常规端口，很多网络会拦；
+// 先直连，失败或 6 秒内没拿到画面就改走 Worker 代理（/api/vod/proxy，顺带去广告）。
+// 记住直连失败过的域名，下次直接走代理。
+const PROXY_KEY = 'dora:vod-proxy-hosts';
+const hostOf = (u) => { try { return new URL(u).host; } catch { return ''; } };
+function proxyHosts() { try { return new Set(JSON.parse(localStorage.getItem(PROXY_KEY) || '[]')); } catch { return new Set(); } }
+function rememberProxy(u) {
+  const s = proxyHosts(); s.add(hostOf(u));
+  try { localStorage.setItem(PROXY_KEY, JSON.stringify([...s].slice(-50))); } catch {}
+}
+const proxied = (u) => `${API_BASE_URL}/api/vod/proxy?u=${encodeURIComponent(u)}`;
 
 function fmt(sec) {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -49,7 +62,21 @@ export function MoviePlayer({
   const [chromeVisible, setChromeVisible] = useState(true);
   const [rate, setRate] = useState(() => Number(localStorage.getItem('dora:rate')) || 1);
 
-  const src = movie?.url || '';
+  const rawSrc = movie?.url || '';
+  const [viaProxy, setViaProxy] = useState(false);
+  useEffect(() => { setViaProxy(isHls(rawSrc) && proxyHosts().has(hostOf(rawSrc))); }, [rawSrc]);
+  const src = rawSrc && viaProxy ? proxied(rawSrc) : rawSrc;
+  // 直连失败 → 切代理；已经是代理还失败 → 换下一条线路
+  function fallback(reason) {
+    if (!viaProxy && isHls(rawSrc)) {
+      rememberProxy(rawSrc);
+      autoPlayRef.current = true;
+      setSaved('直连较慢或被拦截，已切换代理线路');
+      setViaProxy(true);
+      return true;
+    }
+    return tryNextRoute(reason);
+  }
   const rateRef = useRef(rate);
   function changeRate(r) {
     setRate(r); rateRef.current = r;
@@ -74,6 +101,8 @@ export function MoviePlayer({
   // 换线成功、开始播放后清掉「线路不可用」提示，避免误以为仍在失败
   useEffect(() => {
     if (playing && saved.startsWith('线路不可用')) setSaved('');
+    if (playing && saved.startsWith('直连')) { const t = setTimeout(() => setSaved(''), 3000); return () => clearTimeout(t); }
+    return undefined;
   }, [playing, saved]);
 
   // —— 加载片源：m3u8 走 hls.js（动态 import，符合重型库懒加载规范）——
@@ -103,6 +132,12 @@ export function MoviePlayer({
       el.play().then(() => setPlaying(true)).catch(() => {});
     };
     el.addEventListener('canplay', onCanPlay);
+    // 6 秒还没有任何画面数据（分片端口被拦时常见：不报错、一直转圈）→ 走兜底
+    const stall = isHls(src) && !viaProxy ? setTimeout(() => {
+      if (!disposed && el.readyState < 2) fallback('直连超时');
+    }, 6000) : null;
+    const onData = () => { if (stall) clearTimeout(stall); };
+    el.addEventListener('loadeddata', onData);
 
     if (isHls(src) && !el.canPlayType('application/vnd.apple.mpegurl')) {
       (async () => {
@@ -117,7 +152,7 @@ export function MoviePlayer({
           hls.on(Hls.Events.ERROR, (_e, data) => {
             if (!data?.fatal) return;
             setLoadingSrc(false);
-            if (!tryNextRoute('线路加载失败')) {
+            if (!fallback('线路加载失败')) {
               setError('该线路播放失败：多为 CDN 防盗链拦截或链接已失效，请切换其他线路或用「原站」打开');
             }
           });
@@ -131,6 +166,8 @@ export function MoviePlayer({
 
     return () => {
       disposed = true;
+      if (stall) clearTimeout(stall);
+      el.removeEventListener('loadeddata', onData);
       el.removeEventListener('loadedmetadata', onLoaded);
       el.removeEventListener('canplay', onCanPlay);
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
@@ -249,7 +286,7 @@ export function MoviePlayer({
             // 原生 src 路径（含 hls.js 不可用时的回退）也要能自动换线：
             // 采集源给的 m3u8 常被 CDN 防盗链拦掉，浏览器拿到的其实是 404/403 的 HTML
             setLoadingSrc(false);
-            if (!tryNextRoute('片源无法解析')) {
+            if (!fallback('片源无法解析')) {
               setError('该线路片源无法播放：多为 CDN 防盗链拦截或链接已失效，请换一条线路或用「原站」打开');
             }
           }}

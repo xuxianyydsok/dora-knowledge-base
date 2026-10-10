@@ -21,6 +21,7 @@ import * as admin from './routes/admin.js';
 import * as news from './routes/news.js';
 import * as douban from './routes/douban.js';
 import * as musicCharts from './routes/musicCharts.js';
+import { vodProxy } from './routes/vodProxy.js';
 
 // 路由表：[method, pattern, handler]
 // pattern 中 :name 表示路径参数；handler 依次接收 (request, env, param1, param2, ...)
@@ -115,6 +116,7 @@ const routes = [
   // 关联图谱
   ['GET', '/api/graph', graph.getGraph],
   ['GET', '/api/graph/console', graph.getConsole],
+  ['GET', '/api/graph/board', graph.getBoard],
 
   // 收藏夹
   ['GET', '/api/favorites', favorites.listFavorites],
@@ -172,6 +174,18 @@ function matchRoute(method, pathname) {
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
   const { pathname } = url;
+
+  // 影视播放代理：纯代理、免鉴权、ACAO *（含自己的预检处理）
+  if (pathname === '/api/vod/proxy' && ['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+    try {
+      return await vodProxy(request, env);
+    } catch (err) {
+      console.error('vod proxy 错误:', err?.stack || err);
+      return new Response(JSON.stringify({ error: err?.message || '代理失败' }), {
+        status: 502, headers: { 'content-type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+  }
 
   // CORS 预检
   if (request.method === 'OPTIONS') {

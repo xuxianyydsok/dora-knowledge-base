@@ -529,3 +529,9 @@ curl -s -x http://127.0.0.1:7897 --max-time 90 -X POST https://api.xuguochen.de5
 ### 2.27 移除视频页 + 图谱页顶栏深色（2026-10-09）
 - 视频页入口/路由移除（记录于 removed-features.md）。
 - 图谱页整页深色，顶栏跟随变暗；修复左列被按钮流光伪元素遮挡；右侧卡片固定三列；首次加载失败自动重试 + 重试按钮。
+
+### 2.28 影视代理兜底 + 去广告（2026-10-09）
+- 原因：光速/速播/豪华/艾坤的 ts 分片在 999/9999/65 等非常规 HTTPS 端口，很多网络拦截；m3u8 本身允许跨域。
+- 后端 `GET /api/vod/proxy?u=`（`backend/src/routes/vodProxy.js`，免登录）：改写 m3u8 内所有 URI/KEY 为代理地址；分片流式透传（Range/206）；边缘缓存分片 1 天、m3u8 5 分钟；只放行影视 CDN 或媒体后缀，拦内网地址；按 DISCONTINUITY 去广告（响应头 X-Dora-Ads-Removed，`clean=0` 关闭）。
+- 前端 MoviePlayer：先直连；hls 致命错误或 6 秒无画面 → 自动切代理并提示；直连失败过的域名记在 localStorage `dora:vod-proxy-hosts`，下次直接走代理；代理也失败再换下一条线路。
+- 实测（庆余年）：guangsu/hhzy/ikun 经代理全链路 200/206；subo 的 g.xlzyd.com:9999 偶发 522（上游超时），会自动换线。
