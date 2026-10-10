@@ -19,6 +19,7 @@ import * as fetchers from '../src/lib/fetchers.js';
 import * as imageType from '../src/lib/imageType.js';
 import * as sourceHealth from '../src/lib/sourceHealth.js';
 import * as publicScope from '../src/lib/publicScope.js';
+import * as timelineMerge from '../src/lib/timelineMerge.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, '..');
@@ -471,6 +472,112 @@ async function unit() {
     assert(isResourceVisibleToGuest({ is_public: true }) === true, '公开资源应可见');
     assert(isResourceVisibleToGuest({ is_public: false }) === false, '私密资源应不可见');
     return '草稿 / 私密 / 公开 5 组断言全过';
+  });
+
+  // ---- 图片展览 + 公开时间轴（2026-10-10） ----
+  section('UNIT · 图片展览与公开时间轴（聚合/排序/分页/字段安全）');
+
+  await test('访客白名单：/api/gallery 与 /api/timeline 只读放行，写操作拒绝', async () => {
+    const { isGuestAllowed } = publicScope;
+    assert(isGuestAllowed('GET', '/api/gallery'), '访客应可读 /api/gallery');
+    assert(isGuestAllowed('GET', '/api/timeline'), '访客应可读 /api/timeline');
+    assert(!isGuestAllowed('POST', '/api/gallery'), '访客不应 POST /api/gallery');
+    assert(!isGuestAllowed('PATCH', '/api/gallery/x'), '访客不应 PATCH /api/gallery');
+    assert(!isGuestAllowed('DELETE', '/api/gallery/x'), '访客不应 DELETE /api/gallery');
+    return 'GET 2 条放行 / 写 3 条拒绝';
+  });
+
+  await test('mergeTimeline: 五类映射统一结构与跳转地址', async () => {
+    const { mergeTimeline } = timelineMerge;
+    const res = mergeTimeline({
+      posts: [{ id: 'p1', title: '文章', excerpt: '摘要', published_at: '2026-05-01T00:00:00Z', created_at: '2026-04-01T00:00:00Z' }],
+      resources: [
+        { id: 'r1', type: 'github', title: '仓库', summary: 's', url: 'https://github.com/a/b', created_at: '2026-04-03T00:00:00Z' },
+        { id: 'r2', type: 'music', title: '歌', summary: 's', created_at: '2026-04-04T00:00:00Z' },
+        { id: 'r3', type: 'movie', title: '片', summary: 's', created_at: '2026-04-05T00:00:00Z' }
+      ],
+      gallery: [{ id: 'g1', title: '照片', description: '说明', captured_at: '2026-03-01', created_at: '2026-03-02T00:00:00Z', cover: '/api/assets/x' }]
+    }, { limit: 20 });
+    assert(res.items.length === 5, `应合并 5 条，实得 ${res.items.length}`);
+    const types = res.items.map((i) => i.type).sort().join(',');
+    assert(types === 'gallery,github,movie,music,post', `类型集合错误: ${types}`);
+    for (const it of res.items) {
+      for (const k of ['id', 'type', 'title', 'summary', 'date', 'url', 'cover']) {
+        assert(k in it, `缺少字段 ${k}: ${JSON.stringify(it)}`);
+      }
+    }
+    const by = Object.fromEntries(res.items.map((i) => [i.source_id, i]));
+    assert(by.p1.url === '/posts/p1', `post url 错误: ${by.p1.url}`);
+    assert(by.p1.date === '2026-05-01T00:00:00.000Z', `post 应优先 published_at: ${by.p1.date}`);
+    assert(by.r1.url === 'https://github.com/a/b', `github 应用外链: ${by.r1.url}`);
+    assert(by.r2.url === '/music/r2', `music url 错误: ${by.r2.url}`);
+    assert(by.r3.url === '/movies/r3', `movie url 错误: ${by.r3.url}`);
+    assert(by.g1.date === '2026-03-01T00:00:00.000Z', `gallery 应用 captured_at: ${by.g1.date}`);
+    assert(by.g1.url === '/gallery', `gallery url 错误: ${by.g1.url}`);
+    return `${res.items.length} 条，类型 ${types}`;
+  });
+
+  await test('mergeTimeline: date 倒序 + 同 date 按 id 升序 + 游标分页不重叠', async () => {
+    const { mergeTimeline } = timelineMerge;
+    const posts = [
+      { id: 'b', title: 'B', published_at: '2026-01-02T00:00:00Z' },
+      { id: 'a', title: 'A', published_at: '2026-01-02T00:00:00Z' },
+      { id: 'c', title: 'C', published_at: '2026-01-01T00:00:00Z' },
+      { id: 'd', title: 'D', published_at: '2025-12-31T00:00:00Z' },
+      { id: 'e', title: 'E', published_at: '2025-12-30T00:00:00Z' }
+    ];
+    const first = mergeTimeline({ posts }, { limit: 2 });
+    assert(first.items.length === 2, `limit=2 应返回 2 条，实得 ${first.items.length}`);
+    assert(first.items[0].source_id === 'a' && first.items[1].source_id === 'b',
+      `同 date 应按 id 升序: ${first.items.map((i) => i.source_id).join(',')}`);
+    assert(first.next_cursor === first.items[1].date, `游标应为第 2 条 date: ${first.next_cursor}`);
+
+    const second = mergeTimeline({ posts }, { limit: 2, before: first.next_cursor });
+    assert(second.items.length === 2, `第二页应有 2 条，实得 ${second.items.length}`);
+    const firstIds = first.items.map((i) => i.id);
+    const overlap = second.items.filter((i) => firstIds.includes(i.id));
+    assert(overlap.length === 0, `两页不应重叠: ${overlap.map((i) => i.id).join(',')}`);
+    assert(second.items[0].source_id === 'c', `第二页首条应为 c: ${second.items[0].source_id}`);
+    assert(second.next_cursor !== null, '第二页之后仍应有下一页游标');
+
+    const last = mergeTimeline({ posts }, { limit: 2, before: second.next_cursor });
+    assert(last.items.length === 1 && last.items[0].source_id === 'e', `最后一页应只剩 e: ${last.items.map((i) => i.source_id)}`);
+    assert(last.next_cursor === null, `最后一页 next_cursor 应为 null: ${last.next_cursor}`);
+    return `第1页 ${first.items.map((i) => i.source_id)} / 第2页 ${second.items.map((i) => i.source_id)} / 第3页 ${last.items.map((i) => i.source_id)}`;
+  });
+
+  await test('mergeTimeline: limit 上限 50、非法 before 不抛错', async () => {
+    const { mergeTimeline } = timelineMerge;
+    const posts = Array.from({ length: 80 }).map((_, i) => ({
+      id: `p${String(i).padStart(3, '0')}`,
+      title: `t${i}`,
+      published_at: new Date(Date.UTC(2026, 0, 1) + i * 86400000).toISOString()
+    }));
+    const capped = mergeTimeline({ posts }, { limit: 999 });
+    assert(capped.items.length === 50, `limit 应封顶 50，实得 ${capped.items.length}`);
+    assert(capped.next_cursor !== null, '截断时应有下一页游标');
+    const bad = mergeTimeline({ posts: posts.slice(0, 3) }, { limit: 20, before: 'not-a-date' });
+    assert(bad.items.length === 3, `非法 before 应按无 before 处理，实得 ${bad.items.length}`);
+    return '上限 50 / 非法游标忽略';
+  });
+
+  await test('mergeTimeline: 输出只含安全字段，绝不带 object_key/sha256/user_id/content', async () => {
+    const { mergeTimeline, mapPost, mapGallery, mapResource } = timelineMerge;
+    const dirtyPost = {
+      id: 'p1', title: 'x', excerpt: 'y', published_at: '2026-01-01T00:00:00Z',
+      content: '<p>正文</p>', user_id: 'u1', object_key: 'assets/u1/2026/a.png', sha256: 'deadbeef'
+    };
+    const dirtyRes = { id: 'r1', type: 'github', title: 'r', summary: 's', url: 'https://x', created_at: '2026-01-01T00:00:00Z', user_id: 'u1', metadata: { star: 1 }, sha256: 'x' };
+    const dirtyGal = { id: 'g1', title: 'g', description: 'd', captured_at: '2026-01-01', created_at: '2026-01-01T00:00:00Z', cover: '/api/assets/1', user_id: 'u1', object_key: 'k' };
+    const banned = ['object_key', 'sha256', 'user_id', 'content', 'metadata'];
+    for (const mapped of [mapPost(dirtyPost), mapResource(dirtyRes), mapGallery(dirtyGal)]) {
+      for (const k of banned) assert(!(k in mapped), `映射结果不应含 ${k}: ${JSON.stringify(mapped)}`);
+    }
+    const res = mergeTimeline({ posts: [dirtyPost], resources: [dirtyRes], gallery: [dirtyGal] }, { limit: 10 });
+    for (const it of res.items) {
+      for (const k of banned) assert(!(k in it), `时间轴条目不应含 ${k}: ${JSON.stringify(it)}`);
+    }
+    return `3 类映射 + ${res.items.length} 条合并条目均无内部字段`;
   });
 
   await test('契约：auth.js 已委托 publicScope，且不再内联 favorites / github-analyze', async () => {

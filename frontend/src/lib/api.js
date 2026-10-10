@@ -194,6 +194,12 @@ export const api = {
   deleteAsset: (id) => request(`/api/assets/${id}`, { method: 'DELETE' }),
   assetUrl: (id) => `${API_BASE_URL}/api/assets/${id}`,
 
+  // 图片展览（策展元数据）
+  listGallery: (params = '') => request(`/api/gallery${params}`),
+  createGalleryItem: (body) => request('/api/gallery', { method: 'POST', body }),
+  updateGalleryItem: (id, body) => request(`/api/gallery/${id}`, { method: 'PATCH', body }),
+  deleteGalleryItem: (id) => request(`/api/gallery/${id}`, { method: 'DELETE' }),
+
   // 音乐库
   listMusic: (params = '') => request(`/api/music${params}`),
   getMusic: (id) => request(`/api/music/${id}`),
@@ -233,6 +239,9 @@ export const api = {
 
   // 全文检索
   search: (q, params = '') => request(`/api/search?q=${encodeURIComponent(q)}${params}`),
+
+  // 公开时间轴（聚合已发布博客 + 公开资源 + 公开展览）
+  listTimeline: (params = '') => request(`/api/timeline${params}`),
 
   // 关联图谱
   getGraph: (params = '') => request(`/api/graph${params}`),

@@ -228,7 +228,7 @@ export async function deleteAsset(request, env, id) {
   const referenced = await findReferences(db, user.id, asset);
   if (referenced.length) {
     return fail(
-      `该图片正被 ${referenced.length} 篇文章引用，请先解除引用`,
+      `该图片正被 ${referenced.length} 处引用，请先解除引用`,
       409, request, env,
       { referenced_by: referenced }
     );
@@ -248,30 +248,40 @@ export async function deleteAsset(request, env, id) {
   return ok({ id, deleted: true }, request, env);
 }
 
-// 在本人文章范围内查找引用该素材的文章（cover_path 精确匹配 / content 包含）
+// 在本人范围内查找引用该素材的位置：
+//   1) 文章封面（cover_path 精确匹配）与正文（content 包含）
+//   2) 图片展览条目（gallery_items.asset_id）
+// 返回 [{ id, title, kind }]，kind 为 'post' | 'gallery'；只要有引用就不允许删除素材。
 async function findReferences(db, userId, asset) {
   const refs = new Map();
-  const collect = (rows) => {
-    for (const r of rows || []) if (!refs.has(r.id)) refs.set(r.id, { id: r.id, title: r.title });
+  const collect = (rows, kind) => {
+    for (const r of rows || []) {
+      if (!refs.has(r.id)) refs.set(r.id, { id: r.id, title: r.title || '未命名', kind });
+    }
   };
 
   // 1) cover_path 精确等于 public_url 或 object_key
   collect(await db.select('posts', qs({
     select: 'id,title', user_id: `eq.${userId}`, cover_path: `eq.${asset.public_url}`, limit: '20'
-  })));
+  })), 'post');
   collect(await db.select('posts', qs({
     select: 'id,title', user_id: `eq.${userId}`, cover_path: `eq.${asset.object_key}`, limit: '20'
-  })));
+  })), 'post');
 
   // 2) content 里包含 public_url 或 object_key（模糊匹配，只取 id/title，限制条数）
   const urlLike = escapeLike(asset.public_url);
   const keyLike = escapeLike(asset.object_key);
   collect(await db.select('posts', qs({
     select: 'id,title', user_id: `eq.${userId}`, content: `ilike.*${urlLike}*`, limit: '20'
-  })));
+  })), 'post');
   collect(await db.select('posts', qs({
     select: 'id,title', user_id: `eq.${userId}`, content: `ilike.*${keyLike}*`, limit: '20'
-  })));
+  })), 'post');
+
+  // 3) 图片展览条目：被展览引用时同样不允许删除素材
+  collect(await db.select('gallery_items', qs({
+    select: 'id,title', user_id: `eq.${userId}`, asset_id: `eq.${asset.id}`, limit: '20'
+  })), 'gallery');
 
   return [...refs.values()];
 }
