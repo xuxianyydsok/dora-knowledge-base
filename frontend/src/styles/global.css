@@ -5183,6 +5183,8 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .gh-cats button:hover { background: var(--bg-subtle); }
 .gh-cats button.on { background: var(--cs-soft); color: var(--cs); font-weight: 650; }
 .gh-cats button.on small { background: var(--cs); color: #fff; }
+.gh-langs .gh-dot { width: 10px; height: 10px; margin: 0 5px; flex: none; }
+.gh-langs .gh-more { justify-content: center; color: var(--cs); font-size: 13px; }
 .gh-topics { display: flex; flex-wrap: wrap; gap: 6px; }
 .gh-topics button { border: none; cursor: pointer; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: var(--bg-subtle); color: var(--text-muted); }
 .gh-topics button small { margin-left: 4px; opacity: 0.6; }

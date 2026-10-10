@@ -83,3 +83,8 @@
 **现在的行为**：右上角按钮在白天（light，默认）和素雅（sepia）之间切换；旧的 `dark` 记录（localStorage / 后端偏好）自动当作白天。后端偏好接口只接受 light / sepia 的自定义配色。
 **残留**：`global.css` 里还有约 27 条 `[data-theme='dark']` 规则，已不会生效，留作恢复参考。
 **恢复**：取回 `frontend/src/lib/theme.jsx`、`ThemeToggle.jsx`、`backend/src/routes/preferences.js` 和 `global.css` 顶部暗色变量块（974db09 版本）。
+
+## GitHub 收藏页「热门话题」侧栏方框 + 右上「全部语言」下拉（2026-10-09 移除）
+- 原因：用户要求左栏先显示应用分类，下面改为编程语言方框；语言下拉与侧栏重复。
+- 现状：左栏「编程语言」方框（前 10 种 + 展开全部），可与应用分类叠加筛选；话题仍可被搜索框搜到。
+- 恢复：在 `frontend/src/routes/Github.jsx` 重新加入 topics 统计（r.topics 计数）与 `.gh-topics` 方框 / 右上 `<select value={lang}>`；样式 `.gh-topics` 仍保留在 global.css。

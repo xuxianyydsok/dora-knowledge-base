@@ -39,7 +39,7 @@ export function Github() {
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');      // '' 全部 / '__pending' 待解读 / 分类名
-  const [topic, setTopic] = useState('');
+  const [langAll, setLangAll] = useState(false);
   const [lang, setLang] = useState('');
   const [platform, setPlatform] = useState('');
   const [sort, setSort] = useState('starred');
@@ -72,11 +72,6 @@ export function Github() {
     for (const r of all) for (const t of r.ai?.tags || []) m.set(t, (m.get(t) || 0) + 1);
     return m;
   }, [items]);
-  const topics = useMemo(() => {
-    const m = new Map();
-    for (const r of all) for (const t of r.topics || []) m.set(t, (m.get(t) || 0) + 1);
-    return [...m].sort((a, b) => b[1] - a[1]).slice(0, 24);
-  }, [items]);
   const langs = useMemo(() => {
     const m = new Map();
     for (const r of all) if (r.language) m.set(r.language, (m.get(r.language) || 0) + 1);
@@ -87,7 +82,6 @@ export function Github() {
     let l = all;
     if (cat === '__pending') l = l.filter((r) => !r.ai);
     else if (cat) l = l.filter((r) => (r.ai?.tags || []).includes(cat));
-    if (topic) l = l.filter((r) => (r.topics || []).includes(topic));
     if (lang) l = l.filter((r) => r.language === lang);
     if (platform) l = l.filter((r) => (r.ai?.platforms || []).includes(platform));
     const kw = q.trim().toLowerCase();
@@ -98,8 +92,8 @@ export function Github() {
     if (sort === 'stars') l = [...l].sort((a, b) => (b.stars || 0) - (a.stars || 0));
     else if (sort === 'updated') l = [...l].sort((a, b) => String(b.pushed_at || '').localeCompare(String(a.pushed_at || '')));
     return l;
-  }, [items, cat, topic, lang, platform, q, sort]);
-  useEffect(() => { setPage(1); }, [cat, topic, lang, platform, q, sort]);
+  }, [items, cat, lang, platform, q, sort]);
+  useEffect(() => { setPage(1); }, [cat, lang, platform, q, sort]);
 
   if (!items && !error) return <LoadingState shape="list" />;
   if (error && !items) return <ErrorState title="GitHub 收藏加载失败" message={error} onRetry={load} />;
@@ -125,13 +119,17 @@ export function Github() {
             )}
           </div>
         </div>
-        {topics.length > 0 && (
+        {langs.length > 0 && (
           <div class="gh-box">
-            <h4>热门话题</h4>
-            <div class="gh-topics">
-              {topics.map(([t, n]) => (
-                <button key={t} class={topic === t ? 'on' : ''} onClick={() => setTopic(topic === t ? '' : t)}>{t}<small>{n}</small></button>
+            <h4>编程语言</h4>
+            <div class="gh-cats gh-langs">
+              <button class={!lang ? 'on' : ''} onClick={() => setLang('')}><i class="gh-dot" style={{ background: 'var(--text-muted)' }} />全部语言<small>{all.length}</small></button>
+              {(langAll ? langs : langs.slice(0, 10)).map(([l, n]) => (
+                <button key={l} class={lang === l ? 'on' : ''} onClick={() => setLang(lang === l ? '' : l)}><i class="gh-dot" style={{ background: langColor(l) }} />{l}<small>{n}</small></button>
               ))}
+              {langs.length > 10 && (
+                <button class="gh-more" onClick={() => setLangAll(!langAll)}>{langAll ? '收起' : `展开全部（${langs.length}）`}</button>
+              )}
             </div>
           </div>
         )}
@@ -144,10 +142,6 @@ export function Github() {
             <input type="search" placeholder="搜索仓库名、AI 解读、关键词或话题…" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
           </label>
           <div class="gh-tools">
-            <select value={lang} onChange={(e) => setLang(e.currentTarget.value)}>
-              <option value="">全部语言</option>
-              {langs.map(([l, n]) => <option key={l} value={l}>{l}（{n}）</option>)}
-            </select>
             <select value={platform} onChange={(e) => setPlatform(e.currentTarget.value)}>
               <option value="">全部平台</option>
               {Object.entries(PLATFORM_NAMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -175,7 +169,7 @@ export function Github() {
           <span class="gh-count">
             {list.length ? `第 ${from + 1}-${Math.min(from + PAGE_SIZE, list.length)} / 共 ${list.length} 个` : '共 0 个'}
             {list.length !== all.length && `（从 ${all.length} 个中筛选）`} · {analyzed} 个已 AI 解读
-            {(cat || topic || lang || platform) && <button class="gh-clear" onClick={() => { setCat(''); setTopic(''); setLang(''); setPlatform(''); }}>清除筛选</button>}
+            {(cat || lang || platform) && <button class="gh-clear" onClick={() => { setCat(''); setLang(''); setPlatform(''); }}>清除筛选</button>}
           </span>
         </div>
 

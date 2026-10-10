@@ -502,3 +502,7 @@ curl -s -x http://127.0.0.1:7897 --max-time 90 -X POST https://api.xuguochen.de5
 并把本轮内容更新回本文第 1–3 节。
 
 **收尾**：`pkill -f workerd; pkill -f "wrangler dev"; pkill -f vite`，确认 5173/8787 端口释放。
+
+### 2.22 GitHub 收藏侧栏：应用分类 + 编程语言（2026-10-09）
+- 左栏：上方应用分类，下方编程语言方框（按数量前 10，可展开全部），两者可叠加筛选。
+- 移除热门话题方框与右上语言下拉（记录于 removed-features.md）。
