@@ -106,7 +106,7 @@ export function Layout({ children }) {
 
         <nav class={`app-nav${navOpen ? ' open' : ''}`}>
           {PRIMARY.map(([href, label]) => link(href, label))}
-          {isAuthenticated && (
+          {(
             <Dropdown
               label="更多"
               align="left"

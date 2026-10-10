@@ -24,8 +24,8 @@ function RouterView() {
     <Router>
       <Home path="/" />
       <Login path="/login" />
-      <ProtectedRoute path="/categories"><Categories /></ProtectedRoute>
-      <ProtectedRoute path="/tags"><Tags /></ProtectedRoute>
+      <ProtectedRoute guest path="/categories"><Categories /></ProtectedRoute>
+      <ProtectedRoute guest path="/tags"><Tags /></ProtectedRoute>
       <ProtectedRoute guest path="/news"><News /></ProtectedRoute>
       <ProtectedRoute guest path="/videos"><Videos /></ProtectedRoute>
       <ProtectedRoute guest path="/github"><Github /></ProtectedRoute>
@@ -46,7 +46,7 @@ function RouterView() {
       <ProtectedRoute path="/movies/:id/edit"><MovieEdit /></ProtectedRoute>
       <ProtectedRoute guest path="/movies/:id"><MovieView /></ProtectedRoute>
       <ProtectedRoute path="/admin/users"><AdminUsers /></ProtectedRoute>
-      <ProtectedRoute path="/favorites"><Favorites /></ProtectedRoute>
+      <ProtectedRoute guest path="/favorites"><Favorites /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>
       <Home default />

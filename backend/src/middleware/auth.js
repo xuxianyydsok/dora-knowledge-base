@@ -17,7 +17,7 @@ function extractToken(request) {
 }
 
 // 访客可只读访问的接口（不含 /progress 等个人数据）
-const PUBLIC_READ = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph)(\/|$)/;
+const PUBLIC_READ = /^\/api\/(categories|tags|favorites|videos|github|posts|music|movies|news|search|graph)(\/|$)/;
 
 let ownerCache = null;
 
