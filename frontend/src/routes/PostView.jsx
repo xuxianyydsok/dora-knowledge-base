@@ -110,6 +110,17 @@ export function PostView({ id }) {
     return () => window.removeEventListener('scroll', onScroll);
   }, [toc, post]);
 
+  // 进度条挂到 body 上：页面容器的过渡动画带 transform，会让 position:fixed 失效
+  const barRef = useRef(null);
+  useEffect(() => {
+    const host = document.createElement('div');
+    host.className = 'pv-progress';
+    document.body.appendChild(host);
+    barRef.current = host;
+    return () => { host.remove(); barRef.current = null; };
+  }, []);
+  useEffect(() => { if (barRef.current) barRef.current.style.width = `${progress}%`; }, [progress]);
+
   const words = useMemo(() => {
     if (!post?.content) return 0;
     return post.content.replace(/<[^>]+>/g, '').replace(/\s+/g, '').length;
@@ -135,7 +146,6 @@ export function PostView({ id }) {
 
   return (
     <article class="cs pv">
-      <div class="pv-progress" style={{ width: `${progress}%` }} />
 
       <header class="pv-hero">
         <img src={post.cover_path || DEFAULT_COVER} alt="" />
