@@ -53,7 +53,9 @@ const listCache = new Map();
 function loadList(type, tag, limit) {
   const key = `${type}|${tag}|${limit}`;
   if (!listCache.has(key)) {
-    listCache.set(key, api.listDouban(type, tag, limit).then((d) => d?.items || []).catch((e) => {
+    // 首次加载偶发网络失败（冷启动 / 刚部署），自动重试一次
+    const once = () => api.listDouban(type, tag, limit).then((d) => d?.items || []);
+    listCache.set(key, once().catch(() => new Promise((r) => setTimeout(r, 800)).then(once)).catch((e) => {
       listCache.delete(key);
       throw e;
     }));
@@ -219,7 +221,7 @@ function LibraryRow({ items }) {
         <span class="muted">{items.length} 部</span>
       </header>
       <div class="mh-track">
-        {items.slice(0, 30).map((m) => (
+        {dedupeByTitle(items).slice(0, 30).map((m) => (
           <article key={m.id} class="mh-card" role="button" tabindex={0} title={m.title}
             onClick={() => route(`/movies/${m.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') route(`/movies/${m.id}`); }}>
             <div class="mh-poster loaded">
@@ -235,4 +237,15 @@ function LibraryRow({ items }) {
       </div>
     </section>
   );
+}
+
+// 片库里同名条目（多次入库）只显示一张
+function dedupeByTitle(list) {
+  const seen = new Set();
+  return list.filter((m) => {
+    const k = String(m.title || '').replace(/\s+/g, '');
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
