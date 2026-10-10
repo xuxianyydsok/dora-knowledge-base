@@ -15,7 +15,8 @@ export async function listCategories(request, env) {
   const all = url.searchParams.get('all') === 'true' && user.isAdmin;
 
   const query = qs({
-    select: '*',
+    // 访客只返回安全字段，不暴露 user_id / created_at / updated_at 等内部字段
+    select: user.isGuest ? 'id,name,slug,description,sort_order' : '*',
     ...(all ? {} : { user_id: `eq.${user.id}` }),
     order: 'sort_order.asc,created_at.desc'
   });

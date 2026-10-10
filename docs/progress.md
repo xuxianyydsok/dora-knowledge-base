@@ -212,6 +212,87 @@
 
 ---
 
+## 2.32 修复 PUBLIC_MODE 访客越权（公开 / 登录 / 管理员三层边界，2026-10-10，分支 fix/public-read-boundaries）
+
+在最新 main（`a176ca9`）上修复「访客只读模式」的越权读。**没有 commit / push，也没有动数据库。**
+
+### 问题（主代理审计结论）
+
+`guestContext` 把访客上下文的 `user.id` 设为站长（最早 admin）的 user_id，白名单里又含
+`favorites` 与 `/api/github/analyze`。于是访客能读到站长的**全部**私人数据（草稿、私密资源、
+收藏夹），还能调用消耗 Workers AI 额度的接口。资源类接口（videos/github/music/movies、
+search 的 resources 分支、graph 的 resources 节点）此前**完全没有**公开过滤。
+
+### 本轮完成
+
+1. **新增 `backend/src/lib/publicScope.js`**（纯函数、无 IO，供中间件与路由共用、供离线单测）：
+   `PUBLIC_READ_RE` / `PUBLIC_POST_PATHS`（**已移除 favorites 与 /api/github/analyze**）、
+   `isGuestAllowed`、`canUseAll`、`guestPostFilters`、`guestResourceFilters`、
+   `isPostVisibleToGuest`、`isResourceVisibleToGuest`。
+2. **`backend/src/middleware/auth.js`**：改用 `isGuestAllowed`，删掉内联白名单；注释写明
+   「访客的 id 只是 owner 范围限定，不是身份认证，读路由必须再叠加公开过滤」。
+3. **`backend/src/routes/posts.js`**：列表叠加 `guestPostFilters()`；`getPost` / `getPostBySlug`
+   命中后要求 `published + is_public`，否则 404；访客读文章时**关联资源也只带公开资源**。
+4. **`backend/src/routes/search.js`**：posts 分支叠加 `status + is_public`；resources 分支
+   叠加 `is_public`。
+5. **`backend/src/routes/graph.js`**：`getGraph` 访客只拿公开子图（posts + resources 均加
+   `is_public`，tags 仍取 owner 的）；`getConsole` / `getBoard` 访客直接 **403**（个人视图）。
+6. **`backend/src/routes/favorites.js`**：`listFavorites` 对访客 **403**（第二道防线）。
+7. **`backend/src/routes/github.js`**：`listGithub` 访客叠加 `is_public`，`getGithub` 校验公开；
+   `analyzeGithub` 改为**仅管理员**（第二道防线）。
+8. **`backend/src/routes/videos.js` / `music.js` / `movies.js`**：列表叠加 `is_public`，
+   单条详情校验 `is_public`（否则 404），且访客拿到的 `progress` 恒为 `null`
+   （不能把站长 owner 的播放进度当公开数据）；写操作未改。
+9. **`backend/src/routes/categories.js` / `tags.js`**：访客 `select` 收窄为安全字段
+   （categories：`id,name,slug,description,sort_order`；tags：`id,name,slug,color`）。
+10. **前端**：`app.jsx` 的 `/favorites` 去掉 `guest`（必须登录）；`Graph.jsx` 未登录时不请求
+    console，直接显示「图谱控制台需要站长登录」空态（经典视图对访客保留）；
+    `Favorites.jsx` 对 403 显示友好空态；`Github.jsx` 非管理员不再自动触发 AI 解读。
+11. **测试**：`backend/tests/run.mjs` UNIT 新增 6 个纯离线用例（白名单放行/拒绝、
+    POST 只读检索白名单、访客过滤构造、`all=true` 不能绕过、单条可见性、
+    auth.js 契约「不再内联 favorites / github/analyze 且已 import publicScope」）。
+12. **文档**：新增 `docs/public-access.md`（三层权限矩阵 + 残余风险 + 线上资源全非公开的说明）；
+    更新 `docs/removed-features.md` 的「强制登录（已暂停）」一节；本节。
+
+### 验证结果（本机，2026-10-10）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端确定性 + 契约测试 | `cd backend && npm run test:unit` | ✅ 54/54 通过（新增 6 项公开读边界用例） |
+| 前端生产构建 | `cd frontend && npm run build` | ✅ 通过 |
+| 凭据扫描 | `node scripts/check-secrets.mjs` | ✅ 通过 |
+| 空白字符检查 | `git diff --check` | ✅ 通过 |
+
+> 说明：本机未联网安装依赖；`backend/node_modules` 不存在，`npm run test:unit` 走的是
+> 纯 Node 脚本（无第三方依赖），因此可直接运行。
+
+### 重要：线上资源全部非公开 → 访客看不到影视 / 音乐 / GitHub
+
+线上 `resources` 全部 `is_public=false`（github 439 / movie 7 / music 3 / video 1），
+因此**访客将看不到任何影视 / 音乐 / GitHub / 视频资源**（列表为空、按 id 访问 404）。
+这是本轮公开边界的**预期结果**，不是 bug；若产品要公开展示，需站长显式把相应记录
+置为 `is_public=true`（各编辑页已有该开关）。博客不受影响（315 篇均 `published + is_public`）。
+详见 `docs/public-access.md` 第 6 节。**这一点需要主代理向用户确认产品预期。**
+
+### 下一步
+
+- 若用户确认「公开资源」是期望的产品形态，需要一个「批量公开 / 公开筛选」的站长操作入口
+  （本轮未做，避免扩大改动面）。
+- 若要更严格的分类/标签可见性，需按公开内容反查（见残余风险 1）。
+- 本机无 Supabase / R2 连接，**未做真实端到端**访客请求验证；上线前建议用匿名请求抽查
+  `/api/posts`、`/api/movies`、`/api/favorites`、`/api/github/analyze` 四条。
+
+### 坑与注意
+
+- **service_role 绕过 RLS**：Worker 直连 PostgREST 用 service_role，数据库策略不替它过滤，
+  因此「公开」必须写进查询条件；只改中间件白名单不足以修复越权。
+- **404 而非 403**：草稿 / 私密资源对访客返回 404，避免通过状态码泄露「存在性」。
+- **访客的 user.id 不是身份**：它是 owner 范围限定；任何读路由都必须叠加公开过滤。
+- **别把 favorites / github-analyze 加回白名单**：`backend/tests/run.mjs` 的
+  `UNIT · 公开读边界` 用例会直接失败。
+
+---
+
 ## 0. 项目速览
 
 | 项 | 值 |

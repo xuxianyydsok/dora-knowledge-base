@@ -27,15 +27,23 @@
 **原因**：网站主要给别人看，暂时不需要访客登录；以后需要再加回。
 
 **现在的行为**
-- 未登录访客可以只读浏览：NewsNow、视频、GitHub、博客（只显示已发布文章）、音乐、影视、搜索，以及「更多」菜单里的收藏、图谱、分类、标签。看到的是站长（最早创建的 admin 账号）的内容。
+- 未登录访客可以只读浏览：NewsNow、GitHub、博客（只显示 `status=published` **且** `is_public=true` 的文章）、音乐、影视、搜索、分类、标签、图谱（仅公开子图）。看到的是站长（最早创建的 admin 账号）的内容。
+- **访客看到的是「公开子集」，不是站长的全部数据**（2026-10-10 修复，见 `docs/public-access.md`）：
+  资源类（视频 / GitHub / 音乐 / 影视）只返回 `is_public=true` 的记录，单条非公开记录返回 404；
+  博客只返回 `published + is_public`；搜索同理。
+- **收藏夹不再对访客开放**：`/favorites` 页面与 `GET /api/favorites` 都要求登录（后端 403）。
+- **`POST /api/github/analyze`（AI 解读）仅管理员可用**（消耗 Workers AI 额度）。
+- ⚠️ 线上 `resources` 目前**全部** `is_public=false`，所以访客**看不到任何影视 / 音乐 / GitHub 资源**
+  （列表为空）。这是预期行为；要公开展示需站长把相应记录置为 `is_public=true`。
 - 访客可以直接播放影视（2026-10-09 用户要求「访客播放不要加限制」）：点搜索结果进入 `/movies/watch/:source/:vid`，按采集源详情直接播放，不入库、不记进度；也可以调用影视/音乐的只读检索接口（POST `/api/movies/search`、`/api/movies/source-detail`、`/api/music/search`、`/api/music/lyrics`、`/api/music/stream`）。音乐同理：访客点歌直接播放，不入库。
 - 访客不能：新增/编辑/删除任何内容，查看/保存播放进度，访问备份、设置、通知、用户管理等页面。
 - 顶栏不再显示「登录」按钮；站长仍可直接访问 `/login` 登录，登录后一切照旧。
 
 **涉及的配置与代码**
 - `backend/wrangler.toml`：`[vars] PUBLIC_MODE = "true"`。
-- `backend/src/middleware/auth.js`：`requireAuth` 在无令牌、GET、路径命中 `PUBLIC_READ` 白名单时返回访客上下文（`user.isGuest = true`，`isAdmin = false`）。
-- `backend/src/routes/posts.js`、`search.js`、`graph.js`：访客只看 `status = published` 的文章。
+- `backend/src/middleware/auth.js`：`requireAuth` 在无令牌、方法 + 路径命中 `lib/publicScope.js` 的 `isGuestAllowed` 时返回访客上下文（`user.isGuest = true`，`isAdmin = false`；`user.id` 只是 owner 范围限定）。
+- `backend/src/lib/publicScope.js`：访客白名单与公开过滤条件的唯一来源（不含 `favorites` 与 `/api/github/analyze`）。
+- `backend/src/routes/posts.js`、`search.js`、`graph.js`、`videos.js`、`github.js`、`music.js`、`movies.js`、`categories.js`、`tags.js`、`favorites.js`：访客按公开字段过滤（详见 `docs/public-access.md` 的逐路由矩阵）。
 - `frontend/src/components/ProtectedRoute.jsx`：新增 `guest` 属性；`frontend/src/app.jsx` 中可公开浏览的路由带 `guest`。
 - `frontend/src/lib/api.js`：未登录时跳过进度读写，其他写操作直接提示「访客模式只能浏览」。
 - `frontend/src/components/Layout.jsx`：主导航和搜索对所有人显示，隐藏「登录」按钮。

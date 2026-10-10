@@ -4,9 +4,10 @@
 // 边类型：post-resource（博客关联资源）/ post-tag（博客标签）/ resource-tag（资源标签）
 // 权限：普通用户仅自己数据；管理员可 ?all=true
 
-import { ok } from '../lib/response.js';
+import { ok, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
+import { guestPostFilters, guestResourceFilters } from '../lib/publicScope.js';
 
 // GET /api/graph
 export async function getGraph(request, env) {
@@ -16,9 +17,11 @@ export async function getGraph(request, env) {
   const userFilter = all ? {} : { user_id: `eq.${user.id}` };
 
   // 节点：博客、资源、标签
+  // 访客只拿公开子图：已发布 + 公开的博客、公开资源；标签仍取 owner 的（图谱节点需要，
+  // 且标签本身只有名称/颜色等安全字段）。
   const [posts, resources, tags] = await Promise.all([
-    db.select('posts', qs({ select: 'id,title,status', ...userFilter, ...(user.isGuest ? { status: 'eq.published' } : {}) })),
-    db.select('resources', qs({ select: 'id,type,title,url', ...userFilter })),
+    db.select('posts', qs({ select: 'id,title,status', ...userFilter, ...(user.isGuest ? guestPostFilters() : {}) })),
+    db.select('resources', qs({ select: 'id,type,title,url', ...userFilter, ...(user.isGuest ? guestResourceFilters() : {}) })),
     db.select('tags', qs({ select: 'id,name,color', ...userFilter }))
   ]);
 
@@ -73,6 +76,8 @@ export async function getGraph(request, env) {
 // events：最近动态；heat：近 365 天每日新增数
 export async function getConsole(request, env) {
   const { db, user } = await requireAuth(request, env);
+  // 控制台聚合了 GitHub Star、AI 解读等个人数据，属管理/个人视图，不对访客开放
+  if (user.isGuest) throw new HttpError(403, '图谱控制台需要站长登录');
   const uf = { user_id: `eq.${user.id}` };
   const [posts, cats, tags, postTags, resources] = await Promise.all([
     db.select('posts', qs({ select: 'id,title,category_id,status,published_at,created_at', ...uf, ...(user.isGuest ? { status: 'eq.published' } : {}) })),
@@ -160,6 +165,8 @@ export async function getConsole(request, env) {
 // links: [postId, repoId, keyword]（博客标签 与 仓库语言/topics/AI 关键词 同名即相连）
 export async function getBoard(request, env) {
   const { db, user } = await requireAuth(request, env);
+  // 无限画板同样是个人视图（博客星域 + GitHub 星域），不对访客开放
+  if (user.isGuest) throw new HttpError(403, '图谱控制台需要站长登录');
   const uf = { user_id: `eq.${user.id}` };
   const [posts, cats, tags, postTags, repos] = await Promise.all([
     db.select('posts', qs({ select: 'id,title,category_id,published_at,created_at', ...uf, ...(user.isGuest ? { status: 'eq.published' } : {}) })),

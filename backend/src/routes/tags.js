@@ -19,7 +19,8 @@ export async function listTags(request, env) {
   const all = url.searchParams.get('all') === 'true' && user.isAdmin;
 
   const rows = await db.select(TABLE, qs({
-    select: '*',
+    // 访客只返回安全字段，不暴露 user_id / created_at / updated_at 等内部字段
+    select: user.isGuest ? 'id,name,slug,color' : '*',
     ...(all ? {} : { user_id: `eq.${user.id}` }),
     order: 'name.asc'
   }));

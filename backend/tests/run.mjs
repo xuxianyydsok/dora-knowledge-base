@@ -18,6 +18,7 @@ import * as maccms from '../src/lib/maccms.js';
 import * as fetchers from '../src/lib/fetchers.js';
 import * as imageType from '../src/lib/imageType.js';
 import * as sourceHealth from '../src/lib/sourceHealth.js';
+import * as publicScope from '../src/lib/publicScope.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, '..');
@@ -410,6 +411,75 @@ async function unit() {
     const movieOk = judgeMovieProbe({ searchCount: 5, detailOk: true, hasPlayableUrl: true });
     assert(movieOk.status === 'ok' && movieOk.capabilities.play === true, '影视搜索+详情+可播放应为 ok');
     return '试听/空/完整/详情失败/空结果能力 5 组断言全过';
+  });
+
+  // ---- 公开读边界（三层权限：公开访客 / 登录用户 / 管理员） ----
+  section('UNIT · 公开读边界（访客白名单与过滤）');
+
+  await test('访客 GET 白名单：公开只读接口放行、个人接口拒绝', async () => {
+    const { isGuestAllowed } = publicScope;
+    const allowedGet = [
+      '/api/posts', '/api/posts/123e4567-e89b-12d3-a456-426614174000', '/api/search', '/api/graph',
+      '/api/categories', '/api/tags', '/api/videos', '/api/github', '/api/music', '/api/movies'
+    ];
+    for (const p of allowedGet) assert(isGuestAllowed('GET', p), `访客应可读 ${p}`);
+    const deniedGet = [
+      '/api/favorites', '/api/posts/123/progress', '/api/notifications', '/api/notifications/count',
+      '/api/preferences', '/api/backup/export', '/api/admin/users', '/api/me', '/api/mcp/tools'
+    ];
+    for (const p of deniedGet) assert(!isGuestAllowed('GET', p), `访客不应读 ${p}`);
+    return `放行 ${allowedGet.length} 条 / 拒绝 ${deniedGet.length} 条`;
+  });
+
+  await test('访客 POST：仅只读检索放行，analyze 与写操作拒绝', async () => {
+    const { isGuestAllowed } = publicScope;
+    for (const p of ['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream']) {
+      assert(isGuestAllowed('POST', p), `访客应可 POST ${p}`);
+    }
+    for (const p of ['/api/github/analyze', '/api/posts', '/api/favorites', '/api/tags', '/api/movies']) {
+      assert(!isGuestAllowed('POST', p), `访客不应 POST ${p}`);
+    }
+    assert(!isGuestAllowed('PATCH', '/api/posts/1'), '访客不应 PATCH');
+    assert(!isGuestAllowed('DELETE', '/api/favorites/1'), '访客不应 DELETE');
+    return '只读检索 5 条放行；analyze/写操作全拒绝';
+  });
+
+  await test('访客过滤构造：博客须 published+public、资源须 public', async () => {
+    const pf = publicScope.guestPostFilters();
+    assert(pf.status === 'eq.published', `posts.status 应为 eq.published: ${pf.status}`);
+    assert(pf.is_public === 'eq.true', `posts.is_public 应为 eq.true: ${pf.is_public}`);
+    const rf = publicScope.guestResourceFilters();
+    assert(rf.is_public === 'eq.true', `resources.is_public 应为 eq.true: ${rf.is_public}`);
+    return `posts=${JSON.stringify(pf)} resources=${JSON.stringify(rf)}`;
+  });
+
+  await test('all=true 不能绕过：访客恒 false，仅管理员生效', async () => {
+    const { canUseAll } = publicScope;
+    assert(canUseAll({ isAdmin: false, isGuest: true }, true) === false, '访客传 all=true 也必须为 false');
+    assert(canUseAll({ isAdmin: false }, true) === false, '普通用户传 all=true 也必须为 false');
+    assert(canUseAll({ isAdmin: true }, true) === true, '管理员传 all=true 应为 true');
+    assert(canUseAll({ isAdmin: true }, false) === false, '管理员不传 all 应为 false');
+    assert(canUseAll(null, true) === false, '无用户上下文应为 false');
+    return '访客/普通用户无法用 all 越权，管理员按显式参数生效';
+  });
+
+  await test('单条可见性：草稿或私密一律不可见', async () => {
+    const { isPostVisibleToGuest, isResourceVisibleToGuest } = publicScope;
+    assert(isPostVisibleToGuest({ status: 'published', is_public: true }) === true, '已发布且公开应可见');
+    assert(isPostVisibleToGuest({ status: 'published', is_public: false }) === false, '已发布但私密应不可见');
+    assert(isPostVisibleToGuest({ status: 'draft', is_public: true }) === false, '草稿应不可见');
+    assert(isResourceVisibleToGuest({ is_public: true }) === true, '公开资源应可见');
+    assert(isResourceVisibleToGuest({ is_public: false }) === false, '私密资源应不可见');
+    return '草稿 / 私密 / 公开 5 组断言全过';
+  });
+
+  await test('契约：auth.js 已委托 publicScope，且不再内联 favorites / github-analyze', async () => {
+    const authSrc = readFileSync(join(BACKEND, 'src', 'middleware', 'auth.js'), 'utf8');
+    assert(/from '\.\.\/lib\/publicScope\.js'/.test(authSrc), 'auth.js 应 import publicScope.js');
+    assert(/isGuestAllowed/.test(authSrc), 'auth.js 应调用 isGuestAllowed');
+    assert(!/favorites/.test(authSrc), 'auth.js 不应再内联 favorites 白名单');
+    assert(!/github\/analyze/.test(authSrc), 'auth.js 不应再内联 github/analyze 白名单');
+    return 'auth.js 与 publicScope.js 边界一致';
   });
 }
 

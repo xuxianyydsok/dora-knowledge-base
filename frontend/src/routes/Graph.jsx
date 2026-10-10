@@ -6,6 +6,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { GraphView } from '../components/GraphView.jsx';
+import { EmptyState } from '../components/StateView.jsx';
+import { useAuth } from '../lib/auth.jsx';
 import '../styles/graph-console.css';
 
 const POLL = 60_000;
@@ -306,6 +308,7 @@ function AiPanel({ s }) {
 
 // ---------------- 页面 ----------------
 export function Graph() {
+  const { isAuthenticated } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [view, setView] = useState('console');
@@ -316,6 +319,8 @@ export function Graph() {
   const seen = useRef(null);
 
   async function load(retry = 1) {
+    // 控制台是站长个人视图（后端对访客返回 403），未登录时不发请求
+    if (!isAuthenticated) { setData(null); setError(''); return; }
     try {
       const d = await api.getGraphConsole().catch((e) => {
         if (retry > 0) return new Promise((r) => setTimeout(r, 1500)).then(() => api.getGraphConsole());
@@ -383,6 +388,12 @@ export function Graph() {
 
       {view === 'classic' ? (
         <div class="gc-classic">{classic ? <GraphView data={classic} onSelect={onSelect} /> : <p class="gc-mute">加载中…</p>}</div>
+      ) : !isAuthenticated ? (
+        <EmptyState
+          icon="graph"
+          title="图谱控制台需要站长登录"
+          hint="控制台聚合了 GitHub Star 与 AI 解读等个人数据。登录后可查看，或切到「经典视图」浏览公开关联图谱。"
+        />
       ) : !data ? (
         <div class="gc-loading"><span /><span /><span /><p>正在接入数据总线…</p></div>
       ) : (

@@ -12,6 +12,7 @@ import {
 import {
   setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
+import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
 
 const TABLE = 'resources';
 const TYPE = 'video';
@@ -44,6 +45,7 @@ export async function listVideos(request, env) {
   const all = url.searchParams.get('all') === 'true';
 
   const filters = { type: `eq.${TYPE}`, ...userFilter(user, all) };
+  if (user.isGuest) Object.assign(filters, guestResourceFilters());   // 访客只看公开视频
   const categoryId = url.searchParams.get('category_id');
   if (categoryId) filters.category_id = `eq.${categoryId}`;
 
@@ -66,9 +68,11 @@ export async function getVideo(request, env, id) {
     ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
   }));
   if (!rows.length) throw new HttpError(404, '视频不存在或无权限');
+  if (user.isGuest && !isResourceVisibleToGuest(rows[0])) throw new HttpError(404, '视频不存在或无权限');
 
   const [withTagList] = await withTags(db, rows);
-  const progress = await getProgress(db, user.id, id);
+  // 访客的 user.id 是 owner 范围限定，不能把站长的播放进度当公开数据返回
+  const progress = user.isGuest ? null : await getProgress(db, user.id, id);
   return ok({ ...withTagList, progress }, request, env);
 }
 

@@ -10,6 +10,9 @@ import {
   requireString, optionalString, requireUuid, optionalBool, requireEnum, slugify
 } from '../lib/validate.js';
 import { validateCategoryId, validateTagIds } from '../lib/resources.js';
+import {
+  guestPostFilters, guestResourceFilters, isPostVisibleToGuest
+} from '../lib/publicScope.js';
 
 const TABLE = 'posts';
 const ALLOWED_TAGS = ['katex-inline', 'katex-block', 'three-scene', 'mermaid-chart', 'chart-2d'];
@@ -45,7 +48,8 @@ async function loadPostTags(db, postId) {
 }
 
 // 加载文章关联资源（resource_links）
-async function loadLinkedResources(db, postId) {
+// 访客只应看到公开资源：文章本身公开、但关联到私密资源时不能把资源信息带出去。
+async function loadLinkedResources(db, postId, user) {
   const links = await db.select(
     'post_resources',
     qs({ select: 'resource_id,relation', post_id: `eq.${postId}`, order: 'sort_order.asc' })
@@ -53,7 +57,8 @@ async function loadLinkedResources(db, postId) {
   if (!links.length) return [];
   const ids = [...new Set(links.map((l) => l.resource_id))];
   const resources = await db.select('resources', qs({
-    select: 'id,type,title,url,source,summary,metadata', id: `in.(${ids.join(',')})`
+    select: 'id,type,title,url,source,summary,metadata', id: `in.(${ids.join(',')})`,
+    ...(user?.isGuest ? guestResourceFilters() : {})
   }));
   const map = Object.fromEntries(resources.map((r) => [r.id, r]));
   return links
@@ -100,7 +105,8 @@ export async function listPosts(request, env) {
 
   const filters = { ...userFilter(user, all) };
   const status = url.searchParams.get('status');
-  if (user.isGuest) filters.status = 'eq.published';   // 访客只看已发布
+  // 访客只看「已发布 + 公开」；私密文章即使已发布也不外泄
+  if (user.isGuest) Object.assign(filters, guestPostFilters());
   else if (status) filters.status = `eq.${requireEnum(status, 'status', ['draft', 'published'])}`;
   const categoryId = url.searchParams.get('category_id');
   if (categoryId) filters.category_id = `eq.${categoryId}`;
@@ -135,8 +141,8 @@ export async function getPost(request, env, id) {
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
 
   const post = rows[0];
-  if (user.isGuest && post.status !== 'published') throw new HttpError(404, '文章不存在或无权限');
-  const linked = await loadLinkedResources(db, id);
+  if (user.isGuest && !isPostVisibleToGuest(post)) throw new HttpError(404, '文章不存在或无权限');
+  const linked = await loadLinkedResources(db, id, user);
   const tags = await loadPostTags(db, id);
   return ok({
     ...post,
@@ -155,8 +161,8 @@ export async function getPostBySlug(request, env, slug) {
   }));
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
   const post = rows[0];
-  if (user.isGuest && post.status !== 'published') throw new HttpError(404, '文章不存在或无权限');
-  const linked = await loadLinkedResources(db, post.id);
+  if (user.isGuest && !isPostVisibleToGuest(post)) throw new HttpError(404, '文章不存在或无权限');
+  const linked = await loadLinkedResources(db, post.id, user);
   const tags = await loadPostTags(db, post.id);
   return ok({ ...post, tags, linked_resources: linked, heavy_tags: detectHeavyTags(post.content) }, request, env);
 }
