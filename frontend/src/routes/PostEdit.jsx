@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
+import { invalidateBlogData } from '../lib/blogData.js';
 import { PostRenderer } from '../components/PostRenderer.jsx';
 
 const TAG_SNIPPETS = [
@@ -51,6 +52,7 @@ export function PostEdit({ id }) {
         is_public: form.is_public
       };
       const saved = isNew ? await api.createPost(payload) : await api.updatePost(id, payload);
+      invalidateBlogData();
       route(`/posts/${saved.id}`);
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }

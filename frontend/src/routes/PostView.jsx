@@ -10,6 +10,7 @@ import { PostRenderer } from '../components/PostRenderer.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { DEFAULT_COVER } from './Posts.jsx';
+import { BlogDock } from '../components/BlogDock.jsx';
 
 function fmtDate(v) {
   const d = new Date(v);
@@ -218,6 +219,7 @@ export function PostView({ id }) {
         </div>, document.body
       )}
 
+      <BlogDock />
       {viewer && createPortal(<ImageViewer src={viewer} onClose={() => setViewer('')} />, document.body)}
     </article>
   );

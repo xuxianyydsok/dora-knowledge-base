@@ -8,6 +8,8 @@ const Login = lazy(() => import('./Login.jsx').then((m) => ({ default: m.Login }
 const Videos = lazy(() => import('./Videos.jsx').then((m) => ({ default: m.Videos })));
 const Github = lazy(() => import('./Github.jsx').then((m) => ({ default: m.Github })));
 const Posts = lazy(() => import('./Posts.jsx').then((m) => ({ default: m.Posts })));
+const BlogArchive = lazy(() => import('./BlogArchive.jsx').then((m) => ({ default: m.BlogArchive })));
+const BlogTopics = lazy(() => import('./BlogTopics.jsx').then((m) => ({ default: m.BlogTopics })));
 const PostEdit = lazy(() => import('./PostEdit.jsx').then((m) => ({ default: m.PostEdit })));
 const PostView = lazy(() => import('./PostView.jsx').then((m) => ({ default: m.PostView })));
 const Search = lazy(() => import('./Search.jsx').then((m) => ({ default: m.Search })));
@@ -27,7 +29,7 @@ const News = lazy(() => import('./News.jsx').then((m) => ({ default: m.News })))
 const AdminUsers = lazy(() => import('./AdminUsers.jsx').then((m) => ({ default: m.AdminUsers })));
 
 export {
-  Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
+  Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
   Search, Graph, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,

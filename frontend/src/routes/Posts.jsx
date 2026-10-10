@@ -3,9 +3,11 @@
 //   青绿主色 · 精选轮播（无精选时回退到最新文章）· 分类导航 · 最新/最早切换的文章卡片列表 + 分页
 //   · 右侧栏：博主卡 / 热门标签 / 专题类别 / 近期更新
 // 文章没有封面时，统一使用旧站 cosolar 的默认封面图（用户要求，2026-10-09）。
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
+import { useBlogData, invalidateBlogData, dateOf, fmtDate } from '../lib/blogData.js';
+import { BlogDock, BlogLinks } from '../components/BlogDock.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -15,41 +17,35 @@ const PAGE_SIZE = 10;
 const SLIDES = 5;
 
 export const DEFAULT_COVER = '/blog/default-cover.webp';   // 旧站 cosolar 默认封面（见 public/blog/NOTICE.md）
-function fmtDate(v) {
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-const dateOf = (p) => p.published_at || p.created_at;
-
 function Cover({ post }) {
   return <img class="cs-cover-img" src={post.cover_path || DEFAULT_COVER} alt="" loading="lazy" />;
 }
 
-export function Posts() {
+export function Posts({ cat: catParam, tag: tagParam, focus }) {
   const { isAuthenticated } = useAuth();
-  const [posts, setPosts] = useState([]);
-  const [cats, setCats] = useState([]);
-  const [tags, setTags] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data, error: loadError, loading, reload } = useBlogData(isAuthenticated);
+  const posts = data?.posts || [];
+  const cats = data?.cats || [];
+  const tags = data?.tags || [];
   const [error, setError] = useState('');
-  const [cat, setCat] = useState('all');
-  const [tag, setTag] = useState('');
   const [sort, setSort] = useState('new');
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [slide, setSlide] = useState(0);
+  const searchRef = useRef(null);
 
-  async function load() {
-    setLoading(true); setError('');
-    try {
-      const [p, c, t] = await Promise.all([api.listPosts('?with_tags=true'), api.listCategories(), api.listTags()]);
-      setPosts((p || []).filter((x) => isAuthenticated || x.status === 'published'));
-      setCats(c || []); setTags(t || []);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { load(); }, [isAuthenticated]);
+  // 分类 / 标签筛选放在 URL 上（/posts?cat=slug、/posts?tag=slug），方便分享和从聚合页跳回
+  const findBy = (list, v) => (v ? list.find((x) => x.slug === v || x.id === v) : null);
+  const cat = findBy(cats, catParam)?.id || 'all';
+  const tag = findBy(tags, tagParam)?.id || '';
+  const slugOf = (list, id) => { const x = list.find((y) => y.id === id); return encodeURIComponent(x?.slug || id); };
+  const setCat = (id) => route(id === 'all' ? '/posts' : `/posts?cat=${slugOf(cats, id)}`);
+  const setTag = (id) => route(id ? `/posts?tag=${slugOf(tags, id)}` : '/posts');
+  const load = reload;
+
+  useEffect(() => {
+    if (focus === 'search' && searchRef.current) { searchRef.current.focus(); searchRef.current.scrollIntoView({ block: 'center' }); }
+  }, [focus, loading]);
 
   const catMap = useMemo(() => new Map(cats.map((c) => [c.id, c])), [cats]);
   const tagMap = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
@@ -99,7 +95,7 @@ export function Posts() {
 
   async function remove(id) {
     if (!confirm('确定删除该文章？')) return;
-    try { await api.deletePost(id); await load(); } catch (e) { setError(e.message); }
+    try { await api.deletePost(id); invalidateBlogData(); await load(); } catch (e) { setError(e.message); }
   }
 
   function goPage(n) {
@@ -107,8 +103,8 @@ export function Posts() {
     document.querySelector('.cs-main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  if (loading) return <LoadingState shape="card" />;
-  if (error && !posts.length) return <ErrorState title="博客加载失败" message={error} onRetry={load} />;
+  if (loading && !data) return <LoadingState shape="card" />;
+  if (loadError && !data) return <ErrorState title="博客加载失败" message={loadError} onRetry={load} />;
 
   const cur = featured[slide] || featured[0];
 
@@ -116,14 +112,15 @@ export function Posts() {
     <section class="cs">
       {/* —— 分类导航 —— */}
       <nav class="cs-nav">
-        <button class={cat === 'all' && !tag ? 'on' : ''} onClick={() => { setCat('all'); setTag(''); }}>首页</button>
+        <button class={cat === 'all' && !tag ? 'on' : ''} onClick={() => setCat('all')}>首页</button>
         {usedCats.map((c) => (
-          <button key={c.id} class={cat === c.id ? 'on' : ''} onClick={() => { setCat(c.id); setTag(''); }}>{c.name}</button>
+          <button key={c.id} class={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>{c.name}</button>
         ))}
         <span class="spacer" />
+        <BlogLinks />
         <label class="cs-search">
           <Icon name="search" size={14} />
-          <input placeholder="搜索文章" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+          <input ref={searchRef} placeholder="搜索文章" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
         </label>
         {isAuthenticated && (
           <button class="primary cs-new" onClick={() => route('/posts/new')}><Icon name="plus" size={14} /> 写文章</button>
@@ -185,14 +182,14 @@ export function Posts() {
                   {p.excerpt && <p>{p.excerpt}</p>}
                   <div class="cs-tags">
                     {(p.tag_ids || []).slice(0, 3).map((id) => tagMap.get(id) && (
-                      <button key={id} class="cs-tag" onClick={(e) => { e.stopPropagation(); setTag(id); setCat('all'); }}>
+                      <button key={id} class="cs-tag" onClick={(e) => { e.stopPropagation(); setTag(id); }}>
                         # {tagMap.get(id).name}
                       </button>
                     ))}
                   </div>
                   <div class="cs-meta">
                     {c && (
-                      <button class="cs-meta-link" onClick={(e) => { e.stopPropagation(); setCat(c.id); setTag(''); }}>
+                      <button class="cs-meta-link" onClick={(e) => { e.stopPropagation(); setCat(c.id); }}>
                         <Icon name="layers" size={13} /> {c.name}
                       </button>
                     )}
@@ -235,7 +232,7 @@ export function Posts() {
             <div class="cs-box-head"><Icon name="tag" size={14} /> 热门标签</div>
             <div class="cs-cloud">
               {hotTags.map((t) => (
-                <button key={t.id} class={tag === t.id ? 'on' : ''} onClick={() => { setTag(tag === t.id ? '' : t.id); setCat('all'); }}>
+                <button key={t.id} class={tag === t.id ? 'on' : ''} onClick={() => setTag(tag === t.id ? '' : t.id)}>
                   {t.name}<small>{tagCount.get(t.id)}</small>
                 </button>
               ))}
@@ -246,7 +243,7 @@ export function Posts() {
             <div class="cs-box-head"><Icon name="layers" size={14} /> 专题类别</div>
             <div class="cs-catlist">
               {usedCats.map((c) => (
-                <button key={c.id} class={cat === c.id ? 'on' : ''} onClick={() => { setCat(c.id); setTag(''); }}>
+                <button key={c.id} class={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>
                   <span>{c.name}</span><small>{catCount.get(c.id)} 篇</small>
                 </button>
               ))}
@@ -267,6 +264,8 @@ export function Posts() {
           </div>
         </aside>
       </div>
+      {error && <div class="notice danger">{error}</div>}
+      <BlogDock active={focus === 'search' ? 'search' : 'home'} />
     </section>
   );
 }

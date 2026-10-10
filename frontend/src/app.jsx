@@ -12,7 +12,7 @@ import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { PointerGlow } from './components/PointerGlow.jsx';
 import { Home } from './routes/Home.jsx';
 import {
-  Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView,
+  Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
   Search, Graph, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
@@ -30,6 +30,9 @@ function RouterView() {
       <ProtectedRoute guest path="/videos"><Videos /></ProtectedRoute>
       <ProtectedRoute guest path="/github"><Github /></ProtectedRoute>
       <ProtectedRoute guest path="/posts"><Posts /></ProtectedRoute>
+      <ProtectedRoute guest path="/posts/archive"><BlogArchive /></ProtectedRoute>
+      <ProtectedRoute guest path="/posts/categories"><BlogTopics mode="categories" /></ProtectedRoute>
+      <ProtectedRoute guest path="/posts/tags"><BlogTopics mode="tags" /></ProtectedRoute>
       <ProtectedRoute path="/posts/new"><PostEdit /></ProtectedRoute>
       <ProtectedRoute path="/posts/:id/edit"><PostEdit /></ProtectedRoute>
       <ProtectedRoute guest path="/posts/:id"><PostView /></ProtectedRoute>
