@@ -72,10 +72,6 @@ export function Layout({ children }) {
   const { isAuthenticated, user, signOut, isAdmin } = useAuth();
   const [router] = useRouter();
   const path = router?.path || '/';
-  const [navOpen, setNavOpen] = useState(false);
-
-  // 路由变化后收起移动端抽屉
-  useEffect(() => { setNavOpen(false); }, [path]);
 
   const link = (href, label) => (
     <a
@@ -89,22 +85,13 @@ export function Layout({ children }) {
   return (
     <div class="app-shell">
       <header class="app-header">
-        <button
-          type="button"
-          class="nav-toggle"
-          aria-label={navOpen ? '关闭菜单' : '打开菜单'}
-          aria-expanded={navOpen}
-          onClick={() => setNavOpen((v) => !v)}
-        >
-          <Icon name={navOpen ? 'close' : 'menu'} size={20} />
-        </button>
-
         <a href="/" class="brand" aria-label="Dora 首页">
           <Logo size={30} />
           <span>Dora</span>
         </a>
 
-        <nav class={`app-nav${navOpen ? ' open' : ''}`}>
+        {/* 窄屏（≤920px）不再用三横线抽屉，一级导航直接横向滚动（2026-10-09，见 docs/removed-features.md） */}
+        <nav class="app-nav">
           {PRIMARY.map(([href, label]) => link(href, label))}
           {(
             <Dropdown
@@ -117,15 +104,6 @@ export function Layout({ children }) {
                 <MenuLink key={href} href={href} icon={icon}>{label}</MenuLink>
               ))}
             </Dropdown>
-          )}
-          {/* 只有移动端抽屉展示：账号操作（桌面端收在头像菜单里） */}
-          {isAuthenticated && (
-            <div class="nav-drawer-actions">
-              <a href="/settings">设置</a>
-              <a href="/backup">备份</a>
-              {isAdmin && <a href="/admin/users">用户管理</a>}
-              <button type="button" onClick={signOut}>退出登录</button>
-            </div>
           )}
         </nav>
 
