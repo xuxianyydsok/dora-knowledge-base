@@ -45,10 +45,17 @@ export function MoviePlayer({
   const [error, setError] = useState('');
   const [loadingSrc, setLoadingSrc] = useState(true);
   const [saved, setSaved] = useState('');
-  const [panel, setPanel] = useState('');       // '' | 'routes' | 'episodes'
+  const [panel, setPanel] = useState('');       // '' | 'routes' | 'episodes' | 'speed'
   const [chromeVisible, setChromeVisible] = useState(true);
+  const [rate, setRate] = useState(() => Number(localStorage.getItem('dora:rate')) || 1);
 
   const src = movie?.url || '';
+  const rateRef = useRef(rate);
+  function changeRate(r) {
+    setRate(r); rateRef.current = r;
+    try { localStorage.setItem('dora:rate', String(r)); } catch {}
+    if (videoRef.current) videoRef.current.playbackRate = r;
+  }
 
   // 线路自动回退：一部片常有 5~8 条线路，其中只有部分真的能播；失败时自动试下一条（每条最多试一次）
   const triedRef = useRef(new Set());
@@ -82,6 +89,7 @@ export function MoviePlayer({
       if (disposed) return;
       setDuration(el.duration || 0);
       setLoadingSrc(false);
+      el.playbackRate = rateRef.current;
       if (resume > 0 && resume < (el.duration || Infinity) - 3) {
         el.currentTime = resume;
         setCurrent(resume);
@@ -298,7 +306,7 @@ export function MoviePlayer({
             disabled={!hasPrev}
             onClick={() => onSelectEpisode?.(episodeIndex - 1)}
             title="上一集"
-          >⏮</button>
+          ><Icon name="skipBack" size={16} /></button>
           <button class="watch-icon" onClick={toggle} title={playing ? '暂停' : '播放'}>
             <Icon name={playing ? 'pause' : 'play'} size={17} />
           </button>
@@ -307,11 +315,14 @@ export function MoviePlayer({
             disabled={!hasNext}
             onClick={() => onSelectEpisode?.(episodeIndex + 1)}
             title="下一集"
-          >⏭</button>
+          ><Icon name="skipForward" size={16} /></button>
 
           <span class="watch-time">{fmt(current)} / {fmt(duration)}</span>
           <span class="spacer" />
 
+          <button class={`watch-icon watch-speed${panel === 'speed' ? ' active' : ''}`} onClick={() => setPanel(panel === 'speed' ? '' : 'speed')} title="倍速">
+            {rate === 1 ? '倍速' : `${rate}x`}
+          </button>
           {episodeCount > 1 && (
             <button class={`watch-icon${panel === 'episodes' ? ' active' : ''}`} onClick={() => setPanel(panel === 'episodes' ? '' : 'episodes')} title="选集">
               <Icon name="layers" size={16} />
@@ -349,6 +360,16 @@ export function MoviePlayer({
                 onClick={() => { onSelectRoute?.(i); setPanel(''); }}>
                 {r.name}<span class="chip-n">{r.count}</span>
               </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {panel === 'speed' && (
+        <div class="watch-panel">
+          <div class="watch-panel-head"><strong>播放速度</strong><button class="watch-icon" onClick={() => setPanel('')}><Icon name="close" size={15} /></button></div>
+          <div class="watch-panel-body speeds">
+            {[0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((r) => (
+              <button key={r} class={`speed-opt${r === rate ? ' active' : ''}`} onClick={() => { changeRate(r); setPanel(''); }}>{r}x</button>
             ))}
           </div>
         </div>
