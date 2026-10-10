@@ -500,7 +500,6 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 /* ---------------- 顶栏：下拉菜单 / 用户菜单 / 移动端抽屉 ---------------- */
 /* 单行布局：一级导航只放内容模块，工具与账号分别收进「更多」和头像菜单 */
 .app-header { flex-wrap: nowrap; gap: 10px; }
-.nav-toggle { display: none; }
 
 .menu { position: relative; display: inline-flex; }
 
@@ -609,7 +608,6 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 .avatar-trigger.open .avatar { transform: scale(1.06); box-shadow: 0 6px 20px var(--glow-1); }
 
 .login-link { display: inline-flex; }
-.nav-drawer-actions { display: none; }
 
 .app-main {
   flex: 1;
@@ -3926,65 +3924,28 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 }
 
 /* =============================================================
-   顶栏响应式：≤920px 把一级导航收成抽屉（桌面端单行平铺）
+   顶栏响应式：≤920px 一级导航改为横向滚动单行（2026-10-09 去掉三横线抽屉）
    ============================================================= */
 @media (max-width: 920px) {
   .app-header { padding: 10px 14px; gap: 8px; }
-  .nav-toggle { display: inline-flex; }
-
+  .app-header .spacer { display: none; }
   .app-nav {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    display: none;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 4px;
-    padding: 12px 14px 16px;
-    border-bottom: 1px solid var(--glass-border);
-    /* 抽屉必须够“实”：半透明背景下页面内容会透出来、可读性差 */
-    background: color-mix(in srgb, var(--bg-elevated) 97%, transparent);
-    -webkit-backdrop-filter: blur(30px) saturate(160%);
-    backdrop-filter: blur(30px) saturate(160%);
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
-  }
-  .app-nav.open { display: flex; animation: menu-in var(--dur) var(--ease-out) both; }
-  .app-nav > a { justify-content: flex-start; padding: 11px 12px; font-size: 15px; }
-  .app-nav .menu { display: block; }
-  .app-nav .menu-trigger { width: 100%; justify-content: space-between; padding: 11px 12px; font-size: 15px; }
-  .app-nav .menu-panel {
-    position: static;
+    position: static;           /* 「更多」面板以顶栏定位，不被横向滚动容器裁掉 */
+    flex: 1 1 auto;
     min-width: 0;
-    padding: 2px 0 2px 8px;
-    border: none;
-    background: none;
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    animation: none;
+    margin-left: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
+    padding-right: 18px;
   }
-
-  .nav-drawer-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-top: 6px;
-    padding-top: 10px;
-    border-top: 1px solid var(--glass-border);
-  }
-  .nav-drawer-actions a,
-  .nav-drawer-actions button {
-    display: flex;
-    justify-content: flex-start;
-    padding: 11px 12px;
-    font-size: 14.5px;
-    color: var(--text-muted);
-    background: none;
-    border: none;
-    border-radius: var(--radius-sm);
-  }
-  .nav-drawer-actions button::after { display: none; }
+  .app-nav::-webkit-scrollbar { display: none; }
+  .app-nav > a, .app-nav .menu-trigger { flex: none; white-space: nowrap; }
+  .app-nav .menu { position: static; }
+  .app-nav .menu-panel { top: 100%; left: auto; right: 10px; }
 }
 
 @media (max-width: 520px) {
@@ -4908,9 +4869,34 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 [data-theme='dark'] .cs { --cs: #2dd4bf; --cs-soft: rgba(45, 212, 191, 0.14); }
 .cs button { font: inherit; }
 .cs-nav {
-  display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 8px 10px;
+  display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 8px 10px;
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm);
 }
+.cs-nav::-webkit-scrollbar { display: none; }
+.cs-nav > button { flex: none; white-space: nowrap; }
+.cs-nav > button small { margin-left: 4px; font-size: 11px; opacity: 0.6; font-weight: 500; }
+
+/* 首页顶部横幅（高清背景 + 大搜索框；多张背景时淡入淡出轮换） */
+.cs-banner { position: relative; min-height: 320px; border-radius: var(--radius-lg); overflow: hidden; display: flex; align-items: center;
+  background: linear-gradient(135deg, #e3f8f2, #c4efe4); box-shadow: var(--shadow-md); }
+.cs-banner-bg { position: absolute; inset: 0; }
+.cs-banner-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: right center; opacity: 0; transition: opacity 1.2s ease; }
+.cs-banner-bg img.on { opacity: 1; }
+.cs-banner-bg::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(236, 251, 247, 0.92) 0%, rgba(236, 251, 247, 0.6) 45%, rgba(236, 251, 247, 0) 70%); }
+[data-theme='dark'] .cs-banner-bg::after { background: linear-gradient(90deg, rgba(8, 24, 23, 0.94) 0%, rgba(8, 24, 23, 0.72) 50%, rgba(8, 24, 23, 0.25) 100%); }
+.cs-banner-inner { position: relative; z-index: 1; width: min(620px, 100%); padding: 36px 40px; display: flex; flex-direction: column; gap: 10px; color: #0b3b37; }
+[data-theme='dark'] .cs-banner-inner { color: #e6fffb; }
+.cs-banner-inner h1 { margin: 0; font-size: clamp(26px, 3.2vw, 38px); letter-spacing: 0.02em; }
+.cs-banner-inner > p { margin: 0 0 8px; opacity: 0.72; font-size: 15px; }
+.cs-search.cs-search-lg { height: 52px; padding: 0 18px; gap: 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(15, 163, 154, 0.25);
+  box-shadow: 0 10px 30px rgba(15, 100, 92, 0.14); color: var(--cs); }
+.cs-search.cs-search-lg:focus-within { border-color: var(--cs); box-shadow: 0 0 0 4px var(--cs-soft), 0 10px 30px rgba(15, 100, 92, 0.16); }
+[data-theme='dark'] .cs-search.cs-search-lg { background: rgba(20, 30, 32, 0.85); border-color: rgba(45, 212, 191, 0.3); }
+.cs-search.cs-search-lg input { width: 100%; font-size: 16px; }
+.cs-search.cs-search-lg input::-webkit-search-cancel-button { cursor: pointer; }
+.cs-banner-links { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.cs-banner-links .cs-links { background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(8px); border-radius: 12px; padding: 3px; }
+[data-theme='dark'] .cs-banner-links .cs-links { background: rgba(0, 0, 0, 0.3); }
 .cs-nav > button:not(.primary) { background: none; border: none; padding: 7px 12px; border-radius: 10px; color: var(--text-muted); cursor: pointer; font-size: 14px; }
 .cs-nav > button:not(.primary):hover { color: var(--cs); background: var(--cs-soft); }
 .cs-nav > button.on { color: var(--cs); background: var(--cs-soft); font-weight: 650; }
@@ -5011,9 +4997,12 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   .cs-hero-body { padding: 20px; }
   .cs-card { grid-template-columns: 1fr; }
   .cs-card-cover { height: 140px; }
-  .cs-nav { flex-wrap: nowrap; overflow-x: auto; }
-  .cs-nav > button { flex: none; }
-  .cs-search input { width: 100px; }
+  .cs-banner { min-height: 240px; border-radius: var(--radius); }
+  .cs-banner-bg img { object-position: 78% center; }
+  .cs-banner-bg::after { background: linear-gradient(180deg, rgba(236, 251, 247, 0.78), rgba(236, 251, 247, 0.9)); }
+  [data-theme='dark'] .cs-banner-bg::after { background: linear-gradient(180deg, rgba(8, 24, 23, 0.8), rgba(8, 24, 23, 0.92)); }
+  .cs-banner-inner { padding: 26px 18px; }
+  .cs-search.cs-search-lg { height: 46px; }
 }
 
 /* ---------------- 博客阅读页（cosolar 风格，自行实现） ---------------- */
@@ -5025,6 +5014,17 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .pv-hero-inner { position: relative; padding: 26px 32px; color: #fff; display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .pv-hero-inner h1 { margin: 0; font-size: clamp(24px, 3vw, 36px); line-height: 1.3; text-shadow: 0 2px 12px rgba(0,0,0,0.3); }
 .pv-hero .pv-back { position: static; align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.18); color: #fff; border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(8px); padding: 5px 12px; font-size: 13px; }
+/* 无封面文章：高清横幅头图，压低高度、文字在左侧浅色区 */
+.pv-hero.is-default { min-height: 220px; align-items: center; box-shadow: var(--shadow-sm); }
+.pv-hero.is-default > img { object-position: right center; }
+.pv-hero.is-default .pv-hero-mask { background: linear-gradient(90deg, rgba(236, 251, 247, 0.95) 0%, rgba(236, 251, 247, 0.75) 50%, rgba(236, 251, 247, 0) 78%); }
+[data-theme='dark'] .pv-hero.is-default .pv-hero-mask { background: linear-gradient(90deg, rgba(8, 24, 23, 0.95) 0%, rgba(8, 24, 23, 0.78) 55%, rgba(8, 24, 23, 0.3) 100%); }
+.pv-hero.is-default .pv-hero-inner { color: #0b3b37; max-width: 760px; padding: 24px 32px; }
+[data-theme='dark'] .pv-hero.is-default .pv-hero-inner { color: #e6fffb; }
+.pv-hero.is-default .pv-hero-inner h1 { text-shadow: none; }
+.pv-hero.is-default .pv-back { background: rgba(255, 255, 255, 0.7); color: #0b3b37; border-color: rgba(15, 163, 154, 0.3); }
+[data-theme='dark'] .pv-hero.is-default .pv-back { background: rgba(0, 0, 0, 0.3); color: #e6fffb; }
+.pv-hero.is-default .pv-edit { background: rgba(255, 255, 255, 0.7); color: #0b3b37; border-color: rgba(15, 163, 154, 0.3); }
 .pv-cat { background: var(--cs) !important; color: #fff !important; }
 .pv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; font-size: 13px; opacity: 0.92; }
 .pv-meta span { display: inline-flex; align-items: center; gap: 5px; }
@@ -5082,6 +5082,11 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   .pv-body { padding: 22px 18px; border-radius: var(--radius); }
   .pv-hero { min-height: 230px; border-radius: var(--radius); }
   .pv-hero-inner { padding: 18px; }
+  .pv-hero.is-default { min-height: 200px; }
+  .pv-hero.is-default > img { object-position: 78% center; }
+  .pv-hero.is-default .pv-hero-mask { background: rgba(236, 251, 247, 0.86); }
+  [data-theme='dark'] .pv-hero.is-default .pv-hero-mask { background: rgba(8, 24, 23, 0.86); }
+  .pv-hero.is-default .pv-hero-inner { padding: 18px; }
   .pv .post-content { font-size: 15.5px; }
 }
 
@@ -5154,7 +5159,7 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   [data-theme='dark'] .cs-dock button.on { color: #2dd4bf; }
   .cs { padding-bottom: 84px; }
   .cs-side { display: none; }
-  .cs-nav .cs-links { display: none; }
+  .cs-banner-links .cs-links { display: none; }
   .pv-top { bottom: 96px; }
   .pv-toc-fab { bottom: 150px; }
   .cs-page-head { padding: 22px 18px; background-size: auto 100%, cover; }

@@ -17,6 +17,10 @@ const PAGE_SIZE = 10;
 const SLIDES = 5;
 
 export const DEFAULT_COVER = '/blog/default-cover.webp';   // 旧站 cosolar 默认封面（见 public/blog/NOTICE.md）
+// 高清横幅（旧站 featured-default.png 3360×1152 → 2560 宽 WebP）：首页顶部横幅、无封面文章的阅读页头图
+export const BANNER_HD = '/blog/banner-hd.webp';
+// 首页横幅背景：多于 1 张时每 8 秒淡入淡出轮换。用户以后提供自己的高清图/视频时加到这里（待办见 docs/progress.md 第 3 节）
+const BANNERS = [BANNER_HD];
 function Cover({ post }) {
   return <img class="cs-cover-img" src={post.cover_path || DEFAULT_COVER} alt="" loading="lazy" />;
 }
@@ -32,6 +36,7 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [slide, setSlide] = useState(0);
+  const [bannerIdx, setBannerIdx] = useState(0);
   const searchRef = useRef(null);
 
   // 分类 / 标签筛选放在 URL 上（/posts?cat=slug、/posts?tag=slug），方便分享和从聚合页跳回
@@ -93,6 +98,12 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
     return () => clearInterval(t);
   }, [featured.length]);
 
+  useEffect(() => {
+    if (BANNERS.length < 2) return undefined;
+    const t = setInterval(() => setBannerIdx((i) => (i + 1) % BANNERS.length), 8000);
+    return () => clearInterval(t);
+  }, []);
+
   async function remove(id) {
     if (!confirm('确定删除该文章？')) return;
     try { await api.deletePost(id); invalidateBlogData(); await load(); } catch (e) { setError(e.message); }
@@ -110,21 +121,35 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
 
   return (
     <section class="cs">
-      {/* —— 分类导航 —— */}
+      {/* —— 顶部横幅：博客名 + 大搜索框 + 分类/标签/归档入口 —— */}
+      <header class="cs-banner">
+        <div class="cs-banner-bg" aria-hidden="true">
+          {BANNERS.map((src, i) => <img key={src} src={src} alt="" class={i === bannerIdx ? 'on' : ''} />)}
+        </div>
+        <div class="cs-banner-inner">
+          <h1>Dora 的博客</h1>
+          <p>记录学习、技术与生活 · 共 {posts.length} 篇文章</p>
+          <label class="cs-search cs-search-lg">
+            <Icon name="search" size={18} />
+            <input ref={searchRef} type="search" placeholder="搜索文章标题或摘要…" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+          </label>
+          <div class="cs-banner-links">
+            <BlogLinks />
+            {isAuthenticated && (
+              <button class="primary cs-new" onClick={() => route('/posts/new')}><Icon name="plus" size={14} /> 写文章</button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* —— 分类导航：单行横向滚动 —— */}
       <nav class="cs-nav">
-        <button class={cat === 'all' && !tag ? 'on' : ''} onClick={() => setCat('all')}>首页</button>
+        <button class={cat === 'all' && !tag ? 'on' : ''} onClick={() => setCat('all')}>全部</button>
         {usedCats.map((c) => (
-          <button key={c.id} class={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>{c.name}</button>
+          <button key={c.id} class={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>
+            {c.name}<small>{catCount.get(c.id)}</small>
+          </button>
         ))}
-        <span class="spacer" />
-        <BlogLinks />
-        <label class="cs-search">
-          <Icon name="search" size={14} />
-          <input ref={searchRef} placeholder="搜索文章" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
-        </label>
-        {isAuthenticated && (
-          <button class="primary cs-new" onClick={() => route('/posts/new')}><Icon name="plus" size={14} /> 写文章</button>
-        )}
       </nav>
 
       {/* —— 精选轮播 —— */}

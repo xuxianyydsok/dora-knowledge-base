@@ -9,7 +9,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { PostRenderer } from '../components/PostRenderer.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
-import { DEFAULT_COVER } from './Posts.jsx';
+import { BANNER_HD } from './Posts.jsx';
 import { BlogDock } from '../components/BlogDock.jsx';
 
 function fmtDate(v) {
@@ -149,8 +149,9 @@ export function PostView({ id }) {
   return (
     <article class="cs pv">
 
-      <header class="pv-hero">
-        <img src={post.cover_path || DEFAULT_COVER} alt="" />
+      {/* 有自定义封面用封面；没有则用高清横幅（浅色底 + 深色文字），不再把 1129×678 小图拉伸成宽屏 */}
+      <header class={`pv-hero${post.cover_path ? '' : ' is-default'}`}>
+        <img src={post.cover_path || BANNER_HD} alt="" />
         <div class="pv-hero-mask" />
         <div class="pv-hero-inner">
           <button class="pv-back" onClick={() => route('/posts')}><Icon name="arrowLeft" size={14} /> 博客</button>
