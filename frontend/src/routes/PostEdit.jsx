@@ -2,7 +2,7 @@
 // 正文为原生 HTML；提供自定义标签插入按钮与实时预览（预览按需懒加载重型库）
 import { useEffect, useState } from 'preact/hooks';
 import { route } from 'preact-router';
-import { api } from '../lib/api.js';
+import { api, uploadAsset } from '../lib/api.js';
 import { invalidateBlogData } from '../lib/blogData.js';
 import { PostRenderer } from '../components/PostRenderer.jsx';
 
@@ -16,10 +16,16 @@ const TAG_SNIPPETS = [
 
 export function PostEdit({ id }) {
   const isNew = !id || id === 'new';
-  const [form, setForm] = useState({ title: '', content: '', excerpt: '', status: 'draft', is_public: false });
+  const [form, setForm] = useState({
+    title: '', content: '', excerpt: '', cover_path: '', status: 'draft', is_public: false
+  });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [recent, setRecent] = useState([]);
 
   useEffect(() => {
     if (isNew) return;
@@ -28,16 +34,60 @@ export function PostEdit({ id }) {
         const p = await api.getPost(id);
         setForm({
           title: p.title, content: p.content, excerpt: p.excerpt || '',
+          cover_path: p.cover_path || '',
           status: p.status, is_public: !!p.is_public
         });
       } catch (e) { setError(e.message); }
     })();
   }, [id]);
 
+  // 最近素材：登录用户才有；失败静默（访客/未配置存储时不影响编辑）
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.listAssets('?limit=12');
+        setRecent(res?.items || []);
+      } catch { /* 忽略：无权限或未登录时不显示 */ }
+    })();
+  }, []);
+
   function set(field, value) { setForm((f) => ({ ...f, [field]: value })); }
 
   function insert(snippet) {
     set('content', `${form.content}\n${snippet}`);
+  }
+
+  // 上传封面：成功后自动写入 cover_path
+  async function handleUpload(file) {
+    if (!file) return;
+    setError(''); setUploading(true); setProgress(0);
+    try {
+      const asset = await uploadAsset(file, { onProgress: setProgress });
+      set('cover_path', asset.public_url);
+      setRecent((list) => [asset, ...list].slice(0, 12));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleUpload(file);
+  }
+
+  function copyCover() {
+    if (!form.cover_path) return;
+    navigator.clipboard?.writeText(form.cover_path).catch(() => setError('复制失败，请手动复制'));
+  }
+
+  function insertCoverImage() {
+    if (!form.cover_path) return;
+    const alt = (form.title || '封面').replace(/"/g, '');
+    insert(`<img src="${form.cover_path}" alt="${alt}">`);
   }
 
   async function save(e) {
@@ -48,6 +98,7 @@ export function PostEdit({ id }) {
         title: form.title,
         content: form.content,
         excerpt: form.excerpt || null,
+        cover_path: form.cover_path || null,
         status: form.status,
         is_public: form.is_public
       };
@@ -71,6 +122,62 @@ export function PostEdit({ id }) {
       <form class="stack" onSubmit={save}>
         <input placeholder="文章标题" value={form.title} onInput={(e) => set('title', e.currentTarget.value)} required />
         <input placeholder="摘要（可选）" value={form.excerpt} onInput={(e) => set('excerpt', e.currentTarget.value)} />
+
+        <div class="card" style="padding:12px">
+          <div class="row" style="justify-content:space-between">
+            <strong style="font-size:14px">封面</strong>
+            <span class="muted" style="font-size:12px">JPEG / PNG / WebP / AVIF，≤10MB</span>
+          </div>
+
+          <div class="row" style="align-items:flex-start;gap:12px;margin-top:10px">
+            {form.cover_path
+              ? <img src={form.cover_path} alt="封面预览" style="width:160px;height:90px;object-fit:cover;border-radius:8px" />
+              : <div class="muted" style="width:160px;height:90px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:8px;font-size:12px">未设置封面</div>}
+
+            <div class="stack" style="flex:1;gap:8px">
+              <div
+                class="muted"
+                style={`padding:14px;border:1px dashed ${dragOver ? 'var(--primary)' : 'var(--border)'};border-radius:8px;text-align:center;font-size:13px;cursor:pointer`}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={onDrop}
+                onClick={() => document.getElementById('cover-file-input')?.click()}
+              >
+                {uploading ? `上传中… ${progress}%` : '拖拽图片到此处，或点击选择文件'}
+              </div>
+              <input
+                id="cover-file-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/avif"
+                style="display:none"
+                onChange={(e) => handleUpload(e.currentTarget.files?.[0])}
+              />
+              <div class="row" style="flex-wrap:wrap">
+                <button type="button" disabled={!form.cover_path} onClick={copyCover}>复制图片链接</button>
+                <button type="button" disabled={!form.cover_path} onClick={insertCoverImage}>插入到正文</button>
+                {form.cover_path && <button type="button" onClick={() => set('cover_path', '')}>清除封面</button>}
+              </div>
+            </div>
+          </div>
+
+          {recent.length > 0 && (
+            <div class="stack" style="margin-top:10px;gap:6px">
+              <span class="muted" style="font-size:12px">最近素材（点击设为封面）</span>
+              <div class="row" style="flex-wrap:wrap;gap:6px">
+                {recent.map((a) => (
+                  <img
+                    key={a.id}
+                    src={a.public_url}
+                    alt={a.original_name || '素材'}
+                    title={a.original_name || ''}
+                    onClick={() => set('cover_path', a.public_url)}
+                    style="width:72px;height:48px;object-fit:cover;border-radius:6px;cursor:pointer"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         <div class="row">
           <label class="row" style="gap:6px">
