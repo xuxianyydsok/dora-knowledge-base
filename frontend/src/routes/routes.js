@@ -27,11 +27,12 @@ const MovieView = lazy(() => import('./MovieView.jsx').then((m) => ({ default: m
 const MovieEdit = lazy(() => import('./MovieEdit.jsx').then((m) => ({ default: m.MovieEdit })));
 const News = lazy(() => import('./News.jsx').then((m) => ({ default: m.News })));
 const AdminUsers = lazy(() => import('./AdminUsers.jsx').then((m) => ({ default: m.AdminUsers })));
+const SourceHealth = lazy(() => import('./SourceHealth.jsx').then((m) => ({ default: m.SourceHealth })));
 
 export {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
   Search, Graph, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
-  Movies, MovieView, MovieEdit, AdminUsers, News
+  Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth
 };

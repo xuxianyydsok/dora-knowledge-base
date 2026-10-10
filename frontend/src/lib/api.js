@@ -219,6 +219,8 @@ export const api = {
   getMovieSourceDetail: (body) => request('/api/movies/source-detail', { method: 'POST', body }),
   // 源探活要并发拉多个上游、解析 m3u8 并取分片，允许更长的超时
   getVodSourceHealth: () => request('/api/movies/sources/health', { method: 'GET', timeout: 60000 }),
+  // 统一源健康中心（影视 + 音乐）；params 传 '?refresh=1' 时管理员强制刷新
+  getSourceHealth: (params = '') => request(`/api/sources/health${params}`, { method: 'GET', timeout: 60000 }),
   createMovie: (body) => request('/api/movies', { method: 'POST', body }),
   updateMovie: (id, body) => request(`/api/movies/${id}`, { method: 'PATCH', body }),
   deleteMovie: (id) => request(`/api/movies/${id}`, { method: 'DELETE' }),

@@ -74,7 +74,7 @@ function yearOf(c) {
 }
 
 export function Movies() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('featured');       // 频道 key | new | search
   const [library, setLibrary] = useState([]);
@@ -409,7 +409,12 @@ export function Movies() {
               )}
             </div>
             <footer class="drawer-foot muted">
-              解析结果来自后端实时探测；「源不可用」只会让该源本轮不参与合并，不影响其它源。
+              <div>解析结果来自后端源健康缓存；「源不可用」只会让该源本轮不参与合并，不影响其它源。</div>
+              {isAdmin && (
+                <a class="drawer-foot-link" href="/sources" onClick={() => setDrawer('')}>
+                  查看完整源状态（影视 + 音乐） →
+                </a>
+              )}
             </footer>
           </aside>
         </>

@@ -5,9 +5,10 @@
 //       写操作（更新/删除/进度）始终限定本人。
 
 import { ok, readJson, HttpError } from '../lib/response.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
-import { fetchMovieMeta, fetchMovieLatest, fetchMovieDetailBySource, checkVodSources } from '../lib/fetchers.js';
+import { fetchMovieMeta, fetchMovieLatest, fetchMovieDetailBySource } from '../lib/fetchers.js';
+import { getSourceHealth, getVodSourceHealth as readVodSourceHealth } from '../lib/sourceHealth.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool,
   optionalNumber, optionalDateString, requireEnum
@@ -81,9 +82,32 @@ export async function getMovieSourceDetail(request, env) {
 }
 
 // GET /api/movies/sources/health  —— 采集源可用性检查
+// 改为复用统一的源健康缓存（与 /api/sources/health 同一份），不再各探一遍。
+// 鉴权保持与现状兼容（requireAuth，访客模式下由 guestContext 放行）：
+//   管理员可用 ?refresh=1 强制刷新；访客 / 普通用户只读缓存，缓存为空则返回空列表，绝不触发探测。
 export async function getVodSourceHealth(request, env) {
-  await requireAuth(request, env);
-  const result = await checkVodSources(env);
+  const { user } = await requireAuth(request, env);
+  const refresh = user.isAdmin && new URL(request.url).searchParams.get('refresh') === '1';
+  const result = await readVodSourceHealth(env, { refresh, allowProbe: user.isAdmin });
+  return ok(result, request, env);
+}
+
+// GET /api/sources/health  —— 影视 + 音乐统一源健康（管理员可全量探测 / 强制刷新）
+// 鉴权策略（推荐方案 b）：
+//   - 管理员：requireAdmin，可全量探测，可用 ?refresh=1 强制刷新。
+//   - 普通访客 / 未登录：**绝不触发上游探测**，只读已有缓存；
+//     缓存为空时返回空列表 + note（「暂无数据，请稍后由管理员刷新」），前端据此提示。
+export async function getSourcesHealth(request, env) {
+  const refresh = new URL(request.url).searchParams.get('refresh') === '1';
+  let isAdmin = false;
+  try {
+    const ctx = await requireAdmin(request, env);
+    isAdmin = ctx.user.isAdmin;
+  } catch (err) {
+    // 未登录（401）/ 非管理员（403）：降级为「只读缓存」，不视为错误
+    if (!(err instanceof HttpError) || ![401, 403].includes(err.status)) throw err;
+  }
+  const result = await getSourceHealth(env, { refresh: isAdmin && refresh, allowProbe: isAdmin });
   return ok(result, request, env);
 }
 

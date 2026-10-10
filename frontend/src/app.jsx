@@ -20,7 +20,7 @@ import {
   Search, Graph, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
-  Movies, MovieView, MovieEdit, AdminUsers, News
+  Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth
 } from './routes/routes.js';
 
 // 真正的 404：未匹配任何路由时显示，而不是静默回落到首页
@@ -67,6 +67,7 @@ function RouterView() {
       <ProtectedRoute guest path="/movies/watch/:source/:vid"><MovieView /></ProtectedRoute>
       <ProtectedRoute guest path="/movies/:id"><MovieView /></ProtectedRoute>
       <ProtectedRoute path="/admin/users"><AdminUsers /></ProtectedRoute>
+      <ProtectedRoute path="/sources"><SourceHealth /></ProtectedRoute>
       <ProtectedRoute guest path="/favorites"><Favorites /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>

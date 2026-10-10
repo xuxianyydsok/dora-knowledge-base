@@ -103,6 +103,8 @@ export function Layout({ children }) {
               {TOOLS.map(([href, label, icon]) => (
                 <MenuLink key={href} href={href} icon={icon}>{label}</MenuLink>
               ))}
+              {/* 源健康中心：仅管理员可见（普通访客 / 用户看不到入口） */}
+              {isAdmin && <MenuLink href="/sources" icon="wave">源状态</MenuLink>}
             </Dropdown>
           )}
         </nav>
