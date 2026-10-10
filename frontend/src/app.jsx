@@ -11,6 +11,7 @@ import { PlayerProvider } from './lib/player.jsx';
 import { Layout } from './components/Layout.jsx';
 import { MiniPlayer } from './components/MiniPlayer.jsx';
 import { Toaster } from './components/Toaster.jsx';
+import { EmptyState } from './components/StateView.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { PointerGlow } from './components/PointerGlow.jsx';
 import { Home } from './routes/Home.jsx';
@@ -21,6 +22,18 @@ import {
   MusicPlayer,
   Movies, MovieView, MovieEdit, AdminUsers, News
 } from './routes/routes.js';
+
+// 真正的 404：未匹配任何路由时显示，而不是静默回落到首页
+function NotFound() {
+  return (
+    <EmptyState
+      icon="search"
+      title="页面不存在"
+      hint="这个地址可能已失效，或输入有误。"
+      action={<a class="btn primary" href="/">返回首页</a>}
+    />
+  );
+}
 
 function RouterView() {
   return (
@@ -57,7 +70,7 @@ function RouterView() {
       <ProtectedRoute guest path="/favorites"><Favorites /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>
-      <Home default />
+      <NotFound default />
     </Router>
   );
 }

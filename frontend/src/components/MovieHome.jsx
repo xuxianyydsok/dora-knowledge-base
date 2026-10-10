@@ -117,7 +117,7 @@ function Hero({ type, tag, onPick }) {
           </div>
           <div class="mh-hero-actions">
             <button class="primary" onClick={() => onPick(cur)}><Icon name="play" size={15} /> 搜索播放</button>
-            <a href={cur.douban_url} target="_blank" rel="noreferrer"><button type="button">豆瓣详情</button></a>
+            <a class="btn" href={cur.douban_url} target="_blank" rel="noreferrer">豆瓣详情</a>
           </div>
         </div>
         <img class="mh-hero-poster" src={img(cur.poster_hd)} alt={cur.title} />

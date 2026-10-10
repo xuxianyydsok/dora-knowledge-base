@@ -18,6 +18,18 @@ jobs:
         with:
           version: latest
 
+      - name: Check required Supabase secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          missing=0
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "::error::缺少 GitHub Secret: $name"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ]
+
       - name: Link project
         run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
         env:

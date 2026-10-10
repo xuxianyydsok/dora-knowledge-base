@@ -11,6 +11,67 @@
 
 ---
 
+## 2.29 安全与质量底座（2026-10-10，分支 fix/security-quality-recovery）
+
+本轮在**当前 main（`ba02cfc`，RSS 与视频模块均已删除）**上重新实现第一批安全/质量修复，
+不机械套用旧工作区的 patch，而是按现状重新设计。**没有 commit / push**。
+
+### 从旧工作区（`~/tmp/dora-recovery-20261010`）恢复 / 重做的内容
+
+1. **测试修复**：`backend/tests/run.mjs` 删除了对已删除模块 `src/lib/rss.js` 的 `import`，
+   以及 `parseFeed` / `rss.stripHtml` / RSS live 抓取三段用例；`stripHtml` 用例改写为同类的
+   `maccms.normalizeVod` 简介清洗用例。契约测试（api.js ↔ router.js 全页面覆盖）保留并更新。
+2. **CI 质量闸门**：新增 `.github/workflows/quality.yml`（前端 `npm ci`+`build`、后端 `npm ci`+`test:unit`、
+   凭据扫描，Node 22，push/PR 都跑）。
+3. **部署 workflow 加固**：`db-migrate.yml` / `deploy-backend.yml` / `deploy-frontend.yml` 增加必需 Secrets
+   非空预检（只打印变量名，不回显值）；backend 部署前先跑 `npm run test:unit`。
+4. **数据库安全迁移**：新增 `supabase/migrations/20261010000014_lock_profile_privileged_fields.sql`，
+   撤销 `authenticated` 对 `user_profiles` 的表级 update/insert，只按列授权 `username/display_name/avatar_path`，
+   普通用户不能再自改 `role/plan/plan_expires_at/is_disabled`。只新增迁移，不改历史迁移。
+5. **前端安全头**：新增 `frontend/public/_headers`（nosniff / DENY / Referrer-Policy / Permissions-Policy /
+   HSTS / CSP）。CSP 对 `connect/img/media` 放开 `https:`，兼容 Supabase、自建 API、豆瓣与音乐封面中转、
+   第三方音视频直链、blob/data；**不写任何真实域名或密钥**。
+6. **博客 XSS 清洗**：新增 `frontend/src/lib/sanitizeHtml.js`（无依赖白名单清洗），接入 `PostRenderer.jsx`；
+   保留 `katex-*/mermaid-chart/chart-2d/three-scene` 自定义渲染标签，拦截 `script`、`on*` 事件属性、
+   `javascript:`/`data:` 等危险 URL。
+7. **资源写操作隔离**：`lib/resources.js` 的 `setResourceTags` 补齐 `user_id`，`validateTagIds` 对管理员也
+   只允许本人标签，新增 `validateCategoryId`；music/movies/github/videos/posts 的分类与标签写入统一走校验，
+   music/movies 扩展表 update/delete 补齐 `user_id`；posts 的 `post_tags`/`post_resources` 清理带 `user_id`。
+   另修复 MCP 两个真实缺陷：`create_post`/`update_post` 误写 `resource_tags`（应为 `post_tags`）、
+   `list_resources` 管理员会列出他人资源（现始终限定本人）。
+8. **备份 v2**：`backend/src/routes/backup.js` 导出补齐 `music_tracks`、`movie_titles`、`notifications`、
+   `user_preferences`、`resource_links` 与播放进度；导入按依赖顺序恢复并重映射 ID；
+   `replace` 明确返回 422；前端 `Backup.jsx` 移除虚假「替换模式」，只保留安全合并。
+9. **请求层与可访问性**：`frontend/src/lib/api.js` 默认 20 秒超时，区分超时/取消/断网/非 JSON 错误
+   （源探活接口单独放宽到 60s）；`app.jsx` 增加真正 404（不再静默回落首页）；`Card.jsx` 支持 Enter/Space；
+   修复 `Home.jsx` / `VideoPlayer.jsx` / `MovieHome.jsx` 中 `<a>` 套 `<button>` 的非法嵌套交互。
+
+### 明确不恢复
+
+- **RSS 模块**：2026-10-09 用户决定删除，本轮不恢复代码/表/用例，备份 v2 也不含 `rss_*`。
+- **视频页**：2026-10-09 已移除，本轮不恢复（后端 `/api/videos` 接口保留未动）。
+
+### 验证结果（本机，2026-10-10）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端确定性+契约测试 | `cd backend && npm run test:unit` | ✅ 34/34 通过 |
+| 前端生产构建 | `cd frontend && npm run build` | ✅ 通过（`dist/_headers` 已生成） |
+| 凭据扫描 | `node scripts/check-secrets.mjs` | ✅ 158 文件，未发现必须修复的泄漏 |
+| 空白字符检查 | `git diff --check` | ✅ 通过 |
+
+> 说明：本机为完成构建，使用 `npm ci --offline` 从 npm 本地缓存还原依赖（未联网、未改动依赖清单）。
+
+### 待办 / 残余风险
+
+1. 迁移 `20261010000014` 需经 CI（或人工）在 Supabase 应用后才生效；未应用前自提权风险仍在。
+2. 部署 workflow 的 Secrets 预检会**阻断**缺失 Secrets 的部署——这是预期行为，但需确认仓库 Secrets 已配齐。
+3. CSP 中 `connect/img/media` 为 `https:` 宽放（为兼容多环境域名）；若未来收敛到固定域名，可再收紧。
+4. 备份 v2 的导入仍是逐条写入（非事务），大批量导入可能较慢；失败时可能部分写入。
+5. 未做无限画板（本轮只筑安全与质量底座）。
+
+---
+
 ## 0. 项目速览
 
 | 项 | 值 |

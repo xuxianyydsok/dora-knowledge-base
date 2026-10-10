@@ -10,7 +10,7 @@ import {
   requireString, optionalString, requireUuid, isUuid, optionalBool
 } from '../lib/validate.js';
 import {
-  setResourceTags, withTags, getProgress, upsertProgress, validateTagIds
+  setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
 
 const TABLE = 'resources';
@@ -31,13 +31,7 @@ export async function fetchVideoInfo(request, env) {
   // 若请求中带 category_id，校验归属
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
-    const rows = await db.select('categories', qs({
-      select: 'id',
-      id: `eq.${categoryId}`,
-      ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
-    }));
-    if (!rows.length) throw new HttpError(422, '分类不存在或无权限');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
 
   return ok({ meta, category_id: categoryId }, request, env);
@@ -92,7 +86,7 @@ export async function createVideo(request, env) {
 
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
 
   const tagIds = await validateTagIds(db, user.id, false, body.tag_ids);
@@ -126,7 +120,9 @@ export async function updateVideo(request, env, id) {
   if (body.title !== undefined) patch.title = requireString(body.title, 'title', { max: 300 });
   if (body.summary !== undefined) patch.summary = optionalString(body.summary, 'summary') ?? null;
   if (body.category_id !== undefined) {
-    patch.category_id = body.category_id === null ? null : requireUuid(body.category_id, 'category_id');
+    patch.category_id = body.category_id === null
+      ? null
+      : await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   if (body.is_public !== undefined) patch.is_public = optionalBool(body.is_public, 'is_public');
 

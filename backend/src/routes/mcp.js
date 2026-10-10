@@ -186,6 +186,22 @@ async function resolveTagIds(db, user, tagIds) {
   return validateTagIds(db, user.id, false, tagIds);
 }
 
+// 覆盖式设置博客标签（写 post_tags，而非资源标签 resource_tags）
+// 修复：此前 create_post/update_post 误调用 setResourceTags 写错表，
+// 导致博客标签既没写进 post_tags，又在 resource_tags 留下指向博客 id 的脏数据。
+async function setPostTags(db, postId, userId, tagIds) {
+  await db.remove('post_tags', qs({
+    post_id: `eq.${postId}`,
+    user_id: `eq.${userId}`
+  }));
+  if (!tagIds?.length) return;
+  await db.request('post_tags', {
+    method: 'POST',
+    body: tagIds.map((tagId) => ({ post_id: postId, tag_id: tagId, user_id: userId })),
+    prefer: 'return=representation,resolution=merge-duplicates'
+  });
+}
+
 // 校验资源归属（仅允许关联本人资源）
 async function validateResourceIds(db, userId, resourceIds) {
   if (!Array.isArray(resourceIds) || resourceIds.length === 0) return [];
@@ -197,7 +213,10 @@ async function validateResourceIds(db, userId, resourceIds) {
 }
 
 async function setLinkedResources(db, postId, userId, links) {
-  await db.remove('post_resources', qs({ post_id: `eq.${postId}` }));
+  await db.remove('post_resources', qs({
+    post_id: `eq.${postId}`,
+    user_id: `eq.${userId}`
+  }));
   if (!Array.isArray(links) || links.length === 0) return;
   // 过滤掉非本人资源，避免越权关联
   const validIds = await validateResourceIds(db, userId, links.map((l) => l.resource_id));
@@ -234,7 +253,7 @@ const handlers = {
     });
     const post = rows[0];
     const tagIds = await resolveTagIds(db, user, args.tag_ids);
-    if (tagIds) await setResourceTags(db, post.id, user.id, tagIds);
+    if (tagIds) await setPostTags(db, post.id, user.id, tagIds);
     if (args.linked_resources) await setLinkedResources(db, post.id, user.id, args.linked_resources);
     return { id: post.id, slug: post.slug, status: post.status, heavy_tags: detectHeavyTags(content) };
   },
@@ -252,10 +271,13 @@ const handlers = {
       if (patch.status === 'published') patch.published_at = new Date().toISOString();
     }
     if (Object.keys(patch).length) {
-      await db.update('posts', qs({ id: `eq.${post.id}` }), patch);
+      await db.update('posts', qs({
+        id: `eq.${post.id}`,
+        user_id: `eq.${user.id}`
+      }), patch);
     }
     const tagIds = await resolveTagIds(db, user, args.tag_ids);
-    if (tagIds) await setResourceTags(db, post.id, user.id, tagIds);
+    if (tagIds) await setPostTags(db, post.id, user.id, tagIds);
     if (args.linked_resources) await setLinkedResources(db, post.id, user.id, args.linked_resources);
     return { id: post.id, updated: Object.keys(patch), heavy_tags: detectHeavyTags(patch.content ?? post.content) };
   },
@@ -374,9 +396,12 @@ const handlers = {
   },
 
   async list_resources(db, user, args) {
-    const filters = { select: 'id,type,title,url,source,created_at' };
+    // MCP 只服务管理员本人自动化：始终限定 user_id，避免把其他用户资源列给 AI。
+    const filters = {
+      select: 'id,type,title,url,source,created_at',
+      user_id: `eq.${user.id}`
+    };
     if (args.type) filters.type = `eq.${args.type}`;
-    if (!user.isAdmin) filters.user_id = `eq.${user.id}`;
     filters.order = 'created_at.desc';
     filters.limit = String(Math.min(Number(args.limit) || 20, 100));
     const rows = await db.select('resources', qs(filters));

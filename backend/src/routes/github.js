@@ -7,7 +7,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchGithubMeta } from '../lib/fetchers.js';
 import { requireString, optionalString, requireUuid, optionalBool } from '../lib/validate.js';
-import { setResourceTags, withTags, validateTagIds } from '../lib/resources.js';
+import { setResourceTags, withTags, validateTagIds, validateCategoryId } from '../lib/resources.js';
 import { syncStarsPage, selectAllGithubLite } from '../lib/githubStars.js';
 import { analyzePending } from '../lib/githubAi.js';
 
@@ -28,12 +28,7 @@ export async function fetchGithubInfo(request, env) {
 
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
-    const rows = await db.select('categories', qs({
-      select: 'id', id: `eq.${categoryId}`,
-      ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
-    }));
-    if (!rows.length) throw new HttpError(422, '分类不存在或无权限');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   return ok({ meta, category_id: categoryId }, request, env);
 }
@@ -89,7 +84,7 @@ export async function createGithub(request, env) {
 
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   const tagIds = await validateTagIds(db, user.id, false, body.tag_ids);
 
@@ -122,7 +117,9 @@ export async function updateGithub(request, env, id) {
   if (body.title !== undefined) patch.title = requireString(body.title, 'title', { max: 300 });
   if (body.summary !== undefined) patch.summary = optionalString(body.summary, 'summary') ?? null;
   if (body.category_id !== undefined) {
-    patch.category_id = body.category_id === null ? null : requireUuid(body.category_id, 'category_id');
+    patch.category_id = body.category_id === null
+      ? null
+      : await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   if (body.is_public !== undefined) patch.is_public = optionalBool(body.is_public, 'is_public');
 

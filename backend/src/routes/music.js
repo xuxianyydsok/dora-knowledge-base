@@ -12,7 +12,7 @@ import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool
 } from '../lib/validate.js';
 import {
-  setResourceTags, withTags, getProgress, upsertProgress, validateTagIds
+  setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
 
 const TABLE = 'resources';
@@ -57,12 +57,7 @@ export async function searchMusicMeta(request, env) {
   // 可选：带分类时校验归属
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
-    const rows = await db.select('categories', qs({
-      select: 'id', id: `eq.${categoryId}`,
-      ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
-    }));
-    if (!rows.length) throw new HttpError(422, '分类不存在或无权限');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   return ok({ ...result, category_id: categoryId }, request, env);
 }
@@ -188,7 +183,7 @@ export async function createMusic(request, env) {
 
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
 
@@ -266,7 +261,9 @@ export async function updateMusic(request, env, id) {
   if (body.url !== undefined) patch.url = optionalString(body.url, 'url', { max: 1000 }) ?? null;
   if (body.is_public !== undefined) patch.is_public = optionalBool(body.is_public, 'is_public');
   if (body.category_id !== undefined) {
-    patch.category_id = body.category_id === null ? null : requireUuid(body.category_id, 'category_id');
+    patch.category_id = body.category_id === null
+      ? null
+      : await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   if (Object.keys(patch).length) {
     await db.update(TABLE, qs(scope), patch);
@@ -288,7 +285,10 @@ export async function updateMusic(request, env, id) {
   if (body.lyrics !== undefined) extPatch.lyrics = optionalString(body.lyrics, 'lyrics', { max: 20000 }) ?? null;
 
   if (Object.keys(extPatch).length) {
-    const rows = await db.update(EXT, qs({ resource_id: `eq.${id}` }), extPatch);
+    const rows = await db.update(EXT, qs({
+      resource_id: `eq.${id}`,
+      user_id: `eq.${user.id}`
+    }), extPatch);
     if (!rows.length) {
       // 扩展记录缺失时补建（兼容历史数据）
       await db.insert(EXT, { resource_id: id, user_id: user.id, ...extPatch });
@@ -315,7 +315,10 @@ export async function deleteMusic(request, env, id) {
   const rows = await db.select(TABLE, qs({ select: 'id', ...scope }));
   if (!rows.length) throw new HttpError(404, '音乐不存在或无权限');
 
-  await db.remove(EXT, qs({ resource_id: `eq.${id}` }));   // 扩展记录（外键也会级联）
+  await db.remove(EXT, qs({
+    resource_id: `eq.${id}`,
+    user_id: `eq.${user.id}`
+  }));   // 扩展记录（外键也会级联）
   await db.remove(TABLE, qs(scope));
   return ok({ id }, request, env);
 }

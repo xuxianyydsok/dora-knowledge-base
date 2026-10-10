@@ -9,7 +9,7 @@ import { qs } from '../lib/supabase.js';
 import {
   requireString, optionalString, requireUuid, optionalBool, requireEnum, slugify
 } from '../lib/validate.js';
-import { validateTagIds } from '../lib/resources.js';
+import { validateCategoryId, validateTagIds } from '../lib/resources.js';
 
 const TABLE = 'posts';
 const ALLOWED_TAGS = ['katex-inline', 'katex-block', 'three-scene', 'mermaid-chart', 'chart-2d'];
@@ -26,7 +26,7 @@ export function detectHeavyTags(content = '') {
 // 覆盖式设置博客标签（写入 post_tags）
 async function setPostTags(db, postId, userId, tagIds) {
   if (!Array.isArray(tagIds)) return;
-  await db.remove('post_tags', qs({ post_id: `eq.${postId}` }));
+  await db.remove('post_tags', qs({ post_id: `eq.${postId}`, user_id: `eq.${userId}` }));
   const unique = [...new Set(tagIds)];
   if (unique.length === 0) return;
   await db.request('post_tags', {
@@ -64,7 +64,7 @@ async function loadLinkedResources(db, postId) {
 // 覆盖式设置文章关联资源
 async function setLinkedResources(db, postId, userId, links) {
   if (!Array.isArray(links)) return;
-  await db.remove('post_resources', qs({ post_id: `eq.${postId}` }));
+  await db.remove('post_resources', qs({ post_id: `eq.${postId}`, user_id: `eq.${userId}` }));
   if (!links.length) return;
   const rows = links.map((l, idx) => ({
     user_id: userId,
@@ -173,7 +173,7 @@ export async function createPost(request, env) {
 
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
 
   const rows = await db.insert(TABLE, {
@@ -225,7 +225,9 @@ export async function updatePost(request, env, id) {
   if (body.excerpt !== undefined) patch.excerpt = optionalString(body.excerpt, 'excerpt', { max: 1000 }) ?? null;
   if (body.cover_path !== undefined) patch.cover_path = optionalString(body.cover_path, 'cover_path', { max: 500 }) ?? null;
   if (body.category_id !== undefined) {
-    patch.category_id = body.category_id === null ? null : requireUuid(body.category_id, 'category_id');
+    patch.category_id = body.category_id === null
+      ? null
+      : await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   if (body.is_public !== undefined) patch.is_public = optionalBool(body.is_public, 'is_public');
   if (body.status !== undefined) {

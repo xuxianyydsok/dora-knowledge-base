@@ -58,7 +58,7 @@ export function VideoPlayer({ video, onClose }) {
         <button onClick={() => save(false)}>保存进度</button>
         <button onClick={() => save(true)}>标记看完</button>
         {video?.url && (
-          <a href={video.url} target="_blank" rel="noreferrer"><button>原站</button></a>
+          <a class="btn" href={video.url} target="_blank" rel="noreferrer">原站</a>
         )}
       </div>
       <div class="watch-stage">
