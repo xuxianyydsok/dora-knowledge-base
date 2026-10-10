@@ -230,6 +230,8 @@ export const api = {
   createMovie: (body) => request('/api/movies', { method: 'POST', body }),
   updateMovie: (id, body) => request(`/api/movies/${id}`, { method: 'PATCH', body }),
   deleteMovie: (id) => request(`/api/movies/${id}`, { method: 'DELETE' }),
+  // 重新匹配片源（原采集源下线/死链时用标题重搜并回填；仅本人）
+  refreshMovieSource: (id) => request(`/api/movies/${id}/refresh-source`, { method: 'POST' }),
   getMovieProgress: (id) => request(`/api/movies/${id}/progress`),
   saveMovieProgress: (id, body) => request(`/api/movies/${id}/progress`, { method: 'PUT', body }),
 

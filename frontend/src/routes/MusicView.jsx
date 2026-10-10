@@ -105,6 +105,11 @@ export function MusicView({ id }) {
             </div>
 
             <div class="song-actions">
+              {music.url_stale && (
+                <span class="muted" style="font-size:12px">
+                  音源可能已过期，点播放会自动重新解析
+                </span>
+              )}
               <button
                 class="primary"
                 onClick={() => {

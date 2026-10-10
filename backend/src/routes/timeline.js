@@ -10,31 +10,52 @@
 // 关键约束：Worker 用 service_role 直连 PostgREST，RLS 不会替它过滤，
 // 所以三类查询都必须显式叠加公开条件（见下面各 filters）。
 //
-// 已知限制（详见 docs/gallery-timeline.md）：三类表日期列不同，
-// 分页游标统一用 date，但每类只按各自排序主列做 before 过滤；每源多取一条，
-// 极端情况下某一源可能漏掉极少量老条目（近似分页，可接受）。
+// 分页策略（详见 docs/gallery-timeline.md）：时间轴是**倒序**（新 → 旧），
+// 「下一页」= 更早的内容，所以 DB 粗过滤用 `lte.`（小于等于游标），
+// 再交给 timelineMerge 用复合游标做精确过滤（不会重复、不会跳条）。
+// 每类多取 limit*4+10 条，抵消同日多条被精确层过滤掉的情况。
 
 import { ok } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { mergeTimeline, TIMELINE_MAX_LIMIT } from '../lib/timelineMerge.js';
 
-// 取「已发布 + 公开」的博客
-function postFilters(user, before, perSource) {
+// 游标格式 `<ISO 时间>|<id>`。粗过滤只取「时间」部分，精确的「是否在游标之后」
+// 交给 mergeTimeline 判断；粗过滤必须**放宽**（多取）而不是收紧，否则会漏条。
+//
+// 方向很重要：时间轴是**倒序**（新 → 旧），「下一页」= 更早的内容 = 日期 **小于等于** 游标，
+// 所以粗过滤用 `lte.`。若写成 `gte.`，跨过游标日期后下一页会直接为空。
+export function cursorTime(before) {
+  if (typeof before !== 'string' || !before) return null;
+  const raw = before.split('|')[0];
+  return Number.isFinite(new Date(raw).getTime()) ? new Date(raw).toISOString() : null;
+}
+
+// 日期列（date 类型）只比到「日」，避免 date 与 timestamptz 比较时的时区偏差
+export function cursorDay(before) {
+  const iso = cursorTime(before);
+  return iso ? iso.slice(0, 10) : null;
+}
+
+// 取「已发布 + 公开」的博客。
+// 展示日期是 published_at（缺失回退 created_at），因此粗过滤要同时覆盖两种行：
+//   published_at <= 游标  或  (published_at 为空 且 created_at <= 游标)
+export function postFilters(user, before, perSource) {
   const filters = {
     select: 'id,title,excerpt,cover_path,published_at,created_at',
     user_id: `eq.${user.id}`,
     status: 'eq.published',
     is_public: 'eq.true',
-    order: 'published_at.desc',
+    order: 'published_at.desc.nullslast',
     limit: String(perSource)
   };
-  if (before) filters.published_at = `lt.${before}`;
+  const ts = cursorTime(before);
+  if (ts) filters.or = `(published_at.lte.${ts},and(published_at.is.null,created_at.lte.${ts}))`;
   return filters;
 }
 
-// 取公开资源；video 页已删除，不进时间轴
-function resourceFilters(user, before, perSource) {
+// 取公开资源；video 页已删除，不进时间轴。展示日期固定是 created_at，单列即可。
+export function resourceFilters(user, before, perSource) {
   const filters = {
     select: 'id,type,title,summary,url,cover_path,created_at',
     user_id: `eq.${user.id}`,
@@ -43,12 +64,15 @@ function resourceFilters(user, before, perSource) {
     order: 'created_at.desc',
     limit: String(perSource)
   };
-  if (before) filters.created_at = `lt.${before}`;
+  const ts = cursorTime(before);
+  if (ts) filters.created_at = `lte.${ts}`;
   return filters;
 }
 
-// 取公开展览条目；只按 created_at 过滤（captured_at 只用于展示排序，见文件头说明）
-function galleryFilters(user, before, perSource) {
+// 取公开展览条目。展示日期是 captured_at（缺失回退 created_at），因此**不能**只按
+// created_at 过滤：否则「今天加入、但拍摄日期很早」的图会被错误排除。
+//   captured_at <= 游标日  或  (captured_at 为空 且 created_at <= 游标时刻)
+export function galleryFilters(user, before, perSource) {
   const filters = {
     select: 'id,title,description,captured_at,created_at,asset_id',
     user_id: `eq.${user.id}`,
@@ -56,7 +80,9 @@ function galleryFilters(user, before, perSource) {
     order: 'captured_at.desc.nullslast,created_at.desc',
     limit: String(perSource)
   };
-  if (before) filters.created_at = `lt.${before}`;
+  const ts = cursorTime(before);
+  const day = cursorDay(before);
+  if (ts) filters.or = `(captured_at.lte.${day},and(captured_at.is.null,created_at.lte.${ts}))`;
   return filters;
 }
 
@@ -67,7 +93,10 @@ export async function listTimeline(request, env) {
 
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 20, 1), TIMELINE_MAX_LIMIT);
   const before = url.searchParams.get('before');
-  const perSource = limit + 1;   // 多取一条，用于判断是否还有下一页
+  // 粗过滤交给各 buildXFilters 处理（方向已修正为倒序 lte）
+  // 多取若干条：同一天（尤其展览 captured_at 是日精度）可能有多条被 mergeTimeline 过滤掉，
+  // 取 limit*4+10 保证过滤后仍够一页，避免「某页只剩一两条」。
+  const perSource = limit * 4 + 10;
 
   const [posts, resources, galleryItems] = await Promise.all([
     db.select('posts', qs(postFilters(user, before, perSource))),
@@ -75,12 +104,13 @@ export async function listTimeline(request, env) {
     db.select('gallery_items', qs(galleryFilters(user, before, perSource)))
   ]);
 
-  // 展览条目的封面来自素材：只在 DB 层取公开素材，查不到的条目直接丢弃
+  // 展览条目的封面来自素材：必须按 owner + is_public 过滤（Worker 用 service_role，
+  // RLS 不会替它过滤；时间轴是公开页，绝不能让他人私人素材的 URL 出现在这里）。
   let gallery = [];
   if (galleryItems.length) {
     const assetIds = [...new Set(galleryItems.map((g) => g.asset_id))];
     const assets = await db.select('assets', qs({
-      select: 'id,public_url,is_public',
+      select: 'id,public_url',
       id: `in.(${assetIds.join(',')})`,
       user_id: `eq.${user.id}`,
       is_public: 'eq.true'

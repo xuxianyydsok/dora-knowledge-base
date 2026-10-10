@@ -606,11 +606,13 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
   "title": "…", "description": "…", "captured_at": "2026-03-01",
   "sort_order": 0, "is_public": false,
   "created_at": "…", "updated_at": "…",
-  "image": { "url": "<public_url>", "width": 1600, "height": 1067, "mime_type": "image/jpeg", "alt": "…" }
+  "image": { "url": "<public_url>", "width": 1600, "height": 1067, "mime_type": "image/jpeg", "alt": "策展标题" }
 }
 ```
 
-> 响应不含 `object_key / sha256 / user_id / asset_id`。
+> 响应不含 `object_key / sha256 / user_id / asset_id / original_name`；
+> `alt` 取策展标题（缺失时用「展览图片」），不使用原始文件名。
+> `gallery_items.asset_id` 与 `user_id` 是**复合外键**（同 owner），数据库层强制。
 > `DELETE /api/assets/:id` 的引用保护已扩展：被展览引用的素材同样返回 409（`referenced_by` 里 `kind='gallery'`）。
 
 ## 公开时间轴 Timeline（2026-10-10）
@@ -619,7 +621,7 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 
 | 方法 | 路径 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/timeline` | 访客只读公开 | `?limit=`（默认 20，≤50）`&before=<ISO>`（严格小于该时间） |
+| GET | `/api/timeline` | 访客只读公开 | `?limit=`（默认 20，≤50）`&before=<date\|id 复合游标>` |
 
 返回结构：
 
@@ -630,7 +632,7 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
       "date": "2026-08-24T00:24:23.892Z", "url": "/posts/<uuid>",
       "cover": "…", "source_id": "<uuid>" }
   ],
-  "next_cursor": "2026-08-24T00:24:23.892Z"
+  "next_cursor": "2026-08-24T00:24:23.892Z|post:<uuid>"
 }
 ```
 

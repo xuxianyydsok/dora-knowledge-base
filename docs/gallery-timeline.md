@@ -25,8 +25,17 @@
 约束与索引：
 
 - `unique (user_id, asset_id)`：同一素材只能加入展览一次（重复加入返回 409）。
+- `assets` 增加 `unique (user_id, id)`（约束名 `assets_user_id_id_key`），供下面的复合外键引用。
+- `gallery_items_asset_same_owner`：`foreign key (user_id, asset_id) -> assets(user_id, id) on delete restrict`。
 - `idx_gallery_items_user_public (user_id, is_public, sort_order desc, captured_at desc nulls last)`
 - `idx_gallery_items_asset (asset_id)`
+
+### 为什么用复合外键（数据库级同 owner）
+
+只靠 RLS 的 `auth.uid() = user_id` **不够**：authenticated 用户可以直接连 Supabase，
+只要猜到/知道他人的 asset UUID，就能插入一条 `user_id=自己、asset_id=他人` 的记录，
+把别人的私人素材挂到自己的展览下。复合外键把「素材必须属于同一 owner」
+变成**数据库层硬约束**，应用代码写错也插不进去。
 
 ### 为什么 `on delete restrict`
 
@@ -58,10 +67,14 @@
    Worker 用 `service_role` 直连 PostgREST，RLS 不会替它过滤，因此
    `/api/gallery` 与 `/api/timeline` 都在查询里显式叠加 `is_public=eq.true`。
    前端拿到的就是已过滤的数据。
-3. **访客响应不含内部字段。**
+3. **响应不含内部字段。**
    展览响应只给 `id/title/description/captured_at/sort_order/is_public/时间戳 + image{url,width,height,mime_type,alt}`；
    时间轴每条只给 `id/type/title/summary/date/url/cover/source_id`。
    `object_key`、`sha256`、`user_id`、`metadata`、`content` 一律不外传。
+   此外**不返回 `original_name`**（原始文件名属内部信息），`alt` 一律用策展标题或通用文案。
+4. **读素材必须同时限定 owner。**
+   `decorate()` 无论访客还是站长，都用 `user_id = 当前用户` 过滤 `assets`，
+   访客再叠加 `is_public`。Worker 用 `service_role` 直连、RLS 不生效，这一步是必需的。
 
 ## 4. 时间轴排序语义
 
@@ -74,18 +87,28 @@
 | 展览 `gallery_items` | `captured_at`（缺失回退 `created_at`） | `/gallery` |
 
 - 合并后按 `date` 倒序；`date` 相同时按 `id` 升序（**稳定排序**，保证分页不跳条、不重复）。
-- 分页游标 `next_cursor` = 当前页最后一条的 `date`；下一页用 `before=<cursor>`，
-  语义是**严格小于**（同一时刻的条目不会在两页重复）。
+- 分页游标 `next_cursor` = `<date>|<条目 id>`（**复合游标**）；下一页用 `before=<cursor>`。
+  语义是「排在上一页最后一条之后」：`date` 更小，或 `date` 相同但 `id` 更大。
+  之所以要带 id：展览的 `captured_at` 是**日精度**，同一天必然有多条；只按时间做
+  「严格小于」会让同一时刻排在当页之后的条目被下一页永久跳过。
+- 兼容旧格式：只给时间（无 `|`）时按「时间严格小于」处理。
+- 服务端只取游标的**时间部分**做粗过滤，精确的「是否在游标之后」由
+  `timelineMerge.isAfterCursor` 判断，因此**不会漏条**。
+- **粗过滤方向必须是 `lte.`（小于等于）**：时间轴是倒序（新 → 旧），「下一页」= 更早的内容。
+  写成 `gte.` 会在跨过游标日期后让下一页直接为空。
+- 各表展示日期列不同，粗过滤要覆盖「主列 + 回退列」：
+  - posts：`published_at <= 游标` 或（`published_at` 为空 且 `created_at <= 游标`）；
+  - resources：`created_at <= 游标`；
+  - gallery：`captured_at <= 游标日` 或（`captured_at` 为空 且 `created_at <= 游标`）。
+  用 PostgREST 的 `or=(...,and(...))` 表达；这样「今天加入、但拍摄日期很早」的图不会被漏掉。
 - `limit` 上限 50，默认 20。
 
-### 已知近似分页限制
+### 分页开销说明
 
-三类表的排序主列不同（`published_at` / `created_at` / `captured_at`），
-但游标只有一条 `date`。为避免「预过滤把本该出现的条目切掉」，
-实现上对每类都只按**各自排序主列**做 `before` 过滤，并且每类多取一条（`limit + 1`）。
-在极端情况下（某一天内条目极多、跨类型时间高度交错），**某一源可能漏掉极少量老条目**。
-这是可接受的近似分页，换来的是查询简单、不会全表扫描。若将来内容量变大，
-可改为「按合并后游标统一查询 + 各源各取 limit+1」的更严格方案。
+三类表的排序主列不同（`published_at` / `created_at` / `captured_at`），而游标是统一的 `date`。
+实现上对每类做 `lte` 粗过滤（覆盖主列与回退列），每类取 `limit * 4 + 10` 条，
+再合并、用复合游标精确过滤、截断。正确性由 `mergeTimeline` 保证（不会跳条、不会重复）；
+代价是游标附近会多取少量数据。若将来单日内容量极大，可改为按类型分别维护游标。
 
 ## 5. 已知限制与后续待办
 

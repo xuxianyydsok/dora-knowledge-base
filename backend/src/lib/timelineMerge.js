@@ -15,10 +15,35 @@ export const TIMELINE_TYPE_LABELS = {
 
 export const TIMELINE_MAX_LIMIT = 50;
 
-// 可解析的时间字符串才算合法游标；否则一律忽略（当作第一页）
-function isUsableDate(value) {
-  if (typeof value !== 'string' || !value) return false;
-  return Number.isFinite(new Date(value).getTime());
+// 游标格式：`<ISO 时间>|<条目 id>`。
+//
+// 为什么需要复合游标：同一天往往有多条内容（展览的 captured_at 就是「日」精度，
+// 一天内必然撞车）。如果只按时间做「严格小于」分页，同一时刻排在当页之后的条目
+// 会被下一页直接跳过（永久漏条）。带上 id 才能精确定位「上一页最后一条之后」。
+//
+// 兼容旧格式：只给时间（无 `|`）时按「时间严格小于」处理，行为与修复前一致。
+function parseCursor(value) {
+  if (typeof value !== 'string' || !value) return null;
+  const sep = value.lastIndexOf('|');
+  const rawDate = sep >= 0 ? value.slice(0, sep) : value;
+  const rawId = sep >= 0 ? value.slice(sep + 1) : null;
+  if (!Number.isFinite(new Date(rawDate).getTime())) return null;
+  return { date: new Date(rawDate).toISOString(), id: rawId };
+}
+
+// 生成下一页游标；没有更多时返回 null
+function buildCursor(item) {
+  return item ? `${item.date}|${item.id}` : null;
+}
+
+// 排序为 date 倒序、同 date 按 id 升序，因此「在游标之后」= date 更小，
+// 或 date 相同但 id 更大。用字符串比较即可（ISO 时间与 id 都是可比字符串）。
+function isAfterCursor(item, cursor) {
+  if (!cursor) return true;
+  if (item.date < cursor.date) return true;
+  if (item.date > cursor.date) return false;
+  if (cursor.id === null) return false;   // 旧格式：只按时间严格小于
+  return item.id > cursor.id;
 }
 
 function toDateString(value) {
@@ -92,10 +117,10 @@ export function mapGallery(row = {}) {
   });
 }
 
-// 合并三类 + 按 date 倒序（同 date 按 id 升序，保证稳定分页）+ 游标分页
+// 合并三类 + 按 date 倒序（同 date 按 id 升序，保证稳定分页）+ 复合游标分页
 export function mergeTimeline({ posts = [], resources = [], gallery = [] } = {}, { limit = 20, before = null } = {}) {
   const capped = Math.min(Math.max(Number(limit) || 20, 1), TIMELINE_MAX_LIMIT);
-  const cursor = isUsableDate(before) ? new Date(before).toISOString() : null;
+  const cursor = parseCursor(before);
 
   const mapped = [
     ...(Array.isArray(posts) ? posts.map(mapPost) : []),
@@ -103,8 +128,7 @@ export function mergeTimeline({ posts = [], resources = [], gallery = [] } = {},
     ...(Array.isArray(gallery) ? gallery.map(mapGallery) : [])
   ].filter((item) => item.source_id && item.date);
 
-  // before 为严格小于：同一时刻的条目不会在下一页重复出现
-  const visible = cursor ? mapped.filter((item) => item.date < cursor) : mapped;
+  const visible = mapped.filter((item) => isAfterCursor(item, cursor));
 
   visible.sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1;
@@ -112,6 +136,6 @@ export function mergeTimeline({ posts = [], resources = [], gallery = [] } = {},
   });
 
   const items = visible.slice(0, capped);
-  const nextCursor = visible.length > capped ? items[items.length - 1].date : null;
+  const nextCursor = visible.length > capped ? buildCursor(items[items.length - 1]) : null;
   return { items, next_cursor: nextCursor };
 }

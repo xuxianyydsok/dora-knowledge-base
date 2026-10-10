@@ -20,6 +20,9 @@ import * as imageType from '../src/lib/imageType.js';
 import * as sourceHealth from '../src/lib/sourceHealth.js';
 import * as publicScope from '../src/lib/publicScope.js';
 import * as timelineMerge from '../src/lib/timelineMerge.js';
+import * as timelineRoute from '../src/routes/timeline.js';
+import * as mediaUrl from '../src/lib/mediaUrl.js';
+import * as movies from '../src/routes/movies.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, '..');
@@ -530,7 +533,8 @@ async function unit() {
     assert(first.items.length === 2, `limit=2 应返回 2 条，实得 ${first.items.length}`);
     assert(first.items[0].source_id === 'a' && first.items[1].source_id === 'b',
       `同 date 应按 id 升序: ${first.items.map((i) => i.source_id).join(',')}`);
-    assert(first.next_cursor === first.items[1].date, `游标应为第 2 条 date: ${first.next_cursor}`);
+    assert(first.next_cursor === `${first.items[1].date}|${first.items[1].id}`,
+      `复合游标应为「第 2 条 date|id」: ${first.next_cursor}`);
 
     const second = mergeTimeline({ posts }, { limit: 2, before: first.next_cursor });
     assert(second.items.length === 2, `第二页应有 2 条，实得 ${second.items.length}`);
@@ -544,6 +548,39 @@ async function unit() {
     assert(last.items.length === 1 && last.items[0].source_id === 'e', `最后一页应只剩 e: ${last.items.map((i) => i.source_id)}`);
     assert(last.next_cursor === null, `最后一页 next_cursor 应为 null: ${last.next_cursor}`);
     return `第1页 ${first.items.map((i) => i.source_id)} / 第2页 ${second.items.map((i) => i.source_id)} / 第3页 ${last.items.map((i) => i.source_id)}`;
+  });
+
+  await test('mergeTimeline: 同一天多条不跳条（复合游标回归）', async () => {
+    const { mergeTimeline } = timelineMerge;
+    // 展览 captured_at 是「日」精度：同一天必然有多条，旧实现按时间严格小于会永久漏条
+    const sameDay = '2026-06-01T00:00:00.000Z';
+    const gallery = ['a', 'b', 'c', 'd', 'e'].map((k) => ({
+      id: k, title: `图${k}`, captured_at: '2026-06-01', created_at: sameDay, cover: '/x'
+    }));
+    const seen = [];
+    let cursor = null;
+    for (let page = 0; page < 5; page += 1) {
+      const res = mergeTimeline({ gallery }, { limit: 2, before: cursor });
+      seen.push(...res.items.map((i) => i.source_id));
+      cursor = res.next_cursor;
+      if (!cursor) break;
+    }
+    assert(seen.length === 5, `同一天 5 条应全部翻到，实得 ${seen.length}: ${seen.join(',')}`);
+    assert(new Set(seen).size === 5, `不应重复: ${seen.join(',')}`);
+    assert(seen.join(',') === 'a,b,c,d,e', `应按 id 升序稳定分页: ${seen.join(',')}`);
+    return `3 页翻完同一天 5 条：${seen.join(',')}`;
+  });
+
+  await test('mergeTimeline: 旧格式游标（仅时间）仍兼容，按严格小于处理', async () => {
+    const { mergeTimeline } = timelineMerge;
+    const posts = [
+      { id: 'a', title: 'A', published_at: '2026-01-02T00:00:00Z' },
+      { id: 'b', title: 'B', published_at: '2026-01-01T00:00:00Z' }
+    ];
+    const res = mergeTimeline({ posts }, { limit: 10, before: '2026-01-02T00:00:00.000Z' });
+    assert(res.items.length === 1 && res.items[0].source_id === 'b',
+      `旧格式游标应只保留更早的 b: ${res.items.map((i) => i.source_id).join(',')}`);
+    return '旧格式游标按严格小于，兼容通过';
   });
 
   await test('mergeTimeline: limit 上限 50、非法 before 不抛错', async () => {
@@ -580,6 +617,80 @@ async function unit() {
     return `3 类映射 + ${res.items.length} 条合并条目均无内部字段`;
   });
 
+  await test('timeline 粗过滤方向：倒序翻页必须用 lte（旧实现 gte 会让下一页为空）', async () => {
+    const { postFilters, resourceFilters, galleryFilters } = timelineRoute;
+    const user = { id: 'u1', isGuest: true };
+    const cursor = '2026-10-09T00:00:00.000Z|post:abc';
+
+    const post = postFilters(user, cursor, 30);
+    assert(post.or && post.or.includes('published_at.lte.'), `posts 应用 lte: ${post.or}`);
+    assert(!post.or.includes('gte.'), `posts 不应出现 gte: ${post.or}`);
+    assert(post.or.includes('published_at.is.null'), 'posts 需覆盖 published_at 为空回退 created_at');
+    assert(post.or.includes('created_at.lte.'), 'posts 回退分支应比 created_at');
+    assert(post.order.includes('nullslast'), `posts 排序应 nullslast: ${post.order}`);
+
+    const res = resourceFilters(user, cursor, 30);
+    assert(res.created_at === `lte.2026-10-09T00:00:00.000Z`, `resources 应用 lte: ${res.created_at}`);
+
+    const gal = galleryFilters(user, cursor, 30);
+    assert(gal.or && gal.or.includes('captured_at.lte.2026-10-09'), `gallery 应按 captured_at lte 游标日: ${gal.or}`);
+    assert(gal.or.includes('captured_at.is.null'), 'gallery 需覆盖 captured_at 为空回退 created_at');
+    assert(gal.or.includes('created_at.lte.'), 'gallery 回退分支应比 created_at');
+    assert(!gal.or.includes('gte.'), `gallery 不应出现 gte: ${gal.or}`);
+
+    // 第一页（无游标）不应带任何时间过滤
+    assert(!postFilters(user, null, 30).or && !resourceFilters(user, null, 30).created_at,
+      '无游标时不应附加时间过滤');
+    return 'posts/resources/gallery 粗过滤方向全部为 lte 且覆盖回退日期列';
+  });
+
+  await test('timeline 跨日翻页回归：第一页末条 2026-10-09，第二页能取到 2026-10-08', async () => {
+    const { mergeTimeline } = timelineMerge;
+    const posts = [
+      { id: 'a', title: 'A', published_at: '2026-10-09T08:00:00Z', created_at: '2026-10-09T08:00:00Z' },
+      { id: 'b', title: 'B', published_at: '2026-10-09T06:00:00Z', created_at: '2026-10-09T06:00:00Z' },
+      { id: 'c', title: 'C', published_at: '2026-10-08T20:00:00Z', created_at: '2026-10-08T20:00:00Z' },
+      { id: 'd', title: 'D', published_at: '2026-10-07T10:00:00Z', created_at: '2026-10-07T10:00:00Z' }
+    ];
+    const first = mergeTimeline({ posts }, { limit: 2 });
+    assert(first.items.map((i) => i.source_id).join(',') === 'a,b', `第一页应为 a,b: ${first.items.map((i) => i.source_id)}`);
+    assert(first.items[1].date.startsWith('2026-10-09'), `第一页末条应在 10-09: ${first.items[1].date}`);
+    assert(first.next_cursor.startsWith('2026-10-09'), `游标应在 10-09: ${first.next_cursor}`);
+
+    const second = mergeTimeline({ posts }, { limit: 2, before: first.next_cursor });
+    assert(second.items.length > 0, '第二页不应为空（旧实现 gte 会直接空）');
+    assert(second.items.map((i) => i.source_id).join(',') === 'c,d', `第二页应为 c,d: ${second.items.map((i) => i.source_id)}`);
+    assert(second.items[0].date.startsWith('2026-10-08'), `第二页首条应为 10-08: ${second.items[0].date}`);
+    return `第1页 ${first.items.map((i) => i.source_id)} → 第2页 ${second.items.map((i) => i.source_id)}（跨日正常）`;
+  });
+
+  await test('gallery 迁移：assets 复合唯一 + gallery_items 复合外键同 owner', async () => {
+    const sql = readFileSync(join(BACKEND, '..', 'supabase', 'migrations', '20261010000016_gallery_items.sql'), 'utf8');
+    assert(/assets_user_id_id_key\s+unique\s*\(user_id,\s*id\)/.test(sql.replace(/\s+/g, ' ')),
+      'assets 应有 (user_id,id) 唯一约束 assets_user_id_id_key');
+    assert(/foreign key\s*\(user_id,\s*asset_id\)\s*references\s+public\.assets\s*\(user_id,\s*id\)/.test(sql.replace(/\s+/g, ' ')),
+      'gallery_items 应有复合外键 (user_id,asset_id) -> assets(user_id,id)');
+    assert(/gallery_items_asset_same_owner/.test(sql), '复合外键应有明确命名');
+    assert(/on delete restrict/.test(sql), '复合外键应 on delete restrict');
+    assert(!/references public\.assets\(id\)/.test(sql.replace(/\s+/g, ' ')),
+      '不应再有只引用 assets(id) 的单列外键');
+    return '复合唯一 + 复合外键同 owner + restrict 全部就位';
+  });
+
+  await test('gallery 路由：decorate 按 owner 过滤 assets，且不返回 original_name', async () => {
+    const src = readFileSync(join(BACKEND, 'src', 'routes', 'gallery.js'), 'utf8');
+    // decorate 的素材查询必须带 user_id（无论访客与否）
+    const decorateSrc = src.slice(src.indexOf('async function decorate'), src.indexOf('// 读取单个素材'));
+    assert(/user_id:\s*`eq\.\$\{userId\}`/.test(decorateSrc), 'decorate 必须按 userId 过滤 assets');
+    assert(/is_public\s*=\s*'eq\.true'/.test(decorateSrc), 'decorate 访客分支应叠加 is_public');
+    // ASSET_SELECT 不得包含 original_name（避免把原始文件名当 alt 泄露给访客）
+    const selectLine = src.match(/const ASSET_SELECT = '([^']+)'/);
+    assert(selectLine, '应能找到 ASSET_SELECT 定义');
+    assert(!selectLine[1].includes('original_name'), `ASSET_SELECT 不应含 original_name: ${selectLine[1]}`);
+    assert(!/alt:\s*asset\.original_name/.test(src), 'alt 不应使用 asset.original_name');
+    return 'decorate 带 owner 过滤 / ASSET_SELECT 与 alt 均不含 original_name';
+  });
+
   await test('契约：auth.js 已委托 publicScope，且不再内联 favorites / github-analyze', async () => {
     const authSrc = readFileSync(join(BACKEND, 'src', 'middleware', 'auth.js'), 'utf8');
     assert(/from '\.\.\/lib\/publicScope\.js'/.test(authSrc), 'auth.js 应 import publicScope.js');
@@ -587,6 +698,114 @@ async function unit() {
     assert(!/favorites/.test(authSrc), 'auth.js 不应再内联 favorites 白名单');
     assert(!/github\/analyze/.test(authSrc), 'auth.js 不应再内联 github/analyze 白名单');
     return 'auth.js 与 publicScope.js 边界一致';
+  });
+
+  // ---- 媒体播放可靠性（2026-10-10：片源无法解析） ----
+  section('UNIT · 媒体直链判定与片源过滤');
+
+  await test('isPlayableUrl: 只认 m3u8/mp4 直链，网页地址不算', async () => {
+    const { isPlayableUrl } = maccms;
+    assert(isPlayableUrl('https://v.gsuus.com/play/x/index.m3u8') === true, 'm3u8 应为直链');
+    assert(isPlayableUrl('https://a.com/movie.mp4?x=1') === true, '带查询串的 mp4 应为直链');
+    assert(isPlayableUrl('https://vip.dytt-kan.com/share/abc123') === false, '分享页不是直链');
+    assert(isPlayableUrl('https://hn.bfvvs.com/play/lejLLq4b') === false, '网页播放页不是直链');
+    assert(isPlayableUrl('') === false, '空地址不是直链');
+    return '5 组断言全过';
+  });
+
+  await test('normalizeVod: 剔除非直链线路与剧集（片源无法解析的根因）', async () => {
+    // 真实形态：一条线路里既有网页分享页，也有真 m3u8；另一条线路全是网页地址
+    const raw = {
+      vod_id: 50482,
+      vod_name: '复仇者联盟4',
+      type_name: '动作片',
+      type_id_1: 1,
+      vod_play_from: 'dyttm3u8$$$dytt',
+      vod_play_url: [
+        'HD国语$https://vip.dytt-kan.com/2025/index.m3u8#HD中字$https://vip.dytt-kan.com/share/abc123',
+        'HD国语$https://vip.dytt-kan.com/share/def456'
+      ].join('$$$')
+    };
+    const out = maccms.normalizeVod(raw, { key: 'dytt', name: '电影天堂' });
+    assert(out.routes.length === 1, `应只剩 1 条含直链的线路，实际 ${out.routes.length}`);
+    assert(out.routes[0].name === 'dyttm3u8', `应保留 dyttm3u8 线路，实际 ${out.routes[0].name}`);
+    assert(out.routes[0].episodes.length === 1, `应只保留 1 个直链剧集，实际 ${out.routes[0].episodes.length}`);
+    assert(out.routes[0].episodes[0].url.endsWith('index.m3u8'), '保留的应是 m3u8');
+    assert(out.playable_url.endsWith('index.m3u8'), 'playable_url 应是 m3u8');
+    assert(out.episode_count === 1, `episode_count 应为 1，实际 ${out.episode_count}`);
+    return '非直链线路/剧集已剔除，playable_url 为 m3u8';
+  });
+
+  await test('normalizeVod: 全部为非直链时兜底保留原始线路（不产生空壳）', async () => {
+    const raw = {
+      vod_id: 1, vod_name: '测试', type_id_1: 1,
+      vod_play_from: 'yun', vod_play_url: '正片$https://x.com/play/123'
+    };
+    const out = maccms.normalizeVod(raw, { key: 'k', name: 'K' });
+    assert(out.routes.length === 1, '兜底应保留原始线路');
+    assert(out.playable_url === null, '无可播直链时 playable_url 应为 null');
+    return '兜底保留原始线路，playable_url 为 null';
+  });
+
+  await test('默认采集源：含 360zy、不含已下线源', async () => {
+    const keys = maccms.getVodSources({}).map((s) => s.key);
+    assert(keys.includes('360zy'), `默认源应包含 360zy，实际：${keys.join(',')}`);
+    for (const dead of ['dytt', 'jszy', 'lzi', 'ffzy', 'zuid', 'ruyi']) {
+      assert(!keys.includes(dead), `默认源不应包含已下线/未采用的 ${dead}`);
+    }
+    assert(maccms.getAnimeClassIdsSync({ key: '360zy' }) !== null, '360zy 应有硬编码动漫类目（可为空数组）');
+    return `默认源 ${keys.length} 个：${keys.join(',')}`;
+  });
+
+  await test('mediaUrl: 音频直链判定与播放地址归一', async () => {
+    const { isDirectAudioUrl, isDirectVideoUrl, resolveAudioPlayback, looksLikeAudioStream, isStaleAudioUrl } = mediaUrl;
+    assert(isDirectAudioUrl('https://m801.music.126.net/x/y.flac') === true, 'flac 应为音频直链');
+    assert(isDirectAudioUrl('https://api.audius.co/v1/tracks/abc/stream') === false, '无后缀端点不是直链');
+    assert(isDirectAudioUrl('https://audius.co/byone/周杰伦-七里香') === false, '平台网页地址不是直链');
+    assert(isDirectVideoUrl('https://a.com/x.m3u8') === true && isDirectVideoUrl('https://a.com/play/1') === false, '影视直链判定');
+
+    // 优先级：完整音轨 > 显式直链 > 试听片段；网页地址一律忽略
+    const full = resolveAudioPlayback({ url: 'https://x/page/1', audio_url: 'https://x/a.flac' });
+    assert(full.url === 'https://x/a.flac' && full.quality === 'full', '应优先完整音轨直链');
+    const fromUrl = resolveAudioPlayback({ url: 'https://x/a.mp3', audio_url: null });
+    assert(fromUrl.url === 'https://x/a.mp3' && fromUrl.quality === 'full', '显式直链 url 应被接受');
+    const trial = resolveAudioPlayback({ url: 'https://x/page/1', audio_url: null, preview_url: 'https://x/p.m4a' });
+    assert(trial.url === 'https://x/p.m4a' && trial.quality === 'preview' && trial.trialOnly === true, '试听片段应标 preview');
+    const none = resolveAudioPlayback({ url: 'https://audius.co/byone/x', audio_url: null, preview_url: null });
+    assert(none.url === null, '只有网页地址时应判为无可用直链');
+
+    // url_stale 体检：无后缀的流式端点算可播（Audius），平台网页地址算疑似失效
+    assert(looksLikeAudioStream('https://api.audius.co/v1/tracks/abc/stream') === true, '无后缀 /stream 端点应视为可播');
+    assert(isStaleAudioUrl('https://api.audius.co/v1/tracks/abc/stream') === false, 'Audius stream 端点不应标 stale');
+    assert(isStaleAudioUrl('https://audius.co/byone/周杰伦-七里香') === true, '平台网页地址应标 stale');
+    assert(isStaleAudioUrl('https://m801.music.126.net/x.flac') === false, 'flac 直链不应标 stale');
+    return '音频/影视直链判定 + 三级优先级 + url_stale 体检共 13 组断言全过';
+  });
+
+  await test('pickBestMovieCandidate: 只接受可信标题，拒绝同名异片', async () => {
+    const { pickBestMovieCandidate } = movies;
+    const cands = [
+      { source: 'guangsu', external_id: '1', title: '流浪地球之大夏战狼', playable_url: 'https://a/1.m3u8', media_type: 'movie' },
+      { source: 'guangsu', external_id: '2', title: '流浪地球2', playable_url: 'https://a/2.m3u8', media_type: 'movie' },
+      { source: 'guangsu', external_id: '3', title: '流浪地球2：再次冒险', playable_url: 'https://a/3.m3u8', media_type: 'movie' }
+    ];
+    const best = pickBestMovieCandidate(cands, { title: '流浪地球2', mediaType: 'movie' });
+    assert(best && best.external_id === '2', `应选完全同名那条，实际 ${best && best.external_id}`);
+
+    // 只有「包含关键词」的衍生片（相关度 4）时，必须拒绝，不能瞎写
+    const onlyDerived = pickBestMovieCandidate(
+      [{ source: 's', external_id: '9', title: '流浪地球之大夏战狼', playable_url: 'https://a/9.m3u8', media_type: 'movie' }],
+      { title: '流浪地球2' }
+    );
+    assert(onlyDerived === null, '只有同名异片候选时应返回 null（拒绝自动写库）');
+
+    // 无直链的候选一律不选
+    const noPlay = pickBestMovieCandidate(
+      [{ source: 's', external_id: '1', title: '测试', playable_url: null, media_type: 'movie' }],
+      { title: '测试' }
+    );
+    assert(noPlay === null, '无可播直链时应返回 null');
+    return '完全同名选中 / 同名异片拒绝 / 无直链拒绝，3 组断言全过';
   });
 }
 

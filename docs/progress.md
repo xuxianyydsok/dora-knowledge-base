@@ -293,6 +293,154 @@ search 的 resources 分支、graph 的 resources 节点）此前**完全没有*
 
 ---
 
+## 2.33 影视/音乐播放可靠性修复（2026-10-10，分支 fix/media-playback-reliability）
+
+修复用户反馈的「搜了一部电影，全部显示片源无法解析」。**没有动数据库**（存量数据不自动批量修）。
+
+### 根因（主代理线上实测确认）
+
+1. **已收藏的影视记录指向「已下线的采集源」**。线上 `resources(type='movie')` 7 条里，
+   `source_key` 是 `dytt` / `jszy` / `lzi` —— 这三个源早在 2026-10-09 就因「片源 403/404」
+   从 `DEFAULT_VOD_SOURCES` 移除。于是详情页回源调 `/api/movies/source-detail` 直接
+   `404 采集源不存在：dytt`；播放时用存库的旧直链（dytt 已 403）→ 播放器报「片源无法解析」。
+2. **采集源线路里混着大量非直链地址**：`vod_play_url` 同时含可直接播放的 `.m3u8` 与网页地址
+   （分享页 `/share/<hash>`、网页播放页 `/play/<id>`）。`normalizeVod` 原样保留，
+   详情页把它们也列成「线路」，用户点到必然失败。
+3. **音乐库存了网页地址当播放地址**：线上 1 条 Audius 曲目把 `https://audius.co/...` 网页地址
+   写进了 `resources.url`（真正的可播地址在 `metadata.audio_url`，形如
+   `https://api.audius.co/v1/tracks/<id>/stream`），前端必然报「暂无可用的播放地址」。
+   GD 音乐台的直链是**带时间戳的签名地址会过期**，旧链接同样会 403。
+
+### 本轮完成
+
+1. **新增 `backend/src/lib/mediaUrl.js`**（纯函数、无 IO）：
+   `isDirectAudioUrl` / `isDirectVideoUrl` / `resolveAudioPlayback`（音频直链三级优先级：
+   完整音轨 > 显式直链 > 试听片段）/ `looksLikeAudioStream`（无后缀的 `/stream` 流式端点算可播）/
+   `isStaleAudioUrl`（只读体检标记）。
+2. **`backend/src/lib/maccms.js`**：
+   - `normalizeVod` **剔除非直链线路与剧集**（兜底：全为非直链时保留原始线路，但 `playable_url` 仍为 `null`）；
+   - `DEFAULT_VOD_SOURCES` **新增 `360zy`（360资源备用，`https://360zy.com`）**，实测 5/5 端到端可播；
+   - `ANIME_CLASS_IDS` 补 `360zy: [38,39,40]`；注释记录 2026-10-10 复测结论。
+3. **`backend/src/routes/movies.js`**：
+   - 新增纯函数 `pickBestMovieCandidate`（可信阈值 `RESOLVE_MAX_RELEVANCE = 3`，
+     只接受「完全同名 / 关键词+第N季 / 关键词+(年份) / 其他前缀」，拒绝相关度 4/5 的同名异片）；
+   - 新增 `POST /api/movies/:id/refresh-source`：原源下线/死链时，用原标题（必要时回退主标题）
+     去在用源重搜并回填；**严格 `user_id` 限定、管理员也不跨用户写、不确定就 404 不写库**。
+4. **`backend/src/routes/music.js`**：`createMusic` / `updateMusic` 只接受**媒体直链**
+   （网页地址 422 拒绝），试听片段标 `preview`；`getMusic` 返回只读 `url_stale` 标记（不自动改库）。
+5. **前端**：`MovieView.jsx` 过滤非直链线路/剧集、站长可见「重新匹配片源」按钮（仅本人写）；
+   `Music.jsx` 不再把 `page_url` 当播放地址；`MusicView.jsx` 显示 `url_stale` 提示；
+   `api.js` 新增 `refreshMovieSource`。
+6. **测试**：`backend/tests/run.mjs` 新增 6 个纯离线用例（直链判定、线路过滤、兜底、默认源、音频归一、重匹配阈值）。
+
+### 提交与上线（2026-10-10）
+
+| 项 | 值 |
+| --- | --- |
+| 功能提交 | `74c8a42` fix(media): 影视/音乐源可靠性修复——剔除死源、新增 360zy、重匹配片源接口 |
+| 合并提交（main） | `87e13f8` merge: 影视/音乐源可靠性修复（`--no-ff`，无冲突） |
+| push | `58f80ce..87e13f8 main -> main` |
+| GitHub Actions | Deploy Backend ✅ / Deploy Frontend ✅ / Quality Checks ✅ / Secret Scan ✅（均 success） |
+| 线上接口 | `https://api.xuguochen.de5.net/health` → **200**（`{"status":"ok",...}`）；`https://dora.xuguochen.de5.net/` → **200** |
+| 线上产物 | 前端主包与 `MovieView-*.js` 分块均含 `refresh-source` / 「重新匹配片源」，已随部署更新 |
+
+> 说明：任务书给的 `https://api.xuguochen.de5.net/api/health` 实际返回 404——
+> 该 Worker 的健康检查真实路径是 `/health`（见 `backend/src/router.js:208`）；
+> `dora.xuguochen.de5.net/api/health` 返回 200 是前端 SPA 的 index.html 兜底，不是真实接口。
+
+### 验证结果（本机，2026-10-10）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端确定性 + 契约测试 | `cd backend && npm run test:unit` | ✅ 60/60 通过（新增 6 项媒体用例） |
+| 前端生产构建 | `cd frontend && npm run build` | ✅ 通过 |
+| 凭据扫描（工作树） | `node scripts/check-secrets.mjs` | ✅ 170 文件，无泄漏 |
+| 凭据扫描（全历史） | `node scripts/check-secrets.mjs --history` | ✅ 82 提交，无泄漏 |
+| 空白字符检查 | `git diff --check` | ✅ 通过 |
+
+**真实联网验证**（只读，未写任何数据）：
+- 新增源 `360zy` 5/5 端到端可播（搜索 → 详情 → master → 变体 → 首个 ts 分片 206，直连与代理均可）。
+- 候选源 `ruyi`（如意资源）只有 3/5（2 部片首条结果无 m3u8 直链）→ **未采用**。
+- 重匹配逻辑对线上 4 条真实记录干跑：`复仇者联盟4：终局之战`→hhzy、`庆余年 第二季`→zy360new、
+  `人生交换`→subo（三条 m3u8 均实测 206）；`庆余年第二季` 精确命中同名。
+
+### 残余风险 / 未做
+
+1. **采集源随时会挂**：本轮的过滤与自愈只是把「死线路」挡在门外，源本身仍可能下线；
+   实时口径以「源状态」面板（`/sources`）为准。
+2. **重匹配是「尽力而为」**：源站标题写法千差万别，主标题回退也未必 100% 命中；命中不了就 404 不写库。
+3. **存量数据未批量修复**：本轮只提供「站长手动点一下」的入口，**不自动批量改库**
+   （用户明确要求不要静默自动修数据库）。
+4. **未做真机端到端**：本机无线上 Worker 部署，重匹配接口只在本地用真实 fetchers 干跑过。
+
+---
+
+---
+
+## 2.34 图片展览 + 公开时间轴（2026-10-10，分支 feat/gallery-timeline）
+
+在最新 main（`58f80ce`）上新增两个公开页面与配套后端，**没有 commit / push**。
+
+### 本轮完成
+
+1. **新增迁移 `supabase/migrations/20261010000016_gallery_items.sql`**：建 `public.gallery_items`
+   （`user_id / asset_id / title / description / captured_at / sort_order / is_public / 时间戳`），
+   `unique(user_id, asset_id)`、索引与 RLS 策略（本人读写 + 管理员全权）。
+   **数据库级同 owner**：`assets` 加 `unique(user_id, id)`（`assets_user_id_id_key`），
+   `gallery_items` 用复合外键 `(user_id, asset_id) -> assets(user_id, id) on delete restrict`
+   （`gallery_items_asset_same_owner`）——仅靠 RLS 挡不住「authenticated 直连插他人素材」。
+2. **新增 `backend/src/routes/gallery.js`**：`GET/POST/PATCH/DELETE /api/gallery`。
+   访客查询层叠加 `is_public=eq.true`（条目与素材各一道）；`decorate()` 无论访客还是站长都按
+   `user_id` 过滤 `assets`（Worker 用 service_role，RLS 不生效）；响应不含
+   `object_key / sha256 / user_id / asset_id / original_name`，`alt` 用策展标题。
+   「展览公开 ⇒ 素材必须公开」在创建与改公开两处校验，拒绝半成功；重复加入返回 409。
+3. **新增 `backend/src/lib/timelineMerge.js`**（无 IO 纯函数）：三类内容 → 统一结构
+   `{id,type,title,summary,date,url,cover,source_id}`，按 `date` 倒序、同 date 按 id 升序；
+   游标为 `<date>|<id>` **复合游标**（同一天多条不跳条），兼容旧格式「仅时间」，`limit` 封顶 50。
+4. **新增 `backend/src/routes/timeline.js`**：`GET /api/timeline`，三类查询各自在 DB 层叠加公开条件
+   （posts `published + is_public`、resources `is_public`、gallery `is_public` 且素材公开）。
+   倒序翻页粗过滤用 `lte.`，并覆盖「主日期列 + 回退列」（posts `published_at`/`created_at`、
+   gallery `captured_at`/`created_at`），避免跨日翻页为空或漏掉「今天加入、拍摄日期较早」的图。
+5. **`backend/src/lib/publicScope.js`**：访客读白名单加入 `gallery` 与 `timeline`（写操作仍一律拒绝）。
+6. **`backend/src/routes/assets.js`**：`findReferences` 增加 `gallery_items` 引用检查
+   （返回值加 `kind`），被展览引用的素材删除返回 409。
+7. **前端**：新增 `routes/Gallery.jsx`（纯 CSS 错落 masonry + 灯箱 + 管理员策展抽屉）、
+   `routes/Timeline.jsx`（年份/月份分组、中轴节点、类型筛选、游标加载更多）、
+   `styles/gallery-timeline.css`（只含 `.gl-*` / `.tl-*`，`prefers-reduced-motion` 兼容）；
+   `lib/api.js` 增 5 个方法；`routes/routes.js` + `app.jsx` 加 2 条懒加载路由；
+   `components/Layout.jsx` 的 `TOOLS` 仅追加「图片展」「时间轴」两项。
+8. **文档**：新增 `docs/gallery-timeline.md`（数据模型 / 权限矩阵 / 三条公开不变量 / 排序语义 /
+   近似分页限制 / 待办），`docs/api.md` 追加两节，本节。
+
+### 权限模型（本轮新增部分）
+
+| 操作 | 访客 | 登录用户 | 管理员 |
+| --- | --- | --- | --- |
+| 读展览 | 仅公开条目（且素材公开） | 本人全部 | 本人全部 |
+| 写展览 | ❌ | 仅本人 | 仅本人 |
+| 读时间轴 | 仅公开内容 | 仅公开内容 | 仅公开内容 |
+
+### 验证结果（本机，2026-10-10）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端确定性 + 契约测试 | `cd backend && npm run test:unit` | ✅ 73/73 通过（展览/时间轴 12 组 + 影音 6 组 + 原有用例） |
+| 前端生产构建 | `cd frontend && npm run build` | ✅ 通过（`✓ built in 25.41s`） |
+| 凭据扫描 | `node scripts/check-secrets.mjs` | 见下 |
+| 空白字符检查 | `git diff --check` | 见下 |
+
+> 本机 frontend 构建借助相邻 worktree 已缓存的 `node_modules`（软链后立即移除），未联网、未改动依赖清单。
+
+### 待办 / 残余风险
+
+1. 迁移 `20261010000016` 需经 CI（或人工）在 Supabase 应用后才生效。
+2. 本机无法连真实 Supabase / R2，**未做端到端验证**（上传素材 → 加入展览 → 访客可见 → 时间轴出现）。
+3. 时间轴游标为 `<date>|<id>` 复合游标，同一天多条不会跳条；粗过滤方向为倒序 `lte.` 并覆盖回退日期列，跨日翻页已验证；代价是游标附近会多取少量数据（详见 `docs/gallery-timeline.md` §4）。
+4. 线上 `resources` 目前全部 `is_public=false`，时间轴的资源区线上暂为空，属预期。
+5. 相册 / 分组、拖拽排序、图片转码与缩略图仍未做。
+6. `assets` 的 `(user_id,id)` 唯一约束随迁移 0016 一起应用；若线上曾手工加过同名约束，DO 块会跳过。
+7. **公开 / 私人内容控制入口**（站长一键切换内容公开状态的管理面）仍待办。
+
 ## 0. 项目速览
 
 | 项 | 值 |
@@ -667,6 +815,20 @@ display(await tab.screenshot({ format: 'webp' }));
 
 ## 3. 下一步（按优先级，接手即可开工）
 
+0. **【改进建议总目录】`docs/improvement/`（2026-10-10 新建）**：
+   系统级改进建议 8 份文档（00 总览 + 01 UI 设计系统 + 02 逐页体验 + 03 影音源与播放 +
+   04 内容体系与账号权限 + 05 架构与协作规范 + 06 功能扩展与路线图 + 07 执行 Agent 提示词包）。
+   入口：`docs/improvement/00-总览与阅读指引.md`。**派活前先读 07 的提示词包**。
+
+0. **【待办·仅登记，未开发】公开 / 私人内容控制入口（单项 + 批量）**：
+   2026-10-10 的公开读边界修复（见 2.32 节）后，访客**只能看到 `is_public=true` 的内容**，
+   而线上 `resources` 目前**全部 `is_public=false`** → 访客看不到任何影视 / 音乐 / GitHub 资源。
+   需要给站长一个**内容可见性控制入口**：
+   - 单项：影视 / 音乐 / GitHub / 视频编辑页已有 `is_public` 开关，需确认前端确实渲染了该开关；
+   - 批量：列表页多选 + 「批量公开 / 批量设为私密」，以及「只看私密 / 只看公开」筛选；
+   - 建议同时给一个「公开内容预览」（以访客视角看一眼公开后的样子）。
+   **本轮只登记待办，不开发**（等用户确认产品形态后再排期）。
+
 0. **【待用户决定】首页横幅换成站长自己的素材**：用户手上有 3 段视频 + 若干张 5–6 MB 高清图，想放进首页横幅轮换（预算约 20 MB）。等用户发原文件后：图片缩到 2560 宽 WebP（约 300–800 KB），视频去音轨、1080p、截 10–15 秒循环 MP4（每段 3–8 MB，≤25 MB Pages 单文件上限）+ 一张截图做 poster，手机端只显示截图；压好先给用户看大小和截图再上线。代码入口：`Posts.jsx` 的 `BANNERS`（目前只支持图片，加视频需扩展渲染）。
 
 1. **继续累积影音接口清单**：用户手上还有若干份「影音接口清单」文件，会陆续给路径。
@@ -817,59 +979,3 @@ curl -s -x http://127.0.0.1:7897 --max-time 90 -X POST https://api.xuguochen.de5
 - 后端 `GET /api/vod/proxy?u=`（`backend/src/routes/vodProxy.js`，免登录）：改写 m3u8 内所有 URI/KEY 为代理地址；分片流式透传（Range/206）；边缘缓存分片 1 天、m3u8 5 分钟；只放行影视 CDN 或媒体后缀，拦内网地址；按 DISCONTINUITY 去广告（响应头 X-Dora-Ads-Removed，`clean=0` 关闭）。
 - 前端 MoviePlayer：先直连；hls 致命错误或 6 秒无画面 → 自动切代理并提示；直连失败过的域名记在 localStorage `dora:vod-proxy-hosts`，下次直接走代理；代理也失败再换下一条线路。
 - 实测（庆余年）：guangsu/hhzy/ikun 经代理全链路 200/206；subo 的 g.xlzyd.com:9999 偶发 522（上游超时），会自动换线。
-
-## 2.31 图片展览 + 公开时间轴（2026-10-10，分支 feat/gallery-timeline）
-
-在最新 main（`58f80ce`）上新增两个公开页面与配套后端，**没有 commit / push**。
-
-### 本轮完成
-
-1. **新增迁移 `supabase/migrations/20261010000016_gallery_items.sql`**：建 `public.gallery_items`
-   （`user_id / asset_id / title / description / captured_at / sort_order / is_public / 时间戳`），
-   `unique(user_id, asset_id)`、`asset_id on delete restrict`、索引与 RLS 策略（本人读写 + 管理员全权）。
-2. **新增 `backend/src/routes/gallery.js`**：`GET/POST/PATCH/DELETE /api/gallery`。
-   访客查询层叠加 `is_public=eq.true`（条目与素材各一道），响应不含 `object_key / sha256 / user_id / asset_id`；
-   「展览公开 ⇒ 素材必须公开」在创建与改公开两处校验，拒绝半成功；重复加入返回 409。
-3. **新增 `backend/src/lib/timelineMerge.js`**（无 IO 纯函数）：三类内容 → 统一结构
-   `{id,type,title,summary,date,url,cover,source_id}`，按 `date` 倒序、同 date 按 id 升序，
-   游标分页严格小于，`limit` 封顶 50。
-4. **新增 `backend/src/routes/timeline.js`**：`GET /api/timeline`，三类查询各自在 DB 层叠加公开条件
-   （posts `published + is_public`、resources `is_public`、gallery `is_public` 且素材公开）。
-5. **`backend/src/lib/publicScope.js`**：访客读白名单加入 `gallery` 与 `timeline`（写操作仍一律拒绝）。
-6. **`backend/src/routes/assets.js`**：`findReferences` 增加 `gallery_items` 引用检查
-   （返回值加 `kind`），被展览引用的素材删除返回 409。
-7. **前端**：新增 `routes/Gallery.jsx`（纯 CSS 错落 masonry + 灯箱 + 管理员策展抽屉）、
-   `routes/Timeline.jsx`（年份/月份分组、中轴节点、类型筛选、游标加载更多）、
-   `styles/gallery-timeline.css`（只含 `.gl-*` / `.tl-*`，`prefers-reduced-motion` 兼容）；
-   `lib/api.js` 增 5 个方法；`routes/routes.js` + `app.jsx` 加 2 条懒加载路由；
-   `components/Layout.jsx` 的 `TOOLS` 仅追加「图片展」「时间轴」两项。
-8. **文档**：新增 `docs/gallery-timeline.md`（数据模型 / 权限矩阵 / 三条公开不变量 / 排序语义 /
-   近似分页限制 / 待办），`docs/api.md` 追加两节，本节。
-
-### 权限模型（本轮新增部分）
-
-| 操作 | 访客 | 登录用户 | 管理员 |
-| --- | --- | --- | --- |
-| 读展览 | 仅公开条目（且素材公开） | 本人全部 | 本人全部 |
-| 写展览 | ❌ | 仅本人 | 仅本人 |
-| 读时间轴 | 仅公开内容 | 仅公开内容 | 仅公开内容 |
-
-### 验证结果（本机，2026-10-10）
-
-| 检查 | 命令 | 结果 |
-| --- | --- | --- |
-| 后端确定性 + 契约测试 | `cd backend && npm run test:unit` | ✅ 61/61 通过（新增 6 组展览/时间轴用例全过） |
-| 前端生产构建 | `cd frontend && npm run build` | ✅ 通过（`✓ built in 25.41s`） |
-| 凭据扫描 | `node scripts/check-secrets.mjs` | 见下 |
-| 空白字符检查 | `git diff --check` | 见下 |
-
-> 本机 frontend 构建借助相邻 worktree 已缓存的 `node_modules`（软链后立即移除），未联网、未改动依赖清单。
-
-### 待办 / 残余风险
-
-1. 迁移 `20261010000016` 需经 CI（或人工）在 Supabase 应用后才生效。
-2. 本机无法连真实 Supabase / R2，**未做端到端验证**（上传素材 → 加入展览 → 访客可见 → 时间轴出现）。
-3. 时间轴为近似分页（每源多取一条），极端情况可能漏极少量老条目，详见 `docs/gallery-timeline.md` §4。
-4. 线上 `resources` 目前全部 `is_public=false`，时间轴的资源区线上暂为空，属预期。
-5. 相册 / 分组、拖拽排序、图片转码与缩略图仍未做。
-6. **公开 / 私人内容控制入口**（站长一键切换内容公开状态的管理面）仍待办。

@@ -97,7 +97,8 @@
 
 | 类别 | 接口 | 落地位置 |
 | --- | --- | --- |
-| 影视主源 | 苹果CMS 采集源 lzi / ffzy / dytt / zuid / zy360（5 个） | `backend/src/lib/maccms.js`（`DEFAULT_VOD_SOURCES`，可用 `VOD_SOURCES` 覆盖） |
+| 影视主源 | 苹果CMS 采集源 guangsu / subo / hhzy / ikun / zy360new / mdzy / 360zy（7 个，2026-10-10 复测） | `backend/src/lib/maccms.js`（`DEFAULT_VOD_SOURCES`，可用 `VOD_SOURCES` 覆盖） |
+| 影视源复测结论（2026-10-10） | `360zy`（`https://360zy.com`）5/5 端到端可播 → **已收录**；`ruyi`（`https://cj.rycjapi.com`）3/5（部分片无 m3u8 直链）→ **不收录**；`lzi/ffzy/dytt/zuid/wujin/bfzy/jszy/hongniu/jyzy/dbzy/wolong/kuyun/tiankong/tyyszy/heimuer/mahua/cjtv/ffzy5` 仍 403/404 → 保持移除 | 判定口径：搜索 → 详情 → master → 变体 → 首个 ts 分片 HTTP 206 |
 | 影视补全 | Cinemeta、Bangumi、Kitsu | `backend/src/lib/metadb.js` → `fetchers.js` 的 `enrichMovieCandidates` |
 | 影视兜底 | Internet Archive、TVmaze | `backend/src/lib/fetchers.js` |
 | 音乐主源 | GD音乐台（netease 源，FLAC 完整曲） | `backend/src/lib/fetchers.js`（`searchGdstudioMusic` / `resolveGdstudioUrl`） |

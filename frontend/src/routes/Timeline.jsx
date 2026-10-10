@@ -3,7 +3,7 @@
 // 设计取舍：
 // 1) 视觉是「档案线」而不是普通卡片列表：年份 sticky 标签 + 中轴 + 类型节点。
 // 2) 后端已做公开过滤，前端只做类型筛选与展示；接口失败/为空都不白屏。
-// 3) 分页用后端返回的 next_cursor（before=上一页最后一条的 date），避免跳条。
+// 3) 分页用后端返回的 next_cursor（形如 <date>|<id> 的复合游标），避免跳条/重复。
 // 4) 样式集中在 styles/gallery-timeline.css（.tl-*），不动 global.css。
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { route } from 'preact-router';

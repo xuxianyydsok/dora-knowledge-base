@@ -27,8 +27,9 @@ import {
 
 const TABLE = 'gallery_items';
 const ASSETS = 'assets';
-// 与 assets.js 的公开字段保持一致：只取展示需要的列，绝不带 object_key / sha256
-const ASSET_SELECT = 'id,public_url,width,height,mime_type,original_name,is_public';
+// 只取展示需要的列：绝不带 object_key / sha256，也不带 original_name
+// （原始文件名属内部信息，公开访客不应看到；alt 一律用策展标题）。
+const ASSET_SELECT = 'id,public_url,width,height,mime_type';
 
 // 把「条目 + 素材」组装成对外的安全结构（丢弃内部字段）
 function shape(item, asset) {
@@ -46,16 +47,24 @@ function shape(item, asset) {
       width: asset.width,
       height: asset.height,
       mime_type: asset.mime_type,
-      alt: asset.original_name || item.title || ''
+      // 不泄露 original_name：只用策展标题，缺失时给通用文案
+      alt: item.title || '展览图片'
     }
   };
 }
 
-// 批量取素材并组装；访客在 DB 层叠加 is_public 条件，找不到的条目直接丢弃
-async function decorate(db, items, { guest }) {
+// 批量取素材并组装。
+// 无论访客还是站长，都**显式**按 owner 过滤 assets：Worker 用 service_role 直连，
+// RLS 不会替它过滤；若只按 id 查，条目一旦引用了他人素材就会把别人的私人图带出来。
+// 访客额外叠加 is_public。查不到（非本人 / 未公开 / 已删）的条目直接丢弃。
+async function decorate(db, items, { userId, guest }) {
   const assetIds = [...new Set(items.map((i) => i.asset_id))];
   if (!assetIds.length) return [];
-  const filters = { select: ASSET_SELECT, id: `in.(${assetIds.join(',')})` };
+  const filters = {
+    select: ASSET_SELECT,
+    id: `in.(${assetIds.join(',')})`,
+    user_id: `eq.${userId}`
+  };
   if (guest) filters.is_public = 'eq.true';
   const assets = await db.select(ASSETS, qs(filters));
   const map = Object.fromEntries(assets.map((a) => [a.id, a]));
@@ -65,7 +74,7 @@ async function decorate(db, items, { guest }) {
 // 读取单个素材（限定本人），返回 null 表示不存在/无权限
 async function findOwnAsset(db, userId, assetId) {
   const rows = await db.select(ASSETS, qs({
-    select: 'id,public_url,width,height,mime_type,original_name,is_public',
+    select: ASSET_SELECT,
     id: `eq.${assetId}`,
     user_id: `eq.${userId}`
   }));
@@ -90,7 +99,7 @@ export async function listGalleryItems(request, env) {
   if (user.isGuest) filters.is_public = 'eq.true';
 
   const items = await db.select(TABLE, qs(filters));
-  const out = await decorate(db, items, { guest: !!user.isGuest });
+  const out = await decorate(db, items, { userId: user.id, guest: !!user.isGuest });
   return ok({ items: out, count: out.length, limit, offset }, request, env);
 }
 
