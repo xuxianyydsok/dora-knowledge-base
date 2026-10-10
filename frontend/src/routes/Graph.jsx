@@ -315,9 +315,12 @@ export function Graph() {
   const [clock, setClock] = useState(new Date());
   const seen = useRef(null);
 
-  async function load() {
+  async function load(retry = 1) {
     try {
-      const d = await api.getGraphConsole();
+      const d = await api.getGraphConsole().catch((e) => {
+        if (retry > 0) return new Promise((r) => setTimeout(r, 1500)).then(() => api.getGraphConsole());
+        throw e;
+      });
       const keys = new Set(d.events.map((e) => `${e.kind}${e.id}`));
       if (seen.current) {
         const nu = new Set([...keys].filter((k) => !seen.current.has(k)));
@@ -376,7 +379,7 @@ export function Graph() {
         </span>
       </div>
 
-      {error && <div class="gc-err">{error}</div>}
+      {error && <div class="gc-err">{error} <button type="button" class="gc-retry" onClick={() => load()}>重试</button></div>}
 
       {view === 'classic' ? (
         <div class="gc-classic">{classic ? <GraphView data={classic} onSelect={onSelect} /> : <p class="gc-mute">加载中…</p>}</div>
