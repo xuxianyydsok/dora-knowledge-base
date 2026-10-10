@@ -54,7 +54,7 @@ Worker 用 **`SUPABASE_SERVICE_ROLE_KEY`** 直连 PostgREST。service_role **绕
 并被离线单测锁定（`backend/tests/run.mjs` 的 `UNIT · 公开读边界`）。
 
 ```js
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph)(\/|$)/;
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline)(\/|$)/;
 export const PUBLIC_POST_PATHS = new Set([
   '/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream'
 ]);
@@ -66,6 +66,8 @@ export function guestResourceFilters() { return { is_public: 'eq.true' }; }
 
 > 注意白名单里**已移除** `favorites`（收藏夹属个人数据）与 `/api/github/analyze`
 > （消耗 AI 额度，仅管理员）。
+> 2026-10-10 新增 `gallery`（图片展览）与 `timeline`（公开时间轴）两个只读入口；
+> 两者的访客过滤都在各自路由的查询层显式叠加，见 `docs/gallery-timeline.md`。
 
 ## 4. 逐路由权限矩阵
 
@@ -119,7 +121,17 @@ export function guestResourceFilters() { return { is_public: 'eq.true' }; }
 | GET | `/api/notifications*`、`/api/preferences`、`/api/backup/export`、`/api/me` | ❌ 401 | 个人数据 |
 | 任意 | `/api/admin/*`、`/api/mcp/*` | ❌ 401/403 | 管理员接口 |
 
-### 4.6 明确不在本次范围（保持原样）
+### 4.6 图片展览 / 公开时间轴（2026-10-10 新增）
+
+| 方法 | 路径 | 公开访客 | 登录用户 | 管理员 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/gallery` | ✅ 仅 `gallery_items.is_public=true` 且关联 `assets.is_public=true` | 本人全部 | 本人全部 |
+| POST/PATCH/DELETE | `/api/gallery*` | ❌ 401 | ✅ 仅本人 | ✅ 仅本人 |
+| GET | `/api/timeline` | ✅ 仅公开内容（posts 已发布+公开、resources 公开、gallery 公开） | 仅公开内容 | 仅公开内容 |
+
+> 详见 `docs/gallery-timeline.md`。
+
+### 4.7 明确不在本次范围（保持原样）
 
 - `GET /api/assets/:id`：按设计**完全公开**（图片素材按 id 读取），不动。
 - `GET /api/news/*`：NewsNow 热榜，无 owner 数据，不动。

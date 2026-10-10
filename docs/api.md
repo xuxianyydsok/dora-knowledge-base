@@ -586,3 +586,55 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 - 标签/关联资源校验改为 `validateTagIds(db, user.id, false, ...)` 与仅按本人 `user_id` 过滤，避免管理员把他人标签/资源挂到自己的数据上。
 - `deletePost` 改为**先校验归属再清理** `post_resources` / `post_tags`，防止越权删除他人文章的关联数据。
 - MCP `findPost` / `link_resources` 收紧为仅本人数据。
+
+## 图片展览 Gallery（2026-10-10）
+
+策展元数据表 `gallery_items` 引用 `assets.id`，二进制仍在 R2。详见 `docs/gallery-timeline.md`。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/gallery` | 访客只读公开 | `?limit=`（默认 60，≤200）`&offset=`；访客仅返回 `is_public=true` 且关联素材公开的条目 |
+| POST | `/api/gallery` | 管理员 | body `{ asset_id, title?, description?, captured_at?, sort_order?, is_public? }`；`is_public` 默认 false；素材未公开却要求公开 → 409；重复加入 → 409 |
+| PATCH | `/api/gallery/:id` | 管理员 | 部分更新 `title/description/captured_at/sort_order/is_public`；改为公开前校验素材公开，否则 409 |
+| DELETE | `/api/gallery/:id` | 管理员 | **只移出展览，不删除 R2 素材**；返回 `{ id, removed: true }` |
+
+返回结构（单条）：
+
+```json
+{
+  "id": "<uuid>",
+  "title": "…", "description": "…", "captured_at": "2026-03-01",
+  "sort_order": 0, "is_public": false,
+  "created_at": "…", "updated_at": "…",
+  "image": { "url": "<public_url>", "width": 1600, "height": 1067, "mime_type": "image/jpeg", "alt": "策展标题" }
+}
+```
+
+> 响应不含 `object_key / sha256 / user_id / asset_id / original_name`；
+> `alt` 取策展标题（缺失时用「展览图片」），不使用原始文件名。
+> `gallery_items.asset_id` 与 `user_id` 是**复合外键**（同 owner），数据库层强制。
+> `DELETE /api/assets/:id` 的引用保护已扩展：被展览引用的素材同样返回 409（`referenced_by` 里 `kind='gallery'`）。
+
+## 公开时间轴 Timeline（2026-10-10）
+
+聚合「已发布公开博客 + 公开资源（github/music/movie）+ 公开展览」，只读公开内容。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/timeline` | 访客只读公开 | `?limit=`（默认 20，≤50）`&before=<date\|id 复合游标>` |
+
+返回结构：
+
+```json
+{
+  "items": [
+    { "id": "post:<uuid>", "type": "post", "title": "…", "summary": "…",
+      "date": "2026-08-24T00:24:23.892Z", "url": "/posts/<uuid>",
+      "cover": "…", "source_id": "<uuid>" }
+  ],
+  "next_cursor": "2026-08-24T00:24:23.892Z|post:<uuid>"
+}
+```
+
+`type` 取值：`post` / `github` / `music` / `movie` / `gallery`。
+排序与分页语义、已知近似分页限制见 `docs/gallery-timeline.md`。

@@ -1,0 +1,241 @@
+/* =============================================================
+   图片展览（/gallery）与公开时间轴（/timeline）专用样式
+   约定：本文件只放 .gl-* 与 .tl-* 类，避免与 global.css 撞名；
+        颜色一律用 global.css 的主题变量，不写死色值。
+   ============================================================= */
+
+/* ---------------- 图片展览 ---------------- */
+.gl-page { display: block; }
+
+/* 错落 masonry：纯 CSS columns，不做均分网格 */
+.gl-masonry {
+  columns: 3;
+  column-gap: var(--sp-4, 12px);
+  margin-top: var(--sp-4, 12px);
+}
+.gl-item {
+  margin: 0 0 var(--sp-4, 12px);
+  break-inside: avoid;
+  animation: gl-rise var(--dur-slow, .6s) var(--ease-out, ease) both;
+  animation-delay: calc(var(--gl-i, 0) * 40ms);
+}
+.gl-figure {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius, 16px);
+  overflow: hidden;
+  background: var(--glass-bg, var(--bg-elevated));
+  cursor: zoom-in;
+  transition: transform var(--dur, .32s) var(--ease-out, ease),
+              box-shadow var(--dur, .32s) var(--ease-out, ease);
+}
+.gl-figure:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.gl-figure img { display: block; width: 100%; height: auto; object-fit: cover; }
+.gl-cap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 2px 0;
+}
+.gl-cap strong { font-size: 14px; font-weight: 600; color: var(--text); }
+.gl-cap span { font-size: 13px; color: var(--text-muted); line-height: 1.55; }
+.gl-cap time { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--text-muted); letter-spacing: var(--track-mono, .06em); }
+
+/* 灯箱 */
+.gl-lightbox {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  padding: 4vh 3vw;
+  background: rgba(0, 0, 0, .78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: gl-fade .22s ease both;
+}
+.gl-lightbox-inner {
+  position: relative;
+  max-width: min(1100px, 94vw);
+  max-height: 92vh;
+  display: flex; flex-direction: column;
+  gap: 10px;
+}
+.gl-lb-img {
+  max-width: 100%; max-height: 74vh;
+  width: auto; height: auto;
+  object-fit: contain;
+  border-radius: var(--radius, 16px);
+  background: rgba(0, 0, 0, .35);
+}
+.gl-lb-caption {
+  color: #fff;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.gl-lb-caption strong { font-size: 16px; }
+.gl-lb-caption p { margin: 0; font-size: 13.5px; line-height: 1.6; opacity: .86; }
+.gl-lb-meta { display: flex; gap: 12px; font-size: 12px; opacity: .7; font-family: var(--font-mono, monospace); }
+.gl-lb-close, .gl-lb-nav {
+  position: absolute;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, .16);
+  color: #fff; cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.gl-lb-close:hover, .gl-lb-nav:hover { background: rgba(255, 255, 255, .3); }
+.gl-lb-close { top: -6px; right: -6px; }
+.gl-lb-nav { top: 50%; transform: translateY(-50%); }
+.gl-lb-nav.prev { left: 10px; }
+.gl-lb-nav.next { right: 10px; }
+
+/* 策展抽屉 */
+.gl-drawer-mask {
+  position: fixed; inset: 0; z-index: 95;
+  background: rgba(0, 0, 0, .45);
+  display: flex; justify-content: flex-end;
+  animation: gl-fade .2s ease both;
+}
+.gl-drawer {
+  width: min(440px, 92vw);
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg-elevated, #fff);
+  border-left: 1px solid var(--border);
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 18px;
+  animation: gl-slide-in .26s var(--ease-out, ease) both;
+}
+.gl-drawer-head { display: flex; align-items: center; justify-content: space-between; }
+.gl-drawer-head strong { font-size: 16px; }
+.gl-drawer-head .gl-lb-close { position: static; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+.gl-drawer-sec { display: flex; flex-direction: column; gap: 10px; }
+.gl-drawer-sec h4 { margin: 0; font-size: 13px; color: var(--text-muted); font-weight: 600; letter-spacing: .04em; }
+.gl-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.gl-asset {
+  padding: 0; border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; cursor: pointer; background: var(--bg-subtle);
+  aspect-ratio: 4 / 3;
+}
+.gl-asset img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gl-asset:disabled { opacity: .38; cursor: not-allowed; }
+.gl-edit {
+  display: grid; grid-template-columns: 84px 1fr; gap: 10px;
+  padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm, 10px);
+}
+.gl-edit-thumb { width: 84px; height: 64px; object-fit: cover; border-radius: 8px; }
+.gl-edit-fields { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gl-edit-fields textarea { min-height: 56px; }
+.gl-edit-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gl-edit-row input[type='date'], .gl-edit-row input[type='number'] { width: auto; flex: 1 1 110px; }
+.gl-switch { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; white-space: nowrap; }
+
+@keyframes gl-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes gl-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes gl-slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------------- 公开时间轴 ---------------- */
+.tl-page { display: block; }
+.tl-track {
+  position: relative;
+  margin-top: var(--sp-5, 16px);
+  padding-left: 28px;
+}
+.tl-track::before {
+  content: '';
+  position: absolute;
+  left: 7px; top: 6px; bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(to bottom,
+    transparent,
+    color-mix(in srgb, var(--primary) 42%, transparent) 12%,
+    color-mix(in srgb, var(--primary) 42%, transparent) 88%,
+    transparent);
+}
+.tl-year { position: relative; margin-bottom: 22px; }
+.tl-year-label {
+  position: sticky; top: calc(var(--header-height, 64px) + 8px);
+  z-index: 2;
+  display: inline-flex; align-items: baseline; gap: 8px;
+  margin: 0 0 10px;
+  padding: 3px 12px;
+  font-family: var(--font-display, serif);
+  font-size: 26px; font-weight: 500;
+  letter-spacing: var(--track-display, -.01em);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--radius-pill, 999px);
+}
+.tl-year-label small { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--text-muted); }
+.tl-month { position: relative; margin: 0 0 12px; }
+.tl-month-label { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--text-muted); letter-spacing: .06em; }
+.tl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.tl-node { position: relative; }
+.tl-dot {
+  position: absolute;
+  left: -25px; top: 16px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--primary);
+  border: 2.5px solid var(--bg);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.tl-node.tl-post .tl-dot { background: #4a6cf7; }
+.tl-node.tl-github .tl-dot { background: #57606a; }
+.tl-node.tl-music .tl-dot { background: #16a34a; }
+.tl-node.tl-movie .tl-dot { background: #d97706; }
+.tl-node.tl-gallery .tl-dot { background: #db2777; }
+.tl-card {
+  display: grid;
+  grid-template-columns: 52px auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg, var(--bg-elevated));
+  text-decoration: none;
+  color: inherit;
+  transition: transform var(--dur, .32s) var(--ease-out, ease), border-color var(--dur, .32s);
+}
+.tl-card:hover { transform: translateX(3px); border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); }
+.tl-time { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--text-muted); letter-spacing: .04em; }
+.tl-badge {
+  font-size: 11px; padding: 2px 9px; border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-muted); white-space: nowrap;
+}
+.tl-cover { width: 56px; height: 40px; object-fit: cover; border-radius: 8px; }
+.tl-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tl-body strong { font-size: 14.5px; font-weight: 600; }
+.tl-sum {
+  font-size: 12.5px; color: var(--text-muted); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tl-more { display: flex; justify-content: center; margin: 18px 0; }
+.tl-end, .tl-more-error { text-align: center; font-size: 12.5px; margin: 14px 0; }
+.tl-more-error { color: var(--danger); }
+
+@media (max-width: 1024px) {
+  .gl-masonry { columns: 2; }
+}
+@media (max-width: 640px) {
+  .gl-masonry { columns: 1; }
+  .gl-lightbox { padding: 2vh 12px; }
+  .gl-lb-img { max-height: 62vh; }
+  .tl-track { padding-left: 20px; }
+  .tl-dot { left: -19px; }
+  .tl-card { grid-template-columns: auto 1fr; grid-template-areas: 'time badge' 'cover body'; }
+  .tl-time { grid-area: time; }
+  .tl-badge { grid-area: badge; justify-self: start; }
+  .tl-cover { grid-area: cover; width: 48px; height: 36px; }
+  .tl-body { grid-area: body; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gl-item { animation: none; }
+  .gl-lightbox, .gl-drawer-mask, .gl-drawer { animation: none; }
+  .gl-figure, .tl-card { transition: none; }
+}

@@ -7,7 +7,7 @@
 
 // 访客可只读的 GET 路径。
 // 注意：不含 favorites（收藏夹属个人数据），也不含 /progress（个人播放进度）。
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph)(\/|$)/;
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline)(\/|$)/;
 
 // 访客可调用的「只读但用 POST」的检索接口。
 // 注意：不含 /api/github/analyze（消耗 Workers AI 额度，仅管理员可用）。

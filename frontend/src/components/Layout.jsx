@@ -18,6 +18,8 @@ const PRIMARY = [
 
 const TOOLS = [
   ['/favorites', '收藏', 'heart'],
+  ['/gallery', '图片展', 'grid'],
+  ['/timeline', '时间轴', 'clock'],
   ['/categories', '分类', 'list'], ['/tags', '标签', 'tag']
 ];
 

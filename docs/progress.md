@@ -375,6 +375,72 @@ search 的 resources 分支、graph 的 resources 节点）此前**完全没有*
 
 ---
 
+---
+
+## 2.34 图片展览 + 公开时间轴（2026-10-10，分支 feat/gallery-timeline）
+
+在最新 main（`58f80ce`）上新增两个公开页面与配套后端，**没有 commit / push**。
+
+### 本轮完成
+
+1. **新增迁移 `supabase/migrations/20261010000016_gallery_items.sql`**：建 `public.gallery_items`
+   （`user_id / asset_id / title / description / captured_at / sort_order / is_public / 时间戳`），
+   `unique(user_id, asset_id)`、索引与 RLS 策略（本人读写 + 管理员全权）。
+   **数据库级同 owner**：`assets` 加 `unique(user_id, id)`（`assets_user_id_id_key`），
+   `gallery_items` 用复合外键 `(user_id, asset_id) -> assets(user_id, id) on delete restrict`
+   （`gallery_items_asset_same_owner`）——仅靠 RLS 挡不住「authenticated 直连插他人素材」。
+2. **新增 `backend/src/routes/gallery.js`**：`GET/POST/PATCH/DELETE /api/gallery`。
+   访客查询层叠加 `is_public=eq.true`（条目与素材各一道）；`decorate()` 无论访客还是站长都按
+   `user_id` 过滤 `assets`（Worker 用 service_role，RLS 不生效）；响应不含
+   `object_key / sha256 / user_id / asset_id / original_name`，`alt` 用策展标题。
+   「展览公开 ⇒ 素材必须公开」在创建与改公开两处校验，拒绝半成功；重复加入返回 409。
+3. **新增 `backend/src/lib/timelineMerge.js`**（无 IO 纯函数）：三类内容 → 统一结构
+   `{id,type,title,summary,date,url,cover,source_id}`，按 `date` 倒序、同 date 按 id 升序；
+   游标为 `<date>|<id>` **复合游标**（同一天多条不跳条），兼容旧格式「仅时间」，`limit` 封顶 50。
+4. **新增 `backend/src/routes/timeline.js`**：`GET /api/timeline`，三类查询各自在 DB 层叠加公开条件
+   （posts `published + is_public`、resources `is_public`、gallery `is_public` 且素材公开）。
+   倒序翻页粗过滤用 `lte.`，并覆盖「主日期列 + 回退列」（posts `published_at`/`created_at`、
+   gallery `captured_at`/`created_at`），避免跨日翻页为空或漏掉「今天加入、拍摄日期较早」的图。
+5. **`backend/src/lib/publicScope.js`**：访客读白名单加入 `gallery` 与 `timeline`（写操作仍一律拒绝）。
+6. **`backend/src/routes/assets.js`**：`findReferences` 增加 `gallery_items` 引用检查
+   （返回值加 `kind`），被展览引用的素材删除返回 409。
+7. **前端**：新增 `routes/Gallery.jsx`（纯 CSS 错落 masonry + 灯箱 + 管理员策展抽屉）、
+   `routes/Timeline.jsx`（年份/月份分组、中轴节点、类型筛选、游标加载更多）、
+   `styles/gallery-timeline.css`（只含 `.gl-*` / `.tl-*`，`prefers-reduced-motion` 兼容）；
+   `lib/api.js` 增 5 个方法；`routes/routes.js` + `app.jsx` 加 2 条懒加载路由；
+   `components/Layout.jsx` 的 `TOOLS` 仅追加「图片展」「时间轴」两项。
+8. **文档**：新增 `docs/gallery-timeline.md`（数据模型 / 权限矩阵 / 三条公开不变量 / 排序语义 /
+   近似分页限制 / 待办），`docs/api.md` 追加两节，本节。
+
+### 权限模型（本轮新增部分）
+
+| 操作 | 访客 | 登录用户 | 管理员 |
+| --- | --- | --- | --- |
+| 读展览 | 仅公开条目（且素材公开） | 本人全部 | 本人全部 |
+| 写展览 | ❌ | 仅本人 | 仅本人 |
+| 读时间轴 | 仅公开内容 | 仅公开内容 | 仅公开内容 |
+
+### 验证结果（本机，2026-10-10）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端确定性 + 契约测试 | `cd backend && npm run test:unit` | ✅ 73/73 通过（展览/时间轴 12 组 + 影音 6 组 + 原有用例） |
+| 前端生产构建 | `cd frontend && npm run build` | ✅ 通过（`✓ built in 25.41s`） |
+| 凭据扫描 | `node scripts/check-secrets.mjs` | 见下 |
+| 空白字符检查 | `git diff --check` | 见下 |
+
+> 本机 frontend 构建借助相邻 worktree 已缓存的 `node_modules`（软链后立即移除），未联网、未改动依赖清单。
+
+### 待办 / 残余风险
+
+1. 迁移 `20261010000016` 需经 CI（或人工）在 Supabase 应用后才生效。
+2. 本机无法连真实 Supabase / R2，**未做端到端验证**（上传素材 → 加入展览 → 访客可见 → 时间轴出现）。
+3. 时间轴游标为 `<date>|<id>` 复合游标，同一天多条不会跳条；粗过滤方向为倒序 `lte.` 并覆盖回退日期列，跨日翻页已验证；代价是游标附近会多取少量数据（详见 `docs/gallery-timeline.md` §4）。
+4. 线上 `resources` 目前全部 `is_public=false`，时间轴的资源区线上暂为空，属预期。
+5. 相册 / 分组、拖拽排序、图片转码与缩略图仍未做。
+6. `assets` 的 `(user_id,id)` 唯一约束随迁移 0016 一起应用；若线上曾手工加过同名约束，DO 块会跳过。
+7. **公开 / 私人内容控制入口**（站长一键切换内容公开状态的管理面）仍待办。
+
 ## 0. 项目速览
 
 | 项 | 值 |

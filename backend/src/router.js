@@ -22,6 +22,8 @@ import * as news from './routes/news.js';
 import * as douban from './routes/douban.js';
 import * as musicCharts from './routes/musicCharts.js';
 import * as assets from './routes/assets.js';
+import * as gallery from './routes/gallery.js';
+import * as timeline from './routes/timeline.js';
 import { vodProxy } from './routes/vodProxy.js';
 
 // 路由表：[method, pattern, handler]
@@ -82,6 +84,15 @@ const routes = [
   ['GET', '/api/assets', assets.listAssets],
   ['GET', '/api/assets/:id', assets.getAsset],
   ['DELETE', '/api/assets/:id', assets.deleteAsset],
+
+  // 图片展览（策展元数据）：读写需管理员；访客经公开读边界只看公开条目
+  ['GET', '/api/gallery', gallery.listGalleryItems],
+  ['POST', '/api/gallery', gallery.createGalleryItem],
+  ['PATCH', '/api/gallery/:id', gallery.updateGalleryItem],
+  ['DELETE', '/api/gallery/:id', gallery.deleteGalleryItem],
+
+  // 公开时间轴（聚合已发布博客 + 公开资源 + 公开展览）
+  ['GET', '/api/timeline', timeline.listTimeline],
 
   // 音乐收藏库
   ['GET', '/api/music', music.listMusic],
