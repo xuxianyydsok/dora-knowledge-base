@@ -332,6 +332,14 @@ display(await tab.screenshot({ format: 'webp' }));
 - 未做：豆瓣没有排播数据，参考图里的「本周追剧」日历暂未实现；豆瓣没有「国漫」分类，动漫频道只有日本番剧与动画电影。
 - 访客播放（同日）：未登录点采集源结果不再入库，直接进 `/movies/watch/:source/:vid` 播放页（MovieView 预览模式，候选经 sessionStorage 传递，缺失时回源 source-detail）；不记播放进度，不显示编辑按钮。
 
+## 2.15 音乐库 UI 升级（Apple Music 风格，2026-10-09）
+
+- 新增默认「首页」Tab（`frontend/src/components/MusicHome.jsx`）：现在就听（热歌榜 No.1 大封面 + 虚化背景）、四张排行榜卡（热歌/新歌/飙升/原创）、选中榜单的双列曲目列表、新歌速递横滑。
+- 后端 `routes/musicCharts.js`：`GET /api/music/charts?chart=hot|new|soar|original`（网易云官方榜经 Meting，缓存 1 小时）；`GET /api/img/music?id=&s=300|600|1000`（跟随 Meting 302 改 param 取高清封面，缓存 30 天，无需登录）。`lib/cover.js` 的 `hdCover()` 统一把网易云封面换成高清中转。
+- 播放器（`lib/player.jsx`）支持不入库的「内联曲目」（id 为空、数据随队列携带）：榜单曲目所有人直接播放；访客点搜索结果也直接播放，不入库。`/api/music/stream` 加入访客可用的只读 POST。
+- 影视播放器：换线成功开始播放后清除「线路不可用」提示。
+- 已知：部分采集源 CDN（如 dytt）对境外 IP 返回 403，海外访问时会自动换线。
+
 ## 3. 下一步（按优先级，接手即可开工）
 
 1. **继续累积影音接口清单**：用户手上还有若干份「影音接口清单」文件，会陆续给路径。

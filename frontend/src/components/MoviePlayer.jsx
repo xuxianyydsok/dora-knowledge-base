@@ -64,6 +64,11 @@ export function MoviePlayer({
     return true;
   }
 
+  // 换线成功、开始播放后清掉「线路不可用」提示，避免误以为仍在失败
+  useEffect(() => {
+    if (playing && saved.startsWith('线路不可用')) setSaved('');
+  }, [playing, saved]);
+
   // —— 加载片源：m3u8 走 hls.js（动态 import，符合重型库懒加载规范）——
   useEffect(() => {
     const el = videoRef.current;

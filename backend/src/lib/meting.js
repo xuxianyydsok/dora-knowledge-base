@@ -221,3 +221,9 @@ export async function fetchMetingLyrics(lrcOrBase, serverOrUndefined, idOrUndefi
     clearTimeout(timer);
   }
 }
+
+// 歌单 / 排行榜（2026-10-09，音乐首页「排行榜」用）：type=playlist 返回与搜索相同的结构
+export async function fetchMetingPlaylist(instance, server, id, limit = 50, timeoutMs = 12000) {
+  const list = await metingFetchJson(instance.base, { server, type: 'playlist', id }, timeoutMs);
+  return list.slice(0, limit).map((t) => metingCandidate(t, instance, server)).filter((c) => c.title);
+}

@@ -36,7 +36,7 @@ export function MiniPlayer() {
         aria-label="播放进度"
       />
 
-      <button class="mini-meta" onClick={() => route(`/music/${music.id}`)} title="展开播放页">
+      <button class="mini-meta" onClick={() => music.id && route(`/music/${music.id}`)} title="展开播放页">
         <span class="mini-cover">
           {track.artwork_url
             ? <img src={track.artwork_url} alt="" />

@@ -20,9 +20,12 @@ function toQueueItem(m) {
     artist: t.artist || '',
     album: t.album || '',
     cover: t.artwork_url || m.cover_path || '',
-    duration: t.duration || 0
+    duration: t.duration || 0,
+    // 访客直接播放的曲目不入库（id 为空），整条数据随队列携带
+    inline: m.id ? null : m
   };
 }
+const keyOf = (q) => q.inline || q.id;
 
 export function PlayerProvider({ children }) {
   const audioRef = useRef(null);
@@ -68,7 +71,7 @@ export function PlayerProvider({ children }) {
     setExtraSrc('');
     setReResolved(false);
     try {
-      const data = await api.getMusic(id);
+      const data = typeof id === 'object' && id ? id : await api.getMusic(id);
       setMusic(data);
       setDuration(data.track?.duration || 0);
       wantPlayRef.current = autoplay;
@@ -87,14 +90,14 @@ export function PlayerProvider({ children }) {
     if (!items?.length) return;
     setQueue(items.map(toQueueItem));
     setIndex(startIndex);
-    await load(items[startIndex].id);
+    await load(items[startIndex].id || items[startIndex]);
   }, [load]);
 
   // —— 播放单曲（不改变队列）——
   const playOne = useCallback(async (item) => {
     setQueue([toQueueItem(item)]);
     setIndex(0);
-    await load(item.id);
+    await load(item.id || item);
   }, [load]);
 
   const toggle = useCallback(() => {
@@ -107,7 +110,7 @@ export function PlayerProvider({ children }) {
   const goTo = useCallback(async (nextIndex) => {
     if (nextIndex < 0 || nextIndex >= queue.length) return;
     setIndex(nextIndex);
-    await load(queue[nextIndex].id);
+    await load(keyOf(queue[nextIndex]));
   }, [queue, load]);
 
   const next = useCallback(() => goTo(index + 1), [goTo, index]);

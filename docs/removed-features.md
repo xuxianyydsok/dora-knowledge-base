@@ -28,7 +28,7 @@
 
 **现在的行为**
 - 未登录访客可以只读浏览：NewsNow、视频、GitHub、博客（只显示已发布文章）、音乐、影视、搜索，以及「更多」菜单里的收藏、图谱、分类、标签。看到的是站长（最早创建的 admin 账号）的内容。
-- 访客可以直接播放影视（2026-10-09 用户要求「访客播放不要加限制」）：点搜索结果进入 `/movies/watch/:source/:vid`，按采集源详情直接播放，不入库、不记进度；也可以调用影视/音乐的只读检索接口（POST `/api/movies/search`、`/api/movies/source-detail`、`/api/music/search`、`/api/music/lyrics`）。
+- 访客可以直接播放影视（2026-10-09 用户要求「访客播放不要加限制」）：点搜索结果进入 `/movies/watch/:source/:vid`，按采集源详情直接播放，不入库、不记进度；也可以调用影视/音乐的只读检索接口（POST `/api/movies/search`、`/api/movies/source-detail`、`/api/music/search`、`/api/music/lyrics`、`/api/music/stream`）。音乐同理：访客点歌直接播放，不入库。
 - 访客不能：新增/编辑/删除任何内容，查看/保存播放进度，访问备份、设置、通知、用户管理等页面。
 - 顶栏不再显示「登录」按钮；站长仍可直接访问 `/login` 登录，登录后一切照旧。
 

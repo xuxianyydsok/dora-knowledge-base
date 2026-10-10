@@ -4816,3 +4816,89 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   .mh-wall { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 18px 12px; }
   .mh-row-head h3 { font-size: 18px; }
 }
+
+/* ---------------- 音乐首页（Apple Music 风格） ---------------- */
+.am { display: flex; flex-direction: column; gap: 34px; }
+.am .sk, .am-hero.sk { background: linear-gradient(100deg, var(--glass-bg) 30%, var(--glass-highlight) 50%, var(--glass-bg) 70%); background-size: 200% 100%; animation: mh-shimmer 1.4s linear infinite; }
+.am-hero {
+  position: relative; overflow: hidden; isolation: isolate; border-radius: var(--radius);
+  min-height: 320px; display: flex; align-items: center; gap: 40px; padding: 40px 48px;
+  background: #111; color: #fff; box-shadow: var(--shadow-lg);
+}
+.am-hero-bg {
+  position: absolute; inset: -60px; z-index: -1; background-size: cover; background-position: center;
+  filter: blur(60px) saturate(1.6) brightness(0.62); transform: scale(1.2);
+}
+.am-hero-cover {
+  width: 240px; height: 240px; flex: none; object-fit: cover; border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1);
+}
+.am-hero-text { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.am-kicker { font-size: 13px; letter-spacing: 0.06em; color: rgba(255,255,255,0.75); }
+.am-hero-text h2 { margin: 0; font-size: clamp(28px, 4vw, 48px); font-weight: 800; line-height: 1.1; }
+.am-hero-text p { margin: 0; font-size: 18px; color: rgba(255,255,255,0.85); }
+.am-hero-actions { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.am-hero-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; border-radius: var(--radius-pill); font-weight: 600; }
+.am-hero-actions button:not(.primary) { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.25); }
+
+.am-sec { display: flex; flex-direction: column; gap: 14px; }
+.am-sec-head { display: flex; align-items: center; gap: 10px; }
+.am-sec-title { margin: 0; font-size: 21px; font-weight: 750; }
+
+.am-charts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.am-chart {
+  text-align: left; color: #fff; border: none; border-radius: 16px; padding: 16px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 12px; min-width: 0; box-shadow: var(--shadow-sm);
+  outline: 3px solid transparent; outline-offset: 2px; transition: transform var(--dur) var(--ease-spring), outline-color var(--dur-fast);
+}
+.am-chart:hover { transform: translateY(-3px); }
+.am-chart.on { outline-color: var(--primary); }
+.am-chart-head { display: flex; align-items: center; justify-content: space-between; font-size: 18px; }
+.am-chart-play { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.25); }
+.am-chart ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.am-chart li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; min-width: 0; }
+.am-chart li img, .am-chart li i { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex: none; background: rgba(255,255,255,0.2); }
+.am-chart li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.95; }
+
+.am-tracks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 28px; }
+.am-track {
+  display: flex; align-items: center; gap: 14px; padding: 8px 10px; border-radius: 10px; cursor: pointer; min-width: 0;
+  border-bottom: 1px solid var(--border); transition: background var(--dur-fast);
+}
+.am-track:hover, .am-track.on { background: var(--glass-highlight); }
+.am-track.on .am-track-title { color: var(--primary); }
+.am-rank { width: 22px; text-align: center; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.am-rank.top { color: #ff375f; }
+.am-track-art { position: relative; width: 48px; height: 48px; flex: none; border-radius: 8px; overflow: hidden; background: var(--glass-bg); }
+.am-track-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.am-track-play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; background: rgba(0,0,0,0.4); opacity: 0; transition: opacity var(--dur-fast); }
+.am-track:hover .am-track-play { opacity: 1; }
+.am-track-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.am-track-title, .am-track-artist { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.am-track-title { font-size: 14.5px; font-weight: 600; }
+.am-track-artist { font-size: 12.5px; color: var(--text-muted); }
+.am-track-add { padding: 6px; line-height: 0; border-radius: 50%; opacity: 0.6; }
+.am-track-add:hover { opacity: 1; }
+.am-track.sk-row { height: 65px; cursor: default; }
+.am-track.sk-row .sk { flex: 1; height: 40px; border-radius: 8px; }
+
+.am-shelf { display: grid; grid-auto-flow: column; grid-auto-columns: 196px; gap: 20px; overflow-x: auto; padding: 4px 2px 14px; scroll-snap-type: x mandatory; }
+.am-tile { display: flex; flex-direction: column; gap: 4px; cursor: pointer; min-width: 0; scroll-snap-align: start; }
+.am-tile-art { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--glass-bg); box-shadow: var(--shadow-sm); margin-bottom: 6px; transition: transform var(--dur) var(--ease-spring), box-shadow var(--dur); }
+.am-tile-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.am-tile:hover .am-tile-art { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.am-tile-play { position: absolute; right: 10px; bottom: 10px; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: #fff; background: rgba(0,0,0,0.55); backdrop-filter: blur(8px); opacity: 0; transition: opacity var(--dur-fast); }
+.am-tile:hover .am-tile-play { opacity: 1; }
+.am-tile b, .am-tile span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.am-tile b { font-size: 14px; }
+.am-tile span { font-size: 12.5px; color: var(--text-muted); }
+
+@media (max-width: 900px) {
+  .am-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-tracks { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .am-hero { flex-direction: column; align-items: flex-start; padding: 24px 20px; gap: 18px; }
+  .am-hero-cover { width: 160px; height: 160px; }
+  .am-shelf { grid-auto-columns: 140px; gap: 14px; }
+}

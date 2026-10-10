@@ -18,7 +18,7 @@ export class ApiError extends Error {
 }
 
 // 访客模式下允许的只读 POST 检索接口（与后端 PUBLIC_POST 保持一致）
-const GUEST_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics']);
+const GUEST_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream']);
 
 async function request(path, { method = 'GET', body } = {}) {
   const auth = await authHeader();
@@ -107,6 +107,7 @@ export const api = {
   getMovie: (id) => request(`/api/movies/${id}`),
   searchMovieMeta: (query, limit = 30) => request('/api/movies/search', { method: 'POST', body: { query, limit } }),
   listMovieLatest: (params = '') => request(`/api/movies/latest${params}`),
+  listMusicChart: (chart, limit = 50) => request(`/api/music/charts?chart=${chart}&limit=${limit}`),
   // 豆瓣片单（type=tv|movie，tag 见后端 DOUBAN_TAGS）
   listDouban: (type, tag, limit = 24, start = 0) =>
     request(`/api/movies/douban?type=${type}&tag=${encodeURIComponent(tag)}&limit=${limit}&start=${start}`),

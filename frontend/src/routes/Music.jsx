@@ -7,6 +7,8 @@
 // 3) 音乐库支持分组（最近添加 / 按歌手 / 按专辑）、音质筛选、排序；批量播放 / 随机播放入口。
 // 4) 搜索结果保留「一行一首」的列表形态，新增音源筛选，并如实标注「待解析」态。
 // 5) 所有失败反馈走轻提示（toast），不再往页面里塞红字。
+// 6) 2026-10-09 Apple Music 风格改版：新增默认「首页」Tab（MusicHome：现在就听 / 排行榜 / 新歌速递），
+//    封面统一走 hdCover 取高清；访客点歌直接播放（不入库），登录后才会收藏进音乐库。
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
@@ -16,6 +18,9 @@ import { EmptyState } from '../components/EmptyState.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { usePlayer } from '../lib/player.jsx';
 import { toastError, toastSuccess, toastInfo } from '../lib/toast.jsx';
+import { useAuth } from '../lib/auth.jsx';
+import { MusicHome } from '../components/MusicHome.jsx';
+import { hdCover, candidateToTrack } from '../lib/cover.js';
 
 // 推荐搜索：给没有明确目标的场景一个起点
 const RECOMMEND = ['周杰伦', '林俊杰', '陈奕迅', '五月天', 'Beyond', '邓紫棋', 'Taylor Swift', 'Coldplay'];
@@ -84,7 +89,7 @@ function AlbumCard({ item, onPlay, onOpen, onRemove }) {
       onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
       <div class="album-art">
         {cover
-          ? <img src={cover} alt={item.title} loading="lazy" referrerpolicy="no-referrer" />
+          ? <img src={hdCover(cover, 600)} alt={item.title} loading="lazy" referrerpolicy="no-referrer" />
           : <span class="album-art-empty"><Icon name="music" size={30} /></span>}
         <button
           class="album-play"
@@ -138,7 +143,7 @@ function SearchRow({ item, busy, resolving, onPlay, onCollect }) {
     >
       <button class="result-art" type="button" title="播放" onClick={(e) => { e.stopPropagation(); onPlay(); }}>
         {item.artwork_url
-          ? <img src={item.artwork_url} alt={item.title} loading="lazy" referrerpolicy="no-referrer" />
+          ? <img src={hdCover(item.artwork_url, 300)} alt={item.title} loading="lazy" referrerpolicy="no-referrer" />
           : <span class="result-art-empty"><Icon name="music" size={20} /></span>}
         <span class="result-art-play"><Icon name="play" size={16} /></span>
       </button>
@@ -173,7 +178,8 @@ function SearchRow({ item, busy, resolving, onPlay, onCollect }) {
 export function Music() {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState('library');       // library | search | queue
+  const { isAuthenticated } = useAuth();
+  const [mode, setMode] = useState('home');          // home | library | search | queue
   const [searchedFor, setSearchedFor] = useState('');
   const [candidates, setCandidates] = useState([]);
   const [searchNote, setSearchNote] = useState('');
@@ -219,8 +225,15 @@ export function Music() {
     } finally { setSearching(false); }
   }
 
+  // 候选列表直接播放（榜单 / 访客），不入库
+  async function playCandidates(list, i) {
+    const tracks = list.map((c) => candidateToTrack(c));
+    await playQueue(tracks, i);
+  }
+
   async function addFrom(candidate, { play = true } = {}) {
     const rowKey = `${candidate.platform}-${candidate.external_id}-${candidate.title}`;
+    if (!isAuthenticated && !play) { toastInfo('登录后才能收藏到音乐库，点歌曲可直接播放'); return; }
     setBusy(true); setPendingKey(rowKey);
     try {
       // 「待解析」条目（GD 源命中但未取直链）：点播这一下才去取。
@@ -237,6 +250,11 @@ export function Music() {
       }
       if (play && !audioUrl && !candidate.preview_url) {
         toastError(`「${candidate.title}」暂时拿不到播放地址，换一首或稍后重试`);
+        return;
+      }
+      if (!isAuthenticated) {
+        await playQueue([candidateToTrack(candidate, audioUrl)], 0);
+        toastSuccess(`正在播放《${candidate.title}》`);
         return;
       }
       const created = await api.createMusic({
@@ -328,6 +346,7 @@ export function Music() {
   );
 
   const tabs = useMemo(() => [
+    { key: 'home', label: '首页' },
     { key: 'library', label: '音乐库', count: items.length },
     { key: 'search', label: searchedFor ? `「${searchedFor}」` : '搜索结果', count: candidates.length },
     { key: 'queue', label: '播放队列', count: queue.length }
@@ -359,8 +378,8 @@ export function Music() {
       <PageHeader
         kicker="Music Library"
         title="音乐"
-        sub="7 路上游并发检索，原始池取满 100 条后按相关度重排；跨页面续播，点封面进入同步歌词页。"
-        stats={stats}
+        sub="网易云官方榜单 + 7 路上游检索，高清封面，跨页面续播。"
+        stats={mode === 'home' ? undefined : stats}
         tabs={tabs}
         activeTab={mode}
         onTab={setMode}
@@ -429,7 +448,7 @@ export function Music() {
       </div>
 
       {/* —— 推荐搜索 chips —— */}
-      {mode !== 'queue' && (
+      {(mode === 'library' || mode === 'search') && (
         <div class="reco-chips">
           <span class="reco-chips-label"><Icon name="sparkles" size={13} /> 试试</span>
           <div class="reco-chips-track">
@@ -438,6 +457,15 @@ export function Music() {
             ))}
           </div>
         </div>
+      )}
+
+      {mode === 'home' && (
+        <MusicHome
+          onPlayList={playCandidates}
+          onCollect={(t) => addFrom(t, { play: false })}
+          canCollect={isAuthenticated}
+          currentTitle={queue[index]?.title}
+        />
       )}
 
       {/* —— 音乐库 —— */}
