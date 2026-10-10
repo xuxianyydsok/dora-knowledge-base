@@ -2,7 +2,7 @@
 // cosolar 为 GPL-3.0 的 Halo Thymeleaf 主题，这里不拷贝其代码，只按其设计用 Preact 重新实现：
 //   青绿主色 · 精选轮播（无精选时回退到最新文章）· 分类导航 · 最新/最早切换的文章卡片列表 + 分页
 //   · 右侧栏：博主卡 / 热门标签 / 专题类别 / 近期更新
-// 文章没有封面时，按分类生成渐变封面（旧站文章都是默认占位图）。
+// 文章没有封面时，统一使用旧站 cosolar 的默认封面图（用户要求，2026-10-09）。
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
@@ -14,15 +14,7 @@ import { Icon } from '../components/Icon.jsx';
 const PAGE_SIZE = 10;
 const SLIDES = 5;
 
-function hashHue(s) {
-  let h = 0;
-  for (const ch of String(s || '')) h = (h * 31 + ch.codePointAt(0)) % 360;
-  return h;
-}
-function coverStyle(seed) {
-  const h = (hashHue(seed) + 150) % 360;
-  return { backgroundImage: `linear-gradient(135deg, hsl(${h} 62% 46%), hsl(${(h + 40) % 360} 70% 58%))` };
-}
+export const DEFAULT_COVER = '/blog/default-cover.webp';   // 旧站 cosolar 默认封面（见 public/blog/NOTICE.md）
 function fmtDate(v) {
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return '';
@@ -30,15 +22,8 @@ function fmtDate(v) {
 }
 const dateOf = (p) => p.published_at || p.created_at;
 
-function Cover({ post, category, large }) {
-  if (post.cover_path) return <img class="cs-cover-img" src={post.cover_path} alt="" loading="lazy" />;
-  const label = category?.name || '随笔';
-  return (
-    <div class={`cs-cover-gen${large ? ' lg' : ''}`} style={coverStyle(label)}>
-      <span class="cs-cover-mark">{label.charAt(0)}</span>
-      <span class="cs-cover-label">{label}</span>
-    </div>
-  );
+function Cover({ post }) {
+  return <img class="cs-cover-img" src={post.cover_path || DEFAULT_COVER} alt="" loading="lazy" />;
 }
 
 export function Posts() {
