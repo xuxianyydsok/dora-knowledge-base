@@ -89,32 +89,29 @@
   --z-toast: 90;
 }
 
-[data-theme='dark'] {
-  --elev-hover: 0 18px 46px rgba(0, 0, 0, 0.55), 0 40px 84px rgba(0, 0, 0, 0.42);
+/* 素雅主题（2026-10-09，替代已移除的暗色主题）：米灰底 + 暖白卡片 + 深炭灰强调色，参考 GithubStarsManager（MIT） */
+[data-theme='sepia'] {
+  --bg: #f2f0eb;
+  --bg-elevated: #fbfaf7;
+  --bg-subtle: #e9e6df;
+  --text: #2a2824;
+  --text-muted: #77716a;
+  --border: #e0dcd3;
+  --primary: #3b3833;
+  --primary-contrast: #ffffff;
+  --danger: #c2524e;
+  --glass-highlight: rgba(255, 253, 248, 0.75);
+  --glow-1: rgba(120, 110, 95, 0.18);
+  --glow-2: rgba(120, 110, 95, 0.10);
+  --shadow-sm: 0 1px 2px rgba(60, 52, 40, 0.06), 0 2px 8px rgba(60, 52, 40, 0.04);
+  --shadow-md: 0 4px 16px rgba(60, 52, 40, 0.07), 0 12px 32px rgba(60, 52, 40, 0.05);
+  --shadow-lg: 0 12px 40px rgba(60, 52, 40, 0.12), 0 32px 64px rgba(60, 52, 40, 0.08);
+  --elev-hover: 0 14px 38px rgba(60, 52, 40, 0.11), 0 32px 72px rgba(60, 52, 40, 0.08);
 }
+[data-theme='sepia'] .cs, [data-theme='sepia'] .gh { --cs: #4a463f; --cs-soft: rgba(74, 70, 63, 0.09); }
 
-[data-theme='dark'] {
-  --bg: #0a0c12;
-  --bg-elevated: #171b24;
-  --bg-subtle: #1e232e;
-  --text: #eef1f6;
-  --text-muted: #9aa4b5;
-  --border: #2c3546;
-  --primary: #6f8dff;
-  --primary-contrast: #0a0c12;
-  --danger: #ff6b70;
-
-  /* 暗色下表面要比背景明显“浮起来”一档：透明混合比例调高，边框给足对比 */
-  --glass-bg: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
-  --glass-bg-strong: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
-  --glass-border: color-mix(in srgb, var(--border) 100%, transparent);
-  --glass-highlight: rgba(255, 255, 255, 0.14);
-  --glow-1: color-mix(in srgb, var(--primary) 55%, transparent);
-  --glow-2: color-mix(in srgb, var(--primary) 28%, transparent);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 10px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.45), 0 16px 44px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 16px 52px rgba(0, 0, 0, 0.55), 0 40px 80px rgba(0, 0, 0, 0.4);
-}
+/* 右上角主题切换（白天 / 素雅） */
+.theme-toggle { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
 
 * { box-sizing: border-box; }
 

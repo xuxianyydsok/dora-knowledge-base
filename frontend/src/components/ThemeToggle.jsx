@@ -1,12 +1,14 @@
-// 主题切换按钮：浅色 / 暗色
+// 主题切换按钮：白天 / 素雅（暗色主题 2026-10-09 已移除）
 import { useTheme } from '../lib/theme.jsx';
 import { Icon } from './Icon.jsx';
 
 export function ThemeToggle() {
-  const { isDark, toggleTheme } = useTheme();
+  const { isSepia, toggleTheme } = useTheme();
+  const label = isSepia ? '当前：素雅，点击切换到白天' : '当前：白天，点击切换到素雅';
   return (
-    <button onClick={toggleTheme} title="切换主题" aria-label="切换主题" style="width:38px;height:38px;padding:0;border-radius:50%">
-      <Icon name={isDark ? 'moon' : 'sun'} size={18} />
+    <button class="theme-toggle" onClick={toggleTheme} title={label} aria-label={label}>
+      <Icon name={isSepia ? 'leaf' : 'sun'} size={16} />
+      <span>{isSepia ? '素雅' : '白天'}</span>
     </button>
   );
 }

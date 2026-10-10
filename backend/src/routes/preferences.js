@@ -1,4 +1,4 @@
-// 用户偏好：暗色主题自定义配色等持久化
+// 用户偏好：主题（白天 light / 素雅 sepia）与自定义配色持久化。暗色主题 2026-10-09 已移除，旧值 dark 按 light 处理
 // 权限：普通用户仅读写自己的偏好；管理员可读全部
 
 import { ok, readJson, HttpError } from '../lib/response.js';
@@ -17,10 +17,10 @@ function validateTheme(theme) {
   }
   const out = {};
   if (theme.mode !== undefined) {
-    if (!['light', 'dark'].includes(theme.mode)) throw new HttpError(422, "theme.mode 必须为 'light' 或 'dark'");
-    out.mode = theme.mode;
+    if (!['light', 'sepia', 'dark'].includes(theme.mode)) throw new HttpError(422, "theme.mode 必须为 'light' 或 'sepia'");
+    out.mode = theme.mode === 'dark' ? 'light' : theme.mode;
   }
-  for (const variant of ['light', 'dark']) {
+  for (const variant of ['light', 'sepia']) {
     if (theme[variant] === undefined) continue;
     const colors = theme[variant];
     if (typeof colors !== 'object' || colors === null) {

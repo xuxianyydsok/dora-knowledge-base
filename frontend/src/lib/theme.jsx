@@ -1,4 +1,5 @@
-// 全局主题上下文：light / dark + 用户自定义配色（持久化到后端 + localStorage）
+// 全局主题上下文：白天 light / 素雅 sepia + 用户自定义配色（持久化到后端 + localStorage）
+// 2026-10-09：暗色主题已移除（用户要求），素雅配色参考 GithubStarsManager（MIT）。旧的 'dark' 记录自动当作 light。
 // 自定义配色通过 CSS 变量覆盖实现
 import { createContext } from 'preact';
 import { useContext, useEffect, useState, useCallback } from 'preact/hooks';
@@ -29,22 +30,22 @@ export const DEFAULT_COLORS = {
     text: '#10131a', text_muted: '#5b6472', border: '#d9dfea',
     primary: '#4a6cf7', primary_contrast: '#ffffff', danger: '#e5484d'
   },
-  dark: {
-    bg: '#0a0c12', bg_elevated: '#171b24', bg_subtle: '#1e232e',
-    text: '#eef1f6', text_muted: '#9aa4b5', border: '#2a3140',
-    primary: '#6f8dff', primary_contrast: '#0a0c12', danger: '#ff6b70'
+  sepia: {
+    bg: '#f2f0eb', bg_elevated: '#fbfaf7', bg_subtle: '#e9e6df',
+    text: '#2a2824', text_muted: '#77716a', border: '#e0dcd3',
+    primary: '#3b3833', primary_contrast: '#ffffff', danger: '#c2524e'
   }
 };
 
 function readLocalColors() {
-  try { return JSON.parse(localStorage.getItem(COLORS_KEY)) || { light: {}, dark: {} }; }
-  catch { return { light: {}, dark: {} }; }
+  try { return JSON.parse(localStorage.getItem(COLORS_KEY)) || { light: {}, sepia: {} }; }
+  catch { return { light: {}, sepia: {} }; }
 }
 
 function applyColors(colors) {
   const root = document.documentElement;
   // 先清除旧的覆盖变量
-  for (const variant of ['light', 'dark']) {
+  for (const variant of ['light', 'sepia']) {
     for (const { key } of THEME_VARS) root.style.removeProperty(`--${key}`);
   }
   // 仅对当前主题应用对应配色
@@ -56,7 +57,7 @@ function applyColors(colors) {
 }
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem(MODE_KEY) || 'light');
+  const [theme, setTheme] = useState(() => (localStorage.getItem(MODE_KEY) === 'sepia' ? 'sepia' : 'light'));
   const [colors, setColors] = useState(readLocalColors);
 
   // 应用主题模式
@@ -82,9 +83,9 @@ export function ThemeProvider({ children }) {
       try {
         const pref = await api.getPreferences();
         if (!active || !pref?.theme) return;
-        const { mode, light, dark } = pref.theme;
-        if (mode) setTheme(mode);
-        if (light || dark) setColors({ light: light || {}, dark: dark || {} });
+        const { mode, light, sepia } = pref.theme;
+        if (mode) setTheme(mode === 'sepia' ? 'sepia' : 'light');
+        if (light || sepia) setColors({ light: light || {}, sepia: sepia || {} });
       } catch { /* 忽略未登录/网络错误 */ }
     };
     load();
@@ -92,7 +93,7 @@ export function ThemeProvider({ children }) {
     return () => { active = false; sub?.subscription?.unsubscribe(); };
   }, []);
 
-  const toggleTheme = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
+  const toggleTheme = useCallback(() => setTheme((t) => (t === 'sepia' ? 'light' : 'sepia')), []);
 
   // 设置单个配色（当前主题）
   const setColor = useCallback((key, value) => {
@@ -104,7 +105,7 @@ export function ThemeProvider({ children }) {
     const payload = {
       mode: theme,
       light: colors.light || {},
-      dark: colors.dark || {}
+      sepia: colors.sepia || {}
     };
     const saved = await api.updatePreferences(payload);
     return saved;
@@ -112,13 +113,13 @@ export function ThemeProvider({ children }) {
 
   // 重置为默认
   const resetColors = useCallback(async () => {
-    setColors({ light: {}, dark: {} });
+    setColors({ light: {}, sepia: {} });
     try { await api.resetPreferences(); } catch { /* 忽略 */ }
   }, []);
 
   return (
     <ThemeContext.Provider value={{
-      theme, setTheme, toggleTheme, isDark: theme === 'dark',
+      theme, setTheme, toggleTheme, isSepia: theme === 'sepia',
       colors, setColor, saveColors, resetColors, currentColors: colors[theme] || {}
     }}>
       {children}

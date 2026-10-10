@@ -8,7 +8,7 @@ export function Settings() {
   return (
     <section class="stack">
       <PageHeader kicker="Preferences" title="设置" sub="主题、配色与账号偏好。">
-        <button onClick={toggleTheme}>切换到{theme === 'dark' ? '浅色' : '暗色'}主题</button>
+        <button onClick={toggleTheme}>切换到{theme === 'sepia' ? '白天' : '素雅'}主题</button>
       </PageHeader>
 
       <div class="card" style="padding:16px">

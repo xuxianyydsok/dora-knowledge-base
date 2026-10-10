@@ -76,3 +76,10 @@
 **原因**：用户觉得横幅和文章之间的分类横栏不美观，要求去掉。
 **现在的行为**：分类入口保留在横幅里的「分类」页、右侧栏「专题类别」和移动端底部工具栏；按分类/标签筛选时，列表标题旁有「× 查看全部」。
 **恢复**：从 git 历史取回 `frontend/src/routes/Posts.jsx` 中 `.cs-nav` 那段（a587551 版本）。
+
+## 暗色（夜间）主题（已移除，2026-10-09）
+
+**原因**：用户要求去掉夜间主题，改为「白天 / 素雅」两套；素雅配色参考 GithubStarsManager（MIT）。
+**现在的行为**：右上角按钮在白天（light，默认）和素雅（sepia）之间切换；旧的 `dark` 记录（localStorage / 后端偏好）自动当作白天。后端偏好接口只接受 light / sepia 的自定义配色。
+**残留**：`global.css` 里还有约 27 条 `[data-theme='dark']` 规则，已不会生效，留作恢复参考。
+**恢复**：取回 `frontend/src/lib/theme.jsx`、`ThemeToggle.jsx`、`backend/src/routes/preferences.js` 和 `global.css` 顶部暗色变量块（974db09 版本）。

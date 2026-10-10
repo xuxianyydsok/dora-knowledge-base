@@ -27,7 +27,7 @@ export function ThemeCustomizer() {
   return (
     <div class="stack">
       <p class="muted" style="font-size:13px">
-        当前编辑：<strong>{theme === 'dark' ? '暗色' : '浅色'}</strong>主题配色（切换主题可分别配置）
+        当前编辑：<strong>{theme === 'sepia' ? '素雅' : '白天'}</strong>主题配色（切换主题可分别配置）
       </p>
 
       <div class="gallery-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
