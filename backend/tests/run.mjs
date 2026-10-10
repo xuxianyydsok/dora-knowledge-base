@@ -16,7 +16,6 @@ import { dirname, join } from 'node:path';
 
 import * as maccms from '../src/lib/maccms.js';
 import * as fetchers from '../src/lib/fetchers.js';
-import * as rss from '../src/lib/rss.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, '..');
@@ -104,24 +103,6 @@ async function unit() {
     return '现状已锁定（死代码，0 调用方）';
   });
 
-  await test('parseFeed: RSS2 与 Atom 双格式夹具', async () => {
-    const rss2 = `<?xml version="1.0"?><rss version="2.0"><channel>
-      <title>测试博客</title><link>https://t.example</link>
-      <item><title>第一篇文章</title><link>https://t.example/1</link><pubDate>Wed, 01 Oct 2026 08:00:00 GMT</pubDate><description>摘要一</description></item>
-      <item><title>第二篇文章</title><link>https://t.example/2</link><pubDate>Thu, 02 Oct 2026 08:00:00 GMT</pubDate></item>
-      </channel></rss>`;
-    const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
-      <title>Atom 博客</title>
-      <entry><title>原子文章</title><link href="https://a.example/1"/><updated>2026-10-03T08:00:00Z</updated></entry>
-      </feed>`;
-    const f1 = rss.parseFeed(rss2);
-    assert(f1 && f1.title === '测试博客', 'RSS2 标题解析失败');
-    assert(f1.items.length === 2 && f1.items[0].title === '第一篇文章', 'RSS2 条目解析失败');
-    const f2 = rss.parseFeed(atom);
-    assert(f2 && f2.items.length === 1 && f2.items[0].title === '原子文章', 'Atom 解析失败');
-    return `RSS2 ${f1.items.length} 条 / Atom ${f2.items.length} 条`;
-  });
-
   await test('mediaTypeOf: jyzy 分类树（1=电视剧 2=电影 17=动漫）不再错标', async () => {
     // 回归：2026-10-07 实测发现 normalizeVod 硬编码 type_id_1 ∈ {2,4} 为剧集，
     // jyzy/hhzy（1=电视剧 2=电影）的剧集被错标成电影。改为按叶子类目名判定。
@@ -138,10 +119,17 @@ async function unit() {
     return '7 个断言全过';
   });
 
-  await test('stripHtml: 标签剥离与实体解码', async () => {
-    const out = rss.stripHtml('<p>你好<b>世界</b>&amp;大家</p>');
-    assert(out.includes('你好') && out.includes('世界') && !out.includes('<b>'), `剥离失败: ${out}`);
-    return '通过';
+  await test('normalizeVod: 简介剥离 HTML 与实体解码', async () => {
+    // 采集源返回的 vod_content 是富文本，normalizeVod 必须清洗成纯文本简介。
+    // （RSS 模块 2026-10-09 已删除，原 stripHtml 用例改测同类的 maccms.normalizeVod。）
+    const out = maccms.normalizeVod(
+      { vod_name: '测试片', vod_play_url: '正片$https://a.com/1.m3u8', vod_content: '<p>你好<b>世界</b>&amp;大家</p>' },
+      { key: 'guangsu', name: '光速资源' }
+    );
+    assert(typeof out.overview === 'string' && out.overview.includes('你好') && out.overview.includes('世界'),
+      `简介清洗失败: ${JSON.stringify(out.overview)}`);
+    assert(!/<[^>]+>/.test(out.overview || ''), `简介仍含 HTML 标签: ${out.overview}`);
+    return `overview=${out.overview}`;
   });
 }
 
@@ -213,22 +201,23 @@ async function live() {
   // 搜索结果条数的阈值按「当前可用源数」校准，把「源被限频」与「代码回归」区分开。
   const state = { aliveSources: 0 };
   section('LIVE · 采集源可用率');
-  await test('12 个影视采集源探活 ≥6 可用（本机 IP 限频已计入阈值）', async () => {
+  await test('影视采集源探活 ≥4 可用（默认池 6 个；本机 IP 限频已计入阈值）', async () => {
     // ⚠ 阈值说明：源站按出口 IP 限频，反复跑测试的同一 IP 会被临时压制
     //（2026-10-07 实测：本机探活 7/12 时，同一批「挂掉」的源从海外节点全部秒回）。
-    // 因此 ≥6 即判健康（疑似限频）；<6 才说明源真的大面积故障。
+    // 2026-10-09 精简后默认池为 6 个（DEFAULT_VOD_SOURCES）；阈值取 4，
+    // 低于 4 才说明源真的大面积故障。
     const { getVodSources } = maccms;
     const sources = getVodSources({});
     const settled = await Promise.allSettled(sources.map((s) => maccms.checkMaccms(s)));
     const alive = sources.filter((_, i) => settled[i].status === 'fulfilled' && settled[i].value?.ok);
     const dead = sources.filter((_, i) => !(settled[i].status === 'fulfilled' && settled[i].value?.ok)).map((s) => s.key);
     state.aliveSources = alive.length;
-    assert(alive.length >= 6, `只有 ${alive.length} 个源可用（阈值 6），挂掉: ${dead.join(',')}`);
+    assert(alive.length >= 4, `只有 ${alive.length} 个源可用（阈值 4），挂掉: ${dead.join(',')}`);
     return `${alive.length}/${sources.length} 可用${dead.length ? '，本轮未响应（多为限频）: ' + dead.join(',') : ''}`;
   }, { page: 'Movies.jsx' });
   // 探活失败（限频）时也不让后续搜索测试误报：阈值放宽并标注
-  const movieMin = (healthy) => (state.aliveSources >= 6 ? healthy : 2);
-  const calib = () => (state.aliveSources >= 6 ? '' : `（可用源仅 ${state.aliveSources}，阈值已放宽）`);
+  const movieMin = (healthy) => (state.aliveSources >= 4 ? healthy : 2);
+  const calib = () => (state.aliveSources >= 4 ? '' : `（可用源仅 ${state.aliveSources}，阈值已放宽）`);
 
   section('LIVE · 影视搜索（真实采集源）');
 
@@ -295,27 +284,7 @@ async function live() {
     return `${res.candidates.length} 条 / 榜首=${res.candidates[0].title}|${res.candidates[0].artist}`;
   }, { page: 'Music.jsx' });
 
-  section('LIVE · RSS 抓取（真实外网）');
-
-  await test('RSS: 国内可订阅源抓取解析（少数派 / InfoQ / 开源中国，≥1 通即过）', async () => {
-    // 单一外网源会受网络抖动影响（阮一峰博客在本网络实测 12s 超时；
-    // sspai.com/feed.xml 已 404、36kr.com/feed 解析 0 条 —— 2026-10-07 逐个实测后选定这三个），
-    // 多源容错：任一可用即证明抓取链路健康，同时报告全部状态。
-    const feeds = ['https://sspai.com/feed', 'https://www.infoq.cn/feed.xml', 'https://www.oschina.net/news/rss'];
-    const outcomes = [];
-    for (const u of feeds) {
-      try {
-        const r = await rss.fetchFeed(u, { timeoutMs: 10000 });
-        const n = (r?.feed?.items || []).length;
-        outcomes.push({ u, ok: n >= 3, n, title: r?.feed?.title });
-      } catch (e) {
-        outcomes.push({ u, ok: false, err: e.message.slice(0, 60) });
-      }
-    }
-    const okOnes = outcomes.filter((o) => o.ok);
-    assert(okOnes.length >= 1, `三个源都不可用: ${outcomes.map((o) => `${o.u}(${o.err || o.n})`).join(' ')}`);
-    return outcomes.map((o) => `${new URL(o.u).host}:${o.ok ? `${o.n}条` : 'FAIL'}`).join(' / ');
-  }, { page: 'RssFeeds.jsx / RssArticles.jsx' });
+  // RSS 模块 2026-10-09 已整体删除（见 docs/removed-features.md），不再有 RSS 抓取用例。
 }
 
 // ---------------------------------------------------------------- main

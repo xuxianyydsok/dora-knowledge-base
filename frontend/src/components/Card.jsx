@@ -11,8 +11,22 @@ export function Card({ title, description, coverUrl, meta, tags = [], footer, on
 
   useEffect(() => attachTilt(ref.current), []);
 
+  // 可点击卡片要能用键盘操作（Enter / Space），否则键盘用户无法打开
+  function handleKeyDown(event) {
+    if (!onClick || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    onClick(event);
+  }
+
   return (
-    <article ref={ref} class="card" onClick={onClick} role={onClick ? 'button' : undefined}>
+    <article
+      ref={ref}
+      class="card"
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
       {coverUrl ? (
         <img class="card-cover" src={coverUrl} alt={title} loading="lazy" />
       ) : (

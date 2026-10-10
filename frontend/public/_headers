@@ -1,0 +1,17 @@
+# Cloudflare Pages 安全响应头（静态文件，构建后原样发布到站点根）
+#
+# CSP 取舍：Supabase / 自建 API / 豆瓣与音乐封面中转 / 第三方音视频直链的域名
+# 随环境（自定义域名、workers.dev、项目 ref）变化，写死域名会在换环境时把功能打断；
+# 这里对 connect/img/media 放开 https:（音频、视频、图片全部为外链直连），
+# 只对 script/object/base/frame 做严格限制。真实域名与密钥一律不写进本文件。
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; connect-src 'self' https: wss:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.bilibili.com
+
+# 带内容哈希的构建产物可长期强缓存
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

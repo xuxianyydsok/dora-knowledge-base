@@ -1,8 +1,9 @@
 // 博客渲染引擎
-// - 正文为原生 HTML（作者本人内容，按设计直接渲染）
+// - 正文为原生 HTML：写入 DOM 前先经 sanitizeHtml 白名单清洗（防存储型 XSS）
 // - 检测自定义标签，仅对出现的标签按需懒加载对应重型库
 // - 支持：<katex-inline> <katex-block> <three-scene> <mermaid-chart> <chart-2d>
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { sanitizeHtml } from '../lib/sanitizeHtml.js';
 
 // 标签 -> 渲染器（动态 import，实现代码分割）
 const RENDERER_MAP = [
@@ -24,7 +25,8 @@ export function PostRenderer({ content = '' }) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.innerHTML = content;
+    // 写入 DOM 前先做白名单清洗，避免存储型 XSS（保留自定义渲染标签）
+    el.innerHTML = sanitizeHtml(content);
 
     const used = new Set(detectHeavyTags(content));
     if (used.size === 0) { setStatus('done'); return; }

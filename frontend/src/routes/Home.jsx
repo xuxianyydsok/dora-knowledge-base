@@ -63,7 +63,7 @@ function Hero({ isAuthenticated }) {
           ) : (
             <>
               <button class="primary" onClick={() => route('/news')}>开始浏览</button>
-              <a href="#features"><button>了解功能</button></a>
+              <a class="btn" href="#features">了解功能</a>
             </>
           )}
         </div>
@@ -324,7 +324,7 @@ export function Home() {
         <p class="muted">使用邮箱注册，几秒钟即可创建属于你的空间。</p>
         <div class="hero-actions">
           <button class="primary" onClick={() => route('/news')}>开始浏览</button>
-          <a href="#features"><button>再看一遍功能</button></a>
+          <a class="btn" href="#features">再看一遍功能</a>
         </div>
       </section>
 

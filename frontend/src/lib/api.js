@@ -11,16 +11,18 @@ async function authHeader() {
 }
 
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, code = 'api_error') {
     super(message);
+    this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
 // 访客模式下允许的只读 POST 检索接口（与后端 PUBLIC_POST 保持一致）
 const GUEST_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream']);
 
-async function request(path, { method = 'GET', body } = {}) {
+async function request(path, { method = 'GET', body, timeout = 20000, signal } = {}) {
   const auth = await authHeader();
   // 访客模式（未登录）只能读：进度上报静默跳过，其余写操作给出明确提示
   if (!auth.Authorization && path.endsWith('/progress')) return null;   // 访客不读写个人进度
@@ -32,19 +34,69 @@ async function request(path, { method = 'GET', body } = {}) {
     ...auth
   };
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body)
-  });
+  // 默认 20 秒超时，避免请求无限挂起；调用方可传 timeout 覆盖（如源探活接口）
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort('timeout'), timeout);
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal) {
+    if (signal.aborted) abortFromCaller();
+    else signal.addEventListener('abort', abortFromCaller, { once: true });
+  }
+
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const timedOut = controller.signal.reason === 'timeout';
+      throw new ApiError(0, timedOut ? `请求超时（${Math.round(timeout / 1000)} 秒）` : '请求已取消', timedOut ? 'timeout' : 'aborted');
+    }
+    throw new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error');
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abortFromCaller);
+  }
 
   const text = await res.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // 例如 Pages 传播延迟期间返回 HTML，避免只显示 "Unexpected token"
+      throw new ApiError(res.status, `服务返回了无法识别的响应 (${res.status})`, 'invalid_response');
+    }
+  }
 
   if (!res.ok) {
     throw new ApiError(res.status, payload?.error || `请求失败 (${res.status})`);
   }
   return payload?.data;
+}
+
+// 文本响应（如 OPML 导出）；同样带超时与可读错误
+async function requestText(path, { timeout = 20000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort('timeout'), timeout);
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      headers: await authHeader(),
+      signal: controller.signal
+    });
+    if (!res.ok) throw new ApiError(res.status, `请求失败 (${res.status})`);
+    return await res.text();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (controller.signal.aborted) throw new ApiError(0, `请求超时（${Math.round(timeout / 1000)} 秒）`, 'timeout');
+    throw new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error');
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const api = {
@@ -114,7 +166,8 @@ export const api = {
   listDouban: (type, tag, limit = 24, start = 0) =>
     request(`/api/movies/douban?type=${type}&tag=${encodeURIComponent(tag)}&limit=${limit}&start=${start}`),
   getMovieSourceDetail: (body) => request('/api/movies/source-detail', { method: 'POST', body }),
-  getVodSourceHealth: () => request('/api/movies/sources/health'),
+  // 源探活要并发拉多个上游、解析 m3u8 并取分片，允许更长的超时
+  getVodSourceHealth: () => request('/api/movies/sources/health', { method: 'GET', timeout: 60000 }),
   createMovie: (body) => request('/api/movies', { method: 'POST', body }),
   updateMovie: (id, body) => request(`/api/movies/${id}`, { method: 'PATCH', body }),
   deleteMovie: (id) => request(`/api/movies/${id}`, { method: 'DELETE' }),

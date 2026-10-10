@@ -12,7 +12,9 @@ import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool,
   optionalNumber, optionalDateString, requireEnum
 } from '../lib/validate.js';
-import { setResourceTags, withTags, getProgress, upsertProgress, validateTagIds } from '../lib/resources.js';
+import {
+  setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
+} from '../lib/resources.js';
 
 const TABLE = 'resources';
 const EXT = 'movie_titles';
@@ -53,12 +55,7 @@ export async function searchMovieMeta(request, env) {
   // 可选：带分类时校验归属
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
-    const rows = await db.select('categories', qs({
-      select: 'id', id: `eq.${categoryId}`,
-      ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
-    }));
-    if (!rows.length) throw new HttpError(422, '分类不存在或无权限');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   return ok({ ...result, category_id: categoryId }, request, env);
 }
@@ -152,7 +149,7 @@ export async function createMovie(request, env) {
 
   let categoryId = null;
   if (body.category_id !== undefined && body.category_id !== null) {
-    categoryId = requireUuid(body.category_id, 'category_id');
+    categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
 
@@ -235,7 +232,9 @@ export async function updateMovie(request, env, id) {
   if (body.notes !== undefined) patch.summary = optionalString(body.notes, 'notes', { max: 4000 }) ?? null;
   if (body.is_public !== undefined) patch.is_public = optionalBool(body.is_public, 'is_public');
   if (body.category_id !== undefined) {
-    patch.category_id = body.category_id === null ? null : requireUuid(body.category_id, 'category_id');
+    patch.category_id = body.category_id === null
+      ? null
+      : await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   if (Object.keys(patch).length) {
     await db.update(TABLE, qs(scope), patch);

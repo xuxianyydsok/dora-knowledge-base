@@ -2,12 +2,16 @@
 // 所有操作显式带 user_id，确保数据隔离
 
 import { qs } from './supabase.js';
+import { HttpError } from './response.js';
 
 // 覆盖式设置资源的标签关联
 export async function setResourceTags(db, resourceId, userId, tagIds) {
   if (!Array.isArray(tagIds)) return;
-  // 先清空该资源的标签关联，再写入新的
-  await db.remove('resource_tags', qs({ resource_id: `eq.${resourceId}` }));
+  // 先清空该资源的标签关联，再写入新的（必须带 user_id，避免误删/误写他人关联）
+  await db.remove('resource_tags', qs({
+    resource_id: `eq.${resourceId}`,
+    user_id: `eq.${userId}`
+  }));
   const unique = [...new Set(tagIds)];
   if (unique.length === 0) return;
   const rows = unique.map((tagId) => ({ resource_id: resourceId, tag_id: tagId, user_id: userId }));
@@ -73,13 +77,28 @@ export async function upsertProgress(db, userId, resourceId, { position, duratio
   return rows[0];
 }
 
-// 校验标签 id 是否属于当前用户（或管理员可全量），返回合法 id 列表
-export async function validateTagIds(db, userId, isAdmin, tagIds) {
+// 校验标签 id 是否属于当前用户，返回合法 id 列表。
+// 写操作（创建/更新资源、博客）一律只允许挂当前用户自己的标签，管理员也不例外：
+// 管理员若复用他人标签，会在自己的资源上挂出指向他人标签的关联，越权且污染数据。
+export async function validateTagIds(db, userId, _isAdmin, tagIds) {
   if (!Array.isArray(tagIds) || tagIds.length === 0) return [];
   const unique = [...new Set(tagIds)];
-  const query = isAdmin
-    ? qs({ select: 'id', id: `in.(${unique.join(',')})` })
-    : qs({ select: 'id', id: `in.(${unique.join(',')})`, user_id: `eq.${userId}` });
-  const rows = await db.select('tags', query);
+  const rows = await db.select('tags', qs({
+    select: 'id',
+    id: `in.(${unique.join(',')})`,
+    user_id: `eq.${userId}`
+  }));
   return rows.map((r) => r.id);
+}
+
+// service_role 会绕过 RLS，因此所有写操作引用的 category_id 都必须在业务层校验归属。
+export async function validateCategoryId(db, userId, categoryId) {
+  if (categoryId === null || categoryId === undefined) return null;
+  const rows = await db.select('categories', qs({
+    select: 'id',
+    id: `eq.${categoryId}`,
+    user_id: `eq.${userId}`
+  }));
+  if (!rows.length) throw new HttpError(422, '分类不存在或无权限');
+  return categoryId;
 }
