@@ -24,6 +24,8 @@ import { EmptyState } from '../components/EmptyState.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { toastError, toastSuccess } from '../lib/toast.jsx';
+import { useAuth } from '../lib/auth.jsx';
+import { WATCH_KEY } from './MovieView.jsx';
 
 // 推荐片单：按国家/地区分组，点击即按片名聚合搜索。
 // 仅作为检索入口，不代表只能搜这些——搜索框仍可自由检索全部采集源。
@@ -72,6 +74,7 @@ function yearOf(c) {
 }
 
 export function Movies() {
+  const { isAuthenticated } = useAuth();
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('featured');       // 频道 key | new | search
   const [library, setLibrary] = useState([]);
@@ -164,7 +167,14 @@ export function Movies() {
     finally { setHealthLoading(false); }
   }
 
+  // 访客：不入库，直接进播放页
+  function watch(candidate) {
+    try { sessionStorage.setItem(WATCH_KEY, JSON.stringify(candidate)); } catch { /* ignore */ }
+    route(`/movies/watch/${encodeURIComponent(candidate.source)}/${encodeURIComponent(candidate.external_id)}`);
+  }
+
   async function addFrom(candidate) {
+    if (!isAuthenticated) { watch(candidate); return; }
     setBusy(true);
     try {
       await api.createMovie({

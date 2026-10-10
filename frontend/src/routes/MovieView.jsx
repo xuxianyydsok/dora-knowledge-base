@@ -35,7 +35,21 @@ function trimCast(cast, max = 8) {
   return `${list.slice(0, max).join('、')} 等 ${list.length} 位`;
 }
 
-export function MovieView({ id }) {
+// 访客直接播放（2026-10-09）：/movies/watch/:source/:vid 不入库，直接按采集源详情播放。
+// 片单页点击时会把候选条目放进 sessionStorage，命中则免一次请求。
+export const WATCH_KEY = 'dora:watch';
+function candidateToMovie(c, source, vid) {
+  return {
+    id: null,
+    title: c.title,
+    url: c.playable_url || '',
+    cover_path: c.poster_url || '',
+    title_info: { ...c, source_key: source, source_vod_id: vid }
+  };
+}
+
+export function MovieView({ id, source, vid }) {
+  const preview = !!(source && vid);
   const [movie, setMovie] = useState(null);
   const [error, setError] = useState('');
   const [routeIndex, setRouteIndex] = useState(0);
@@ -46,10 +60,17 @@ export function MovieView({ id }) {
 
   useEffect(() => {
     (async () => {
-      try { setMovie(await api.getMovie(id)); }
-      catch (e) { setError(e.message); }
+      try {
+        if (!preview) { setMovie(await api.getMovie(id)); return; }
+        let cached = null;
+        try { cached = JSON.parse(sessionStorage.getItem(WATCH_KEY) || 'null'); } catch { /* ignore */ }
+        const hit = cached && String(cached.source) === source && String(cached.external_id) === String(vid) ? cached : null;
+        const c = hit || await api.getMovieSourceDetail({ source, external_id: vid });
+        if (!c || !c.title) throw new Error('该片源已失效，换一个结果试试');
+        setMovie(candidateToMovie(c, source, vid));
+      } catch (e) { setError(e.message); }
     })();
-  }, [id]);
+  }, [id, source, vid]);
 
   const t = movie?.title_info || {};
   const poster = t.poster_url || movie?.cover_path;
@@ -75,6 +96,7 @@ export function MovieView({ id }) {
   // 回源：采集源资源且未保存线路时，按 source_key + source_vod_id 拉取详情
   useEffect(() => {
     if (!movie || routes.length) return;
+    if (preview && movie.title_info?.routes?.length) return;
     const sk = t.source_key;
     const sid = t.source_vod_id || t.external_id;
     if (!sk || !sid) return;
@@ -134,9 +156,9 @@ export function MovieView({ id }) {
   return (
     <article class="detail-page">
       <div class="page-bar">
-        <button onClick={() => route('/movies')}><Icon name="arrowLeft" size={15} /> 返回影视库</button>
+        <button onClick={() => (preview && history.length > 1 ? history.back() : route('/movies'))}><Icon name="arrowLeft" size={15} /> 返回影视库</button>
         <span class="spacer" />
-        <button onClick={() => route(`/movies/${movie.id}/edit`)}>编辑</button>
+        {movie.id && <button onClick={() => route(`/movies/${movie.id}/edit`)}>编辑</button>}
       </div>
 
       {/* 详情头：海报模糊铺底 + 大海报 + 信息 */}

@@ -44,6 +44,7 @@ function RouterView() {
       <ProtectedRoute guest path="/movies"><Movies /></ProtectedRoute>
       <ProtectedRoute path="/movies/new"><MovieEdit /></ProtectedRoute>
       <ProtectedRoute path="/movies/:id/edit"><MovieEdit /></ProtectedRoute>
+      <ProtectedRoute guest path="/movies/watch/:source/:vid"><MovieView /></ProtectedRoute>
       <ProtectedRoute guest path="/movies/:id"><MovieView /></ProtectedRoute>
       <ProtectedRoute path="/admin/users"><AdminUsers /></ProtectedRoute>
       <ProtectedRoute guest path="/favorites"><Favorites /></ProtectedRoute>

@@ -330,7 +330,7 @@ display(await tab.screenshot({ format: 'webp' }));
 - 数据：后端 `routes/douban.js`。`GET /api/movies/douban`（豆瓣 /j/search_subjects，边缘缓存 30 分钟）；`GET /api/img/douban`（带 Referer 中转豆瓣海报，m=540×810 / l=1080×1620，缓存 30 天，无需登录）。
 - 访客模式补充：`/api/movies/search`、`/api/movies/source-detail`、`/api/music/search`、`/api/music/lyrics` 这几个只读 POST 也对访客开放（后端 PUBLIC_POST，前端 GUEST_POST）。
 - 未做：豆瓣没有排播数据，参考图里的「本周追剧」日历暂未实现；豆瓣没有「国漫」分类，动漫频道只有日本番剧与动画电影。
-- 已知：访客点采集源结果会走「加入片库」（写操作）而失败，访客播放流程需单独设计。
+- 访客播放（同日）：未登录点采集源结果不再入库，直接进 `/movies/watch/:source/:vid` 播放页（MovieView 预览模式，候选经 sessionStorage 传递，缺失时回源 source-detail）；不记播放进度，不显示编辑按钮。
 
 ## 3. 下一步（按优先级，接手即可开工）
 
