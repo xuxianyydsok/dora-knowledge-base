@@ -19,6 +19,8 @@ import * as fetchers from '../src/lib/fetchers.js';
 import * as imageType from '../src/lib/imageType.js';
 import * as sourceHealth from '../src/lib/sourceHealth.js';
 import * as publicScope from '../src/lib/publicScope.js';
+import * as mediaUrl from '../src/lib/mediaUrl.js';
+import * as movies from '../src/routes/movies.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, '..');
@@ -480,6 +482,114 @@ async function unit() {
     assert(!/favorites/.test(authSrc), 'auth.js 不应再内联 favorites 白名单');
     assert(!/github\/analyze/.test(authSrc), 'auth.js 不应再内联 github/analyze 白名单');
     return 'auth.js 与 publicScope.js 边界一致';
+  });
+
+  // ---- 媒体播放可靠性（2026-10-10：片源无法解析） ----
+  section('UNIT · 媒体直链判定与片源过滤');
+
+  await test('isPlayableUrl: 只认 m3u8/mp4 直链，网页地址不算', async () => {
+    const { isPlayableUrl } = maccms;
+    assert(isPlayableUrl('https://v.gsuus.com/play/x/index.m3u8') === true, 'm3u8 应为直链');
+    assert(isPlayableUrl('https://a.com/movie.mp4?x=1') === true, '带查询串的 mp4 应为直链');
+    assert(isPlayableUrl('https://vip.dytt-kan.com/share/abc123') === false, '分享页不是直链');
+    assert(isPlayableUrl('https://hn.bfvvs.com/play/lejLLq4b') === false, '网页播放页不是直链');
+    assert(isPlayableUrl('') === false, '空地址不是直链');
+    return '5 组断言全过';
+  });
+
+  await test('normalizeVod: 剔除非直链线路与剧集（片源无法解析的根因）', async () => {
+    // 真实形态：一条线路里既有网页分享页，也有真 m3u8；另一条线路全是网页地址
+    const raw = {
+      vod_id: 50482,
+      vod_name: '复仇者联盟4',
+      type_name: '动作片',
+      type_id_1: 1,
+      vod_play_from: 'dyttm3u8$$$dytt',
+      vod_play_url: [
+        'HD国语$https://vip.dytt-kan.com/2025/index.m3u8#HD中字$https://vip.dytt-kan.com/share/abc123',
+        'HD国语$https://vip.dytt-kan.com/share/def456'
+      ].join('$$$')
+    };
+    const out = maccms.normalizeVod(raw, { key: 'dytt', name: '电影天堂' });
+    assert(out.routes.length === 1, `应只剩 1 条含直链的线路，实际 ${out.routes.length}`);
+    assert(out.routes[0].name === 'dyttm3u8', `应保留 dyttm3u8 线路，实际 ${out.routes[0].name}`);
+    assert(out.routes[0].episodes.length === 1, `应只保留 1 个直链剧集，实际 ${out.routes[0].episodes.length}`);
+    assert(out.routes[0].episodes[0].url.endsWith('index.m3u8'), '保留的应是 m3u8');
+    assert(out.playable_url.endsWith('index.m3u8'), 'playable_url 应是 m3u8');
+    assert(out.episode_count === 1, `episode_count 应为 1，实际 ${out.episode_count}`);
+    return '非直链线路/剧集已剔除，playable_url 为 m3u8';
+  });
+
+  await test('normalizeVod: 全部为非直链时兜底保留原始线路（不产生空壳）', async () => {
+    const raw = {
+      vod_id: 1, vod_name: '测试', type_id_1: 1,
+      vod_play_from: 'yun', vod_play_url: '正片$https://x.com/play/123'
+    };
+    const out = maccms.normalizeVod(raw, { key: 'k', name: 'K' });
+    assert(out.routes.length === 1, '兜底应保留原始线路');
+    assert(out.playable_url === null, '无可播直链时 playable_url 应为 null');
+    return '兜底保留原始线路，playable_url 为 null';
+  });
+
+  await test('默认采集源：含 360zy、不含已下线源', async () => {
+    const keys = maccms.getVodSources({}).map((s) => s.key);
+    assert(keys.includes('360zy'), `默认源应包含 360zy，实际：${keys.join(',')}`);
+    for (const dead of ['dytt', 'jszy', 'lzi', 'ffzy', 'zuid', 'ruyi']) {
+      assert(!keys.includes(dead), `默认源不应包含已下线/未采用的 ${dead}`);
+    }
+    assert(maccms.getAnimeClassIdsSync({ key: '360zy' }) !== null, '360zy 应有硬编码动漫类目（可为空数组）');
+    return `默认源 ${keys.length} 个：${keys.join(',')}`;
+  });
+
+  await test('mediaUrl: 音频直链判定与播放地址归一', async () => {
+    const { isDirectAudioUrl, isDirectVideoUrl, resolveAudioPlayback, looksLikeAudioStream, isStaleAudioUrl } = mediaUrl;
+    assert(isDirectAudioUrl('https://m801.music.126.net/x/y.flac') === true, 'flac 应为音频直链');
+    assert(isDirectAudioUrl('https://api.audius.co/v1/tracks/abc/stream') === false, '无后缀端点不是直链');
+    assert(isDirectAudioUrl('https://audius.co/byone/周杰伦-七里香') === false, '平台网页地址不是直链');
+    assert(isDirectVideoUrl('https://a.com/x.m3u8') === true && isDirectVideoUrl('https://a.com/play/1') === false, '影视直链判定');
+
+    // 优先级：完整音轨 > 显式直链 > 试听片段；网页地址一律忽略
+    const full = resolveAudioPlayback({ url: 'https://x/page/1', audio_url: 'https://x/a.flac' });
+    assert(full.url === 'https://x/a.flac' && full.quality === 'full', '应优先完整音轨直链');
+    const fromUrl = resolveAudioPlayback({ url: 'https://x/a.mp3', audio_url: null });
+    assert(fromUrl.url === 'https://x/a.mp3' && fromUrl.quality === 'full', '显式直链 url 应被接受');
+    const trial = resolveAudioPlayback({ url: 'https://x/page/1', audio_url: null, preview_url: 'https://x/p.m4a' });
+    assert(trial.url === 'https://x/p.m4a' && trial.quality === 'preview' && trial.trialOnly === true, '试听片段应标 preview');
+    const none = resolveAudioPlayback({ url: 'https://audius.co/byone/x', audio_url: null, preview_url: null });
+    assert(none.url === null, '只有网页地址时应判为无可用直链');
+
+    // url_stale 体检：无后缀的流式端点算可播（Audius），平台网页地址算疑似失效
+    assert(looksLikeAudioStream('https://api.audius.co/v1/tracks/abc/stream') === true, '无后缀 /stream 端点应视为可播');
+    assert(isStaleAudioUrl('https://api.audius.co/v1/tracks/abc/stream') === false, 'Audius stream 端点不应标 stale');
+    assert(isStaleAudioUrl('https://audius.co/byone/周杰伦-七里香') === true, '平台网页地址应标 stale');
+    assert(isStaleAudioUrl('https://m801.music.126.net/x.flac') === false, 'flac 直链不应标 stale');
+    return '音频/影视直链判定 + 三级优先级 + url_stale 体检共 13 组断言全过';
+  });
+
+  await test('pickBestMovieCandidate: 只接受可信标题，拒绝同名异片', async () => {
+    const { pickBestMovieCandidate } = movies;
+    const cands = [
+      { source: 'guangsu', external_id: '1', title: '流浪地球之大夏战狼', playable_url: 'https://a/1.m3u8', media_type: 'movie' },
+      { source: 'guangsu', external_id: '2', title: '流浪地球2', playable_url: 'https://a/2.m3u8', media_type: 'movie' },
+      { source: 'guangsu', external_id: '3', title: '流浪地球2：再次冒险', playable_url: 'https://a/3.m3u8', media_type: 'movie' }
+    ];
+    const best = pickBestMovieCandidate(cands, { title: '流浪地球2', mediaType: 'movie' });
+    assert(best && best.external_id === '2', `应选完全同名那条，实际 ${best && best.external_id}`);
+
+    // 只有「包含关键词」的衍生片（相关度 4）时，必须拒绝，不能瞎写
+    const onlyDerived = pickBestMovieCandidate(
+      [{ source: 's', external_id: '9', title: '流浪地球之大夏战狼', playable_url: 'https://a/9.m3u8', media_type: 'movie' }],
+      { title: '流浪地球2' }
+    );
+    assert(onlyDerived === null, '只有同名异片候选时应返回 null（拒绝自动写库）');
+
+    // 无直链的候选一律不选
+    const noPlay = pickBestMovieCandidate(
+      [{ source: 's', external_id: '1', title: '测试', playable_url: null, media_type: 'movie' }],
+      { title: '测试' }
+    );
+    assert(noPlay === null, '无可播直链时应返回 null');
+    return '完全同名选中 / 同名异片拒绝 / 无直链拒绝，3 组断言全过';
   });
 }
 

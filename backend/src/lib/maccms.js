@@ -138,17 +138,32 @@ export function isPlayableUrl(url = '') {
 }
 
 // 把一条采集记录整理为统一候选结构
+//
+// 2026-10-10：**过滤非直链线路与剧集**。
+// 采集源的 vod_play_url 里同时混着可直接播放的 m3u8/mp4 和网页地址
+// （分享页 /share/<hash>、网页播放页 /play/<id>、云播页）。后者交给 <video> 必然
+// 报「片源无法解析」，此前它们被原样写进 routes 并在详情页列出来，用户点到就是失败。
+// 因此这里按 isPlayableUrl 只保留真正能播的剧集；若某条线路一个直链都没有就整条丢弃。
+// 兜底：万一全部线路都没有直链（源站格式异常），保留原始线路，避免整条记录变成空壳。
 export function normalizeVod(raw, source) {
-  const routes = parsePlayUrls(raw.vod_play_url).map((eps, i) => ({
+  const rawRoutes = parsePlayUrls(raw.vod_play_url).map((eps, i) => ({
     name: String(raw.vod_play_from || '').split('$$$')[i]?.trim() || `线路${i + 1}`,
     episodes: eps
   }));
+
+  const directRoutes = rawRoutes
+    .map((r) => ({ name: r.name, episodes: r.episodes.filter((e) => isPlayableUrl(e.url)) }))
+    .filter((r) => r.episodes.length);
+  const routes = directRoutes.length ? directRoutes : rawRoutes;
+
   // 含直链 m3u8/mp4 的线路排前面
   routes.sort((a, b) => Number(b.episodes.some((e) => isPlayableUrl(e.url)))
     - Number(a.episodes.some((e) => isPlayableUrl(e.url))));
 
   const first = routes[0];
-  const playable = first?.episodes.find((e) => isPlayableUrl(e.url)) || first?.episodes[0] || null;
+  // playable_url 只认直链：兜底保留的原始线路里可能全是网页地址，
+  // 这时必须给 null（前端据此提示「暂无播放地址」），绝不能把网页地址当播放地址。
+  const playable = first?.episodes.find((e) => isPlayableUrl(e.url)) || null;
   const year = String(raw.vod_year || '').trim();
 
   return {
@@ -286,7 +301,9 @@ const ANIME_CLASS_IDS = {
   jyzy: [24, 25, 26],   // 实测：24=中国动漫 25=日本动漫 26=欧美动漫（2026-10-07 ac=list）
   hhzy: [24, 25, 26],   // 同上（hhzy 与 jyzy 同族分类树）
   subo: [24, 25, 26],   // 同上
-  zy360new: [38, 39, 40]
+  zy360new: [38, 39, 40],
+  // 2026-10-10 实测 ac=list：360zy.com 的 38=国产动漫 39=欧美动漫 40=日韩动漫（与 zy360new 同族）
+  '360zy': [38, 39, 40]
 };
 
 // 同步取类目 ID：命中硬编码表返回数组（可能为空数组），未知源返回 null。
@@ -326,19 +343,31 @@ export const DEFAULT_VOD_SOURCES = [
   { key: 'hhzy', name: '豪华资源', api: 'https://hhzyapi.com/api.php/provide/vod/' },             // 5/5 ~320ms / ~250ms
   { key: 'ikun', name: '艾坤资源', api: 'https://ikunzyapi.com/api.php/provide/vod/' },           // 5/5 ~100ms / ~500ms
   { key: 'zy360new', name: '360资源', api: 'https://360zyzz.com/api.php/provide/vod/' },          // 5/5 ~240ms / ~650ms，目录最深
-  { key: 'mdzy', name: '魔都资源', api: 'https://www.mdzyapi.com/api.php/provide/vod/' },         // 5/5 ~150ms / ~1s（新增）
+  { key: 'mdzy', name: '魔都资源', api: 'https://www.mdzyapi.com/api.php/provide/vod/' },         // 5/5 ~150ms / ~1s（2026-10-09 新增）
+  // 2026-10-10 复测新增：360zy.com 与上面的 zy360new（360zyzz.com）是**两个不同域名**的独立片库，
+  // 实测 5/5 端到端可播（搜索→详情→master→变体→首个 ts 分片 206，直连与经 /api/vod/proxy 均可）。
+  // 分片域名 vod.maowushi.com / vod1/vod2.maowushi.com 为常规 HTTPS 端口。
+  { key: '360zy', name: '360资源(备用)', api: 'https://360zy.com/api.php/provide/vod/' },         // 5/5 搜索~1.3s / 片源~1.3s
 ];
 // 2026-10-09 移除（详见 docs/removed-features.md）：
 //   片源 403（防盗链/地区限制，点进去播不了）：dytt 电影天堂、jszy 极速、ffzy 非凡、zuid 最大
 //   片源 404（链接失效）：lzi 量子
 //   能播但太慢：hongniu 红牛（片源 2.6s，且 1/5 超时）、jyzy 金鹰（片源 6.2s）
-//   文档候选未采用：wujin/bdzy（403）、bfzy（404）、heimuer/tyyszy/wolong/yinghua（搜索接口坏）、ruyi（可播但搜索 1.1s+片源 1.8s）
+//   文档候选未采用：wujin/bdzy（403）、bfzy（404）、heimuer/tyyszy/wolong/yinghua（搜索接口坏）
+//
+// 2026-10-10 复测（5 部片 × 端到端：搜索 → 详情 → master → 变体 → 首个 ts 分片）：
+//   ruyi 如意资源（https://cj.rycjapi.com/api.php/provide/vod/）——**不采用**。
+//     搜索与详情均可用，但 5 部片里有 2 部（复仇者联盟4 / 流浪地球2）**首条结果无 m3u8 直链**，
+//     命中率只有 3/5，不满足「5/5 才收录」的标准；等后续复测稳定再评估。
+//   仍不可用（保持移除）：lzi/ffzy/dytt/zuid/wujin/bfzy/jszy/hongniu/jyzy/dbzy/wolong/kuyun/
+//     tiankong/tyyszy/heimuer/mahua/cjtv/ffzy5 —— 搜索多数能用，但片源 403/404，点进去播不了。
 
 // 已移除的源（保留记录，便于以后复查是否恢复）：
 //   zy360 360资源 https://360zy.com/api.php/provide/vod/
 //     2026-10-07 三次实测均不可用（超时 → HTTP 5xx → 10s 超时），
 //     且其单源耗时（13.3s）超过其余 8 个源之和，会把搜索阶段预算直接顶满、
 //     把典型搜索耗时从 ~3s 拖到 ~11s。移除后其余源实测均在 2.1s 内返回。
+//     2026-10-10 复测已恢复（见上方 360zy 条目）：搜索/详情/片源均正常，耗时回到 ~1.3s。
 
 // 读取配置的采集源：优先 env.VOD_SOURCES，否则用默认列表
 export function getVodSources(env = {}) {

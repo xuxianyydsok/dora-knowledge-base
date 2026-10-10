@@ -109,6 +109,8 @@ const routes = [
   ['GET', '/api/movies/:id', movies.getMovie],
   ['PATCH', '/api/movies/:id', movies.updateMovie],
   ['DELETE', '/api/movies/:id', movies.deleteMovie],
+  // 重新匹配片源（原源下线/死链时，用标题去在用源重搜并回填；仅本人）
+  ['POST', '/api/movies/:id/refresh-source', movies.refreshMovieSource],
   ['GET', '/api/movies/:id/progress', movies.getMovieProgress],
   ['PUT', '/api/movies/:id/progress', movies.saveMovieProgress],
 

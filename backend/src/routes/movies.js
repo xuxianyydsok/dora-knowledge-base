@@ -9,6 +9,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchMovieMeta, fetchMovieLatest, fetchMovieDetailBySource } from '../lib/fetchers.js';
 import { getSourceHealth, getVodSourceHealth as readVodSourceHealth } from '../lib/sourceHealth.js';
+import { getVodSources, titleRelevance } from '../lib/maccms.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool,
   optionalNumber, optionalDateString, requireEnum
@@ -22,8 +23,41 @@ const TABLE = 'resources';
 const EXT = 'movie_titles';
 const TYPE = 'movie';
 
+// 重新匹配片源时的可信阈值：只接受「完全同名 / 前缀命中」的候选。
+// titleRelevance：0=完全同名 1=关键词+第N季 2=关键词+(年份) 3=其他前缀 4=包含 5=不相关。
+// 4/5 属「标题里只是恰好包含关键词」（同名异片、衍生短剧、混剪），一律拒绝，
+// 避免把《流浪地球2》重匹配到《流浪地球之大夏战狼》这类错片。
+const RESOLVE_MAX_RELEVANCE = 3;
+
 function userFilter(user, all) {
   return user.isAdmin && all ? {} : { user_id: `eq.${user.id}` };
+}
+
+// 从重匹配候选里挑「最可信」的一条（纯函数，供离线单测）。
+// 规则：
+//   1) 必须含可播放直链（playable_url），否则对播放毫无意义；
+//   2) 标题相关度必须 ≤ RESOLVE_MAX_RELEVANCE（完全同名/前缀命中），否则视为同名异片，丢弃；
+//   3) 优先与原记录的 media_type 一致（电影别重匹配成剧集）；
+//   4) 再按相关度、标题长度（正片名更短）排序，最后取集数更多者（正片而非片段）。
+// 返回 null 表示「没有足够可信的候选，不要自动写库」。
+export function pickBestMovieCandidate(candidates, { title, mediaType = null } = {}) {
+  const ok = (Array.isArray(candidates) ? candidates : [])
+    .filter((c) => c && c.playable_url && c.external_id && c.source)
+    .map((c) => ({ c, rel: titleRelevance(c.title, title) }))
+    .filter((x) => x.rel <= RESOLVE_MAX_RELEVANCE);
+  if (!ok.length) return null;
+  ok.sort((a, b) => {
+    if (mediaType) {
+      const am = a.c.media_type === mediaType ? 0 : 1;
+      const bm = b.c.media_type === mediaType ? 0 : 1;
+      if (am !== bm) return am - bm;
+    }
+    if (a.rel !== b.rel) return a.rel - b.rel;
+    const lenDiff = String(a.c.title || '').length - String(b.c.title || '').length;
+    if (lenDiff !== 0) return lenDiff;
+    return (b.c.episode_count || 0) - (a.c.episode_count || 0);
+  });
+  return ok[0].c;
 }
 
 // 批量读取影视扩展信息
@@ -361,4 +395,119 @@ export async function getMovieProgress(request, env, id) {
   requireUuid(id, 'id');
   const progress = await getProgress(db, user.id, id);
   return ok(progress || { resource_id: id, position: 0, progress: 0, completed: false }, request, env);
+}
+
+// POST /api/movies/:id/refresh-source  —— 重新匹配片源（仅登录本人；管理员也只看本人）
+//
+// 用途：早期收藏的记录里，source_key 可能是**已下线**的采集源（如 dytt/jszy/lzi），
+// 或保存的 url 是死链。此时前端「立即播放」只会报「片源无法解析」。
+// 本接口用**原标题**去当前所有在用采集源重新搜索，按可信阈值挑一条最佳候选并回填。
+//
+// 安全与正确性约束（重要）：
+//   1) 写操作严格限定 user_id=当前用户；管理员不跨用户写（本接口没有 owner 参数）；
+//   2) 只写回自己名下的 movie 记录与 movie_titles 扩展；
+//   3) **绝不自动写**：由前端管理员/站长主动点击才调用；不确定就返回 404/422 并说明原因；
+//   4) 匹配必须过 pickBestMovieCandidate 的可信阈值，避免把同名异片写错。
+export async function refreshMovieSource(request, env, id) {
+  const { db, user } = await requireAuth(request, env);
+  requireUuid(id, 'id');
+
+  // 读：管理员可读他人，但本接口的写范围仍锁定本人，因此这里也只取本人记录
+  const scope = { id: `eq.${id}`, type: `eq.${TYPE}`, user_id: `eq.${user.id}` };
+  const rows = await db.select(TABLE, qs({ select: '*', ...scope }));
+  if (!rows.length) throw new HttpError(404, '影视不存在或无权限');
+  const resource = rows[0];
+
+  const extRows = await db.select(EXT, qs({ select: '*', resource_id: `eq.${id}`, user_id: `eq.${user.id}` }));
+  const ext = extRows[0] || {};
+  const title = String(resource.title || '').trim();
+  if (!title) throw new HttpError(422, '该记录没有标题，无法重新匹配片源');
+
+  const configured = getVodSources(env);
+  const configuredKeys = new Set(configured.map((s) => s.key));
+  const oldKey = ext.source_key || resource.source || null;
+  const oldKeyUsable = !!(oldKey && configuredKeys.has(oldKey));
+
+  // 先看原源是否还在用：在用就按其 source_vod_id 回源取最新线路（最快、最准）
+  let chosen = null;
+  if (oldKeyUsable) {
+    const vodId = ext.source_vod_id || ext.external_id || null;
+    if (vodId) {
+      try {
+        const detail = await fetchMovieDetailBySource(oldKey, String(vodId), env);
+        if (detail?.playable_url) {
+          chosen = {
+            source: oldKey,
+            source_name: detail.source_name || oldKey,
+            external_id: String(detail.external_id || vodId),
+            title: detail.title || title,
+            media_type: detail.media_type || ext.media_type || 'movie',
+            playable_url: detail.playable_url,
+            routes: detail.routes || null,
+            poster_url: detail.poster_url || null,
+            matched: 'same-source'
+          };
+        }
+      } catch {
+        // 原源取不到（下线/超时/资源被删）→ 落到下面的全源重新搜索
+      }
+    }
+  }
+
+  // 原源不可用或取不到直链：用原标题去当前所有在用源重新搜索
+  if (!chosen) {
+    // 关键词候选：原标题 → 去掉「第N季/部/集」与括号年份后的主标题。
+    // 各源标题写法不统一（「庆余年 第二季」vs「庆余年第二季」vs「庆余年」），
+    // 只搜原标题会漏掉；主标题作**后备关键词**能提高命中，但最终仍由
+    // pickBestMovieCandidate 按原标题的相关度阈值把关，不会因此写错片。
+    const keywords = [title];
+    const base = title.replace(/[\s·:：-]+/g, '').replace(/第[一二三四五六七八九十0-9]{1,3}[季部集].*$/, '')
+      .replace(/[（(]\d{4}[)）].*$/, '').trim();
+    if (base && base !== title) keywords.push(base);
+
+    let best = null;
+    for (const kw of keywords) {
+      const found = await fetchMovieMeta(kw, 30, env);
+      best = pickBestMovieCandidate(found?.candidates, {
+        title,                                   // 仍按**原标题**判定相关度，后备关键词只负责召回
+        mediaType: ext.media_type || null
+      });
+      if (best) break;
+    }
+    if (!best) {
+      throw new HttpError(404, `没有找到与《${title}》足够可信的可用片源，未做任何修改`);
+    }
+    chosen = { ...best, matched: 'researched' };
+  }
+
+  // 回填主资源（严格 user_id 限定）
+  const resourcePatch = { url: chosen.playable_url };
+  if (chosen.poster_url && !resource.cover_path) resourcePatch.cover_path = chosen.poster_url;
+  await db.update(TABLE, qs(scope), resourcePatch);
+
+  // 回填扩展表（严格 user_id 限定）
+  const extPatch = {
+    source_key: chosen.source,
+    source_vod_id: String(chosen.external_id),
+    external_id: String(chosen.external_id),
+    source: chosen.source,
+    routes: chosen.routes || null
+  };
+  const updated = await db.update(EXT, qs({ resource_id: `eq.${id}`, user_id: `eq.${user.id}` }), extPatch);
+  if (!updated.length) {
+    await db.insert(EXT, { resource_id: id, user_id: user.id, media_type: ext.media_type || 'movie', ...extPatch });
+  }
+
+  return ok({
+    ok: true,
+    matched: chosen.matched,
+    title,
+    old_source_key: oldKey,
+    source_key: chosen.source,
+    source_name: chosen.source_name || chosen.source,
+    external_id: String(chosen.external_id),
+    url: chosen.playable_url,
+    route_count: Array.isArray(chosen.routes) ? chosen.routes.length : 0,
+    changed: ['url', 'source_key', 'source_vod_id', 'external_id', 'routes']
+  }, request, env);
 }
