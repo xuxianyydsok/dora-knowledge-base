@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon.jsx';
 import { api } from '../lib/api.js';
 import { API_BASE_URL } from '../lib/config.js';
+import { isDirectVideoUrl } from '../lib/mediaUrl.js';
 
 // 代理兜底：部分资源站分片放在 999/9999/65 等非常规端口，很多网络会拦；
 // 先直连，失败或 6 秒内没拿到画面就改走 Worker 代理（/api/vod/proxy，顺带去广告）。
@@ -65,7 +66,10 @@ export function MoviePlayer({
   const rawSrc = movie?.url || '';
   const [viaProxy, setViaProxy] = useState(false);
   useEffect(() => { setViaProxy(isHls(rawSrc) && proxyHosts().has(hostOf(rawSrc))); }, [rawSrc]);
-  const src = rawSrc && viaProxy ? proxied(rawSrc) : rawSrc;
+  // 最后一道防线：只有 m3u8/mp4 直链才允许进入播放器。
+  // 网页地址（分享页 / 播放页）交给 <video> 只会报「片源无法解析」，
+  // 宁可明确报错，也不要把非直链喂进去。
+  const src = rawSrc && isDirectVideoUrl(rawSrc) ? (viaProxy ? proxied(rawSrc) : rawSrc) : '';
   // 直连失败 → 切代理；已经是代理还失败 → 换下一条线路
   function fallback(reason) {
     if (!viaProxy && isHls(rawSrc)) {
@@ -108,7 +112,14 @@ export function MoviePlayer({
   // —— 加载片源：m3u8 走 hls.js（动态 import，符合重型库懒加载规范）——
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || !src) return;
+    if (!el) return;
+    // 没有可播直链（例如只拿到网页地址）：不要停在「加载中」转圈，直接给出明确提示。
+    if (!src) {
+      setLoadingSrc(false);
+      setPlaying(false);
+      setError('该线路没有可播放的视频直链，请切换其他线路');
+      return undefined;
+    }
     let disposed = false;
     setError(''); setPlaying(false); setCurrent(0); setDuration(0); setLoadingSrc(true);
     setPanel('');

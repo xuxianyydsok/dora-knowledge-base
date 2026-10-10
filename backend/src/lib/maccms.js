@@ -144,7 +144,9 @@ export function isPlayableUrl(url = '') {
 // （分享页 /share/<hash>、网页播放页 /play/<id>、云播页）。后者交给 <video> 必然
 // 报「片源无法解析」，此前它们被原样写进 routes 并在详情页列出来，用户点到就是失败。
 // 因此这里按 isPlayableUrl 只保留真正能播的剧集；若某条线路一个直链都没有就整条丢弃。
-// 兜底：万一全部线路都没有直链（源站格式异常），保留原始线路，避免整条记录变成空壳。
+// 兜底：万一全部线路都没有直链（源站格式异常），保留原始线路**仅作诊断**，
+// 并打上 diagnostic 标记。此时 playable_url 必为 null，前端按标记/直链判定后
+// 只会显示空态与「重新匹配片源」，**绝不把网页地址当播放地址**。
 export function normalizeVod(raw, source) {
   const rawRoutes = parsePlayUrls(raw.vod_play_url).map((eps, i) => ({
     name: String(raw.vod_play_from || '').split('$$$')[i]?.trim() || `线路${i + 1}`,
@@ -154,7 +156,11 @@ export function normalizeVod(raw, source) {
   const directRoutes = rawRoutes
     .map((r) => ({ name: r.name, episodes: r.episodes.filter((e) => isPlayableUrl(e.url)) }))
     .filter((r) => r.episodes.length);
-  const routes = directRoutes.length ? directRoutes : rawRoutes;
+  // 有直链就只用直链；一条都没有时保留原始线路作诊断（打标记，前端不得展示为可播）。
+  const hasDirect = directRoutes.length > 0;
+  const routes = hasDirect
+    ? directRoutes
+    : rawRoutes.map((r) => ({ ...r, diagnostic: true }));
 
   // 含直链 m3u8/mp4 的线路排前面
   routes.sort((a, b) => Number(b.episodes.some((e) => isPlayableUrl(e.url)))
@@ -164,6 +170,9 @@ export function normalizeVod(raw, source) {
   // playable_url 只认直链：兜底保留的原始线路里可能全是网页地址，
   // 这时必须给 null（前端据此提示「暂无播放地址」），绝不能把网页地址当播放地址。
   const playable = first?.episodes.find((e) => isPlayableUrl(e.url)) || null;
+  // 集数只统计真正的直链剧集：兜底线路里混着网页地址，不能算作「集」。
+  const directEpisodeCount = routes.reduce(
+    (n, r) => n + r.episodes.filter((e) => isPlayableUrl(e.url)).length, 0);
   const year = String(raw.vod_year || '').trim();
 
   return {
@@ -186,7 +195,7 @@ export function normalizeVod(raw, source) {
     remarks: raw.vod_remarks || null,
     director: raw.vod_director || null,
     cast_list: raw.vod_actor || null,
-    episode_count: first?.episodes.length || 0,
+    episode_count: directEpisodeCount,
     // 外部详情页：源站无稳定详情页，统一指向采集接口
     page_url: null,
     // 可直接播放的地址（m3u8/mp4），以及全部线路供详情页选集

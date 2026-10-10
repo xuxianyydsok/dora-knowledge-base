@@ -8,13 +8,10 @@ import { TagChip } from '../components/TagChip.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { toastSuccess, toastError } from '../lib/toast.jsx';
+import { cleanRoutes, hasOnlyWebRoutes, resolvePlayUrl } from '../lib/mediaUrl.js';
 
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 
-// 只展示可直连播放的剧集（与后端 isPlayableUrl 同规则）：
-// 采集源返回的 vod_play_url 里混着分享页 /share/xxx、网页播放页 /play/123 这类**非直链**，
-// 之前它们也会出现在线路/剧集列表里，用户点到必然报「片源无法解析」。
-const isPlayable = (url = '') => /\.(m3u8|mp4)(\?|#|$)/i.test(String(url));
 // 采集源的线路标识（vod_play_from）是站点内部代号，展示时换成人能读的源名
 const ROUTE_LABELS = [
   [/lzm3u8|lzi/i, '量子资源'],
@@ -118,11 +115,16 @@ export function MovieView({ id, source, vid }) {
   const routes = useMemo(() => {
     const saved = Array.isArray(t.routes) ? t.routes : [];
     const raw = saved.length ? saved : (Array.isArray(liveRoutes) ? liveRoutes : []);
-    const cleaned = raw
-      .map((r) => ({ name: r.name, episodes: (r.episodes || []).filter((e) => isPlayable(e.url)) }))
-      .filter((r) => r.episodes.length);
-    // 兜底：清洗后为空（源站格式异常）时保留原始线路，避免整页无内容
-    return cleaned.length ? cleaned : raw;
+    // 清洗后为空就保持为空——**绝不回退原始线路**。
+    // 原始线路可能全是分享页/网页播放页，回退等于把「片源无法解析」重新交给用户。
+    return cleanRoutes(raw);
+  }, [t.routes, liveRoutes]);
+
+  // 有线路但全是网页地址 → 空态文案要说明是「片源失效」，而不是笼统的「暂无播放地址」
+  const onlyWebRoutes = useMemo(() => {
+    const saved = Array.isArray(t.routes) ? t.routes : [];
+    const raw = saved.length ? saved : (Array.isArray(liveRoutes) ? liveRoutes : []);
+    return hasOnlyWebRoutes(raw);
   }, [t.routes, liveRoutes]);
 
   // 线路标签去重：同一采集源可能出现多条线路（m3u8 / mp4），加序号区分
@@ -158,10 +160,12 @@ export function MovieView({ id, source, vid }) {
 
   const episodes = routes[routeIndex]?.episodes || [];
   const currentEpisode = episodes[epIndex] || null;
-  // 播放地址优先级：选中剧集 > 保存的播放直链（保存的地址必须是直链才用）
-  const playUrl = currentEpisode?.url || (isPlayable(movie?.url) ? movie.url : '') || '';
-  // 存库地址不是直链（历史数据里的分享页/网页地址）→ 视为「失效」，供站长看到重匹配入口
-  const urlStale = !!movie?.url && !isPlayable(movie.url) && !episodes.length;
+  // 播放地址优先级：选中剧集 > 保存的播放直链。
+  // 两者都必须是 m3u8/mp4 直链，否则返回 ''（显示空态）——绝不把网页地址交给播放器。
+  const playUrl = resolvePlayUrl(currentEpisode?.url, movie?.url);
+  // 保存的地址不是直链（历史数据里的分享页/网页地址），或线路里只剩网页地址
+  // → 视为「片源失效」，供站长看到重匹配入口。
+  const urlStale = (!!movie?.url && !resolvePlayUrl(null, movie.url)) || onlyWebRoutes;
 
   // 进入播放时隐藏全局顶栏，营造影院模式；离开时恢复
   useEffect(() => {
@@ -253,7 +257,11 @@ export function MovieView({ id, source, vid }) {
                     <Icon name="play" size={15} /> 立即播放
                   </button>
                 : <span class="muted" style="font-size:13px">
-                    暂无播放地址{loadingRoutes ? '（正在获取线路…）' : '，请在编辑页补充或换一个采集源'}
+                    {loadingRoutes
+                      ? '正在获取线路…'
+                      : (urlStale
+                        ? '该片源只剩网页地址，无法直接播放；请在编辑页补充视频直链，或换一个采集源'
+                        : '暂无播放地址，请在编辑页补充或换一个采集源')}
                   </span>}
               {/* 站长专用：原采集源下线/直链失效时重新匹配（后端只允许本人写） */}
               {isAdmin && movie.id && (!playUrl || urlStale) && (

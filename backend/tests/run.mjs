@@ -23,6 +23,8 @@ import * as timelineMerge from '../src/lib/timelineMerge.js';
 import * as timelineRoute from '../src/routes/timeline.js';
 import * as mediaUrl from '../src/lib/mediaUrl.js';
 import * as movies from '../src/routes/movies.js';
+// 前端纯函数（无依赖、无 import，Node 可直接加载）：验证前后端直链判定一致
+import * as feMediaUrl from '../../frontend/src/lib/mediaUrl.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, '..');
@@ -744,7 +746,78 @@ async function unit() {
     const out = maccms.normalizeVod(raw, { key: 'k', name: 'K' });
     assert(out.routes.length === 1, '兜底应保留原始线路');
     assert(out.playable_url === null, '无可播直链时 playable_url 应为 null');
+    assert(out.routes[0].diagnostic === true, '兜底线路必须打 diagnostic 标记，供前端识别为不可播');
+    assert(out.episode_count === 0, `网页地址不应算作剧集，实际 ${out.episode_count}`);
     return '兜底保留原始线路，playable_url 为 null';
+  });
+
+  // ---- 前端播放地址归一（2026-10-10 回归：清洗为空后回退 raw，网页地址仍进播放器） ----
+  section('UNIT · 前端播放地址归一（回归防护）');
+
+  await test('前端 isDirectVideoUrl: 与后端 isPlayableUrl 同规则', async () => {
+    const cases = [
+      'https://v.gsuus.com/play/x/index.m3u8',
+      'https://a.com/movie.mp4?x=1',
+      'https://vip.dytt-kan.com/share/abc123',
+      'https://hn.bfvvs.com/play/lejLLq4b',
+      '',
+      null
+    ];
+    for (const u of cases) {
+      assert(
+        feMediaUrl.isDirectVideoUrl(u) === maccms.isPlayableUrl(u),
+        `前后端判定不一致：${u}（前端 ${feMediaUrl.isDirectVideoUrl(u)} / 后端 ${maccms.isPlayableUrl(u)}）`
+      );
+    }
+    return `${cases.length} 组前后端判定一致`;
+  });
+
+  await test('前端 cleanRoutes: 清洗为空时绝不回退原始网页线路', async () => {
+    // 回归场景：源站只给了分享页/播放页，清洗后必须为空（旧实现在此回退 raw → 网页地址进播放器）
+    const webOnly = [
+      { name: 'dytt', episodes: [{ name: 'HD', url: 'https://vip.dytt-kan.com/share/abc123' }] },
+      { name: 'lzi', episodes: [{ name: '正片', url: 'https://hn.bfvvs.com/play/lejLLq4b' }] }
+    ];
+    assert(feMediaUrl.cleanRoutes(webOnly).length === 0, '全是网页地址时应清洗为空，不得回退 raw');
+    assert(feMediaUrl.hasOnlyWebRoutes(webOnly) === true, '应识别出「只剩网页地址」');
+
+    // 混合场景：只保留直链剧集，网页剧集剔除
+    const mixed = [{
+      name: 'dyttm3u8',
+      episodes: [
+        { name: 'HD', url: 'https://vip.dytt-kan.com/2025/index.m3u8' },
+        { name: 'HD2', url: 'https://vip.dytt-kan.com/share/abc123' }
+      ]
+    }];
+    const cleaned = feMediaUrl.cleanRoutes(mixed);
+    assert(cleaned.length === 1 && cleaned[0].episodes.length === 1, '应只保留 1 个直链剧集');
+    assert(feMediaUrl.hasOnlyWebRoutes(mixed) === false, '含直链时不应判为只剩网页');
+    return '空回退已消除，混合场景只留直链';
+  });
+
+  await test('前端 resolvePlayUrl: 剧集与存库地址都必须是直链', async () => {
+    const { resolvePlayUrl } = feMediaUrl;
+    assert(resolvePlayUrl('https://a.com/x.m3u8', 'https://b.com/y.mp4') === 'https://a.com/x.m3u8', '剧集直链优先');
+    assert(resolvePlayUrl(null, 'https://b.com/y.mp4') === 'https://b.com/y.mp4', '剧集缺失时回退存库直链');
+    assert(resolvePlayUrl(null, 'https://vip.dytt-kan.com/share/abc123') === '', '存库网页地址必须返回空');
+    assert(resolvePlayUrl('https://hn.bfvvs.com/play/lejLLq4b', null) === '', '剧集网页地址必须返回空');
+    assert(resolvePlayUrl('', '') === '', '都为空时返回空');
+    return '5 组断言全过（网页地址一律不产生播放地址）';
+  });
+
+  await test('契约：MovieView / MoviePlayer 不得再把未校验地址喂给播放器', async () => {
+    // 源码契约（防回归，不做脆弱全文匹配）：这两处是 2026-10-10 回归的根因位置。
+    const view = readFileSync(join(FRONTEND_SRC, 'routes', 'MovieView.jsx'), 'utf8');
+    const player = readFileSync(join(FRONTEND_SRC, 'components', 'MoviePlayer.jsx'), 'utf8');
+    // 详情页必须走统一归一函数，且不得再出现「回退 raw」的写法
+    assert(/from '\.\.\/lib\/mediaUrl\.js'/.test(view), 'MovieView 应 import lib/mediaUrl.js');
+    assert(/resolvePlayUrl\(/.test(view), 'MovieView 应用 resolvePlayUrl 计算播放地址');
+    assert(/cleanRoutes\(/.test(view), 'MovieView 应用 cleanRoutes 清洗线路');
+    assert(!/cleaned\.length \? cleaned : raw/.test(view), 'MovieView 不得再回退原始线路');
+    // 播放器必须对地址做直链校验
+    assert(/from '\.\.\/lib\/mediaUrl\.js'/.test(player), 'MoviePlayer 应 import lib/mediaUrl.js');
+    assert(/isDirectVideoUrl\(/.test(player), 'MoviePlayer 应对播放地址做直链校验');
+    return 'MovieView / MoviePlayer 已统一走直链校验';
   });
 
   await test('默认采集源：含 360zy、不含已下线源', async () => {
