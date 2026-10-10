@@ -47,6 +47,7 @@ function toRow(item, run) {
       homepage: d.homepage || null,
       avatar_url: d.owner?.avatar_url || null,
       archived: !!d.archived,
+      license: d.license?.spdx_id && d.license.spdx_id !== 'NOASSERTION' ? d.license.spdx_id : null,
       pushed_at: d.pushed_at || d.updated_at || null,
       starred_at: item.starred_at || null
     }
@@ -62,9 +63,10 @@ export async function syncStarsPage(env, userId, page, run) {
     const rows = list.map((it) => toRow(it, run));
     const names = rows.map((r) => `"${r.title.replace(/"/g, '')}"`).join(',');
     const existing = await db.select(TABLE, qs({
-      select: 'id,title', type: `eq.${TYPE}`, user_id: `eq.${userId}`, title: `in.(${names})`
+      select: 'id,title,ai:metadata->ai', type: `eq.${TYPE}`, user_id: `eq.${userId}`, title: `in.(${names})`
     }));
     const idByName = new Map(existing.map((r) => [r.title.toLowerCase(), r.id]));
+    const aiByName = new Map(existing.filter((r) => r.ai).map((r) => [r.title.toLowerCase(), r.ai]));
     const seen = new Set();
     const body = [];
     for (const r of rows) {
@@ -73,7 +75,9 @@ export async function syncStarsPage(env, userId, page, run) {
       seen.add(key);
       body.push({
         id: idByName.get(key) || crypto.randomUUID(),
-        user_id: userId, type: TYPE, source: 'github', cover_path: null, is_public: false, ...r
+        user_id: userId, type: TYPE, source: 'github', cover_path: null, is_public: false, ...r,
+        // 保留已有的 AI 解读（upsert 会整列覆盖 metadata）
+        metadata: aiByName.has(key) ? { ...r.metadata, ai: aiByName.get(key) } : r.metadata
       });
     }
     // 按主键 upsert：已有的更新，新的插入
@@ -108,7 +112,7 @@ async function countRun(env, userId, run) {
   return Number(range.split('/')[1]) || 0;
 }
 
-const LITE = 'id,title,url,summary,stars:metadata->stars,forks:metadata->forks,language:metadata->>language,topics:metadata->topics,homepage:metadata->>homepage,archived:metadata->archived,pushed_at:metadata->>pushed_at,starred_at:metadata->>starred_at,avatar_url:metadata->>avatar_url';
+const LITE = 'id,title,url,summary,ai:metadata->ai,license:metadata->>license,stars:metadata->stars,forks:metadata->forks,language:metadata->>language,topics:metadata->topics,homepage:metadata->>homepage,archived:metadata->archived,pushed_at:metadata->>pushed_at,starred_at:metadata->>starred_at,avatar_url:metadata->>avatar_url';
 // 列表接口用：只取需要的字段，PostgREST 单次最多 1000 行，分页读完
 export async function selectAllGithubLite(db, filter) {
   const out = [];

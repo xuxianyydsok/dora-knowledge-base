@@ -375,6 +375,14 @@ display(await tab.screenshot({ format: 'webp' }));
 - 前端 `Github.jsx` 重写：标题 + 大搜索框、左侧语言/热门话题筛选（窄屏变横向滑动）、紧凑列表（点开看话题/主页）、排序（最近收藏/Star 最多/最近更新）、每页 30。
 - 图谱：没有关联博客/标签的 GitHub 仓库不进图谱，避免上千孤立点。
 
+## 2.21 GitHub 收藏 AI 中文解读 + GithubStarsManager 风格页面；主题改为白天/素雅（2026-10-09）
+
+- 主题：白天（默认）/ 素雅（sepia，参考 GithubStarsManager，MIT），暗色主题移除（见 removed-features.md）。
+- `backend/src/lib/githubAi.js`：Workers AI（`[ai] binding = "AI"`，模型 `@cf/qwen/qwen3-30b-a3b-fp8`，实测约 8 neurons/个，免费每天 10k neurons ≈ 1,200 个）。定时任务 `* * * * *` 每分钟解读 2 个未解读的仓库：README 走 raw.githubusercontent.com 取前 2000 字 → 用户确认的提示词（one_line / summary / tags(14 个固定分类) / keywords / platforms）→ 写 `metadata.ai`。失败 3 次跳过；额度用完不计失败。
+- Star 同步 upsert 时保留已有 `metadata.ai`；新增 `metadata.license`。
+- 前端 `Github.jsx` 第二版：左栏「应用分类」（14 类 + 待解读）+「热门话题」，右侧搜索卡（语言/平台/排序/同步）→ 工具条（AI 解读 / 原始描述、计数）→ 仓库卡片。左栏与搜索卡同行顶端对齐、sticky、自身滚动。
+- 未做：重新解读 / 手动改分类 / 分类锁定（站长功能，等用户要求）。
+
 ## 3. 下一步（按优先级，接手即可开工）
 
 0. **【待用户决定】首页横幅换成站长自己的素材**：用户手上有 3 段视频 + 若干张 5–6 MB 高清图，想放进首页横幅轮换（预算约 20 MB）。等用户发原文件后：图片缩到 2560 宽 WebP（约 300–800 KB），视频去音轨、1080p、截 10–15 秒循环 MP4（每段 3–8 MB，≤25 MB Pages 单文件上限）+ 一张截图做 poster，手机端只显示截图；压好先给用户看大小和截图再上线。代码入口：`Posts.jsx` 的 `BANNERS`（目前只支持图片，加视频需扩展渲染）。
