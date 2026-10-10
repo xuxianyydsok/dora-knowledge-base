@@ -63,3 +63,10 @@
 
 **原因**：用户觉得首页顶部不好看。搜索框和「分类/标签/归档/写文章」移到新的顶部高清横幅里（大号圆角搜索框），分类条只放分类、单行横向滚动并显示篇数；「首页」按钮改名「全部」。
 **恢复**：从 git 历史取回 `frontend/src/routes/Posts.jsx`（8c52f80 版本）。
+
+## GitHub 页的「粘贴链接手动添加」、卡片画廊/时间流、单个刷新与删除（已移除，2026-10-09）
+
+**原因**：用户要求 GitHub 页改为同步自己在 GitHub 上的 Star（约 1,338 个），不要卡片形式；采纳 Hark 建议：去掉手动添加，GitHub 上取消收藏后 Dora 同步删除，按语言 + 话题自动分组。
+**现在的行为**：`/github` 为紧凑列表 + 语言/话题筛选 + 搜索 + 排序；数据由 Worker 定时任务每天同步（`backend/src/lib/githubStars.js`），站长可点「立即同步」。
+**注意**：同步会删除 resources 表里不在 GitHub Star 中的 github 类型记录（包括以前手动添加的）。
+**恢复**：从 git 历史取回 `frontend/src/routes/Github.jsx`（f8abbc1 版本）；后端 `POST /api/github`、`PATCH/DELETE /api/github/:id` 仍保留未删。要停掉同步：`backend/wrangler.toml` 把 `crons` 改回 `[]`。

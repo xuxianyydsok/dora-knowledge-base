@@ -8,6 +8,7 @@ import { qs } from '../lib/supabase.js';
 import { fetchGithubMeta } from '../lib/fetchers.js';
 import { requireString, optionalString, requireUuid, optionalBool } from '../lib/validate.js';
 import { setResourceTags, withTags, validateTagIds } from '../lib/resources.js';
+import { syncStarsPage, selectAllGithubLite } from '../lib/githubStars.js';
 
 const TABLE = 'resources';
 const TYPE = 'github';
@@ -36,20 +37,29 @@ export async function fetchGithubInfo(request, env) {
   return ok({ meta, category_id: categoryId }, request, env);
 }
 
-// GET /api/github
+// GET /api/github —— 收藏列表（同步自 GitHub Star，可能上千条：只取列表需要的字段，按收藏时间倒序）
 export async function listGithub(request, env) {
   const { db, user } = await requireAuth(request, env);
   const url = new URL(request.url);
   const all = url.searchParams.get('all') === 'true';
+  const rows = await selectAllGithubLite(db, userFilter(user, all));
+  return ok(rows, request, env);
+}
 
-  const filters = { type: `eq.${TYPE}`, ...userFilter(user, all) };
-  const categoryId = url.searchParams.get('category_id');
-  if (categoryId) filters.category_id = `eq.${categoryId}`;
-
-  const rows = await db.select(TABLE, qs({
-    select: '*', ...filters, order: 'created_at.desc'
-  }));
-  return ok(await withTags(db, rows), request, env);
+// POST /api/github/sync { page, run } —— 站长手动同步一页（前端按页循环，直到 done）
+export async function syncGithub(request, env) {
+  const { user } = await requireAuth(request, env);
+  if (!user.isAdmin) throw new HttpError(403, '只有站长可以同步 GitHub 收藏');
+  const body = await readJson(request);
+  const page = Number(body.page) || 1;
+  if (page < 1 || page > 100) throw new HttpError(422, 'page 超出范围');
+  const run = requireString(body.run, 'run', { max: 60 });
+  if (!/^[\w-]+$/.test(run)) throw new HttpError(422, 'run 格式不正确');
+  try {
+    return ok(await syncStarsPage(env, user.id, page, run), request, env);
+  } catch (e) {
+    throw new HttpError(502, e.message);
+  }
 }
 
 // GET /api/github/:id

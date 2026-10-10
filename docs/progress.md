@@ -367,6 +367,14 @@ display(await tab.screenshot({ format: 'webp' }));
 - 阅读页：无封面文章不再把 1129×678 的默认图拉伸成宽屏，改用 `banner-hd.webp`，高度约 220px，浅色底深色字（`.pv-hero.is-default`）。有 `cover_path` 的文章不变。列表/大卡封面不变。
 - 顶栏：去掉 ≤920px 的三横线/叉号抽屉，一级导航改为横向滑动（记录在 removed-features.md）。
 
+## 2.20 GitHub 页改为同步 GitHub Star（2026-10-09）
+
+- 后端 `lib/githubStars.js`：同步 `GITHUB_STARS_USER`（wrangler.toml vars，= xuxianyydsok）的公开 Star 到 resources(type=github)，按页处理（每页 100，Workers 免费版单次 CPU 10ms，不能一次解析上千仓库）。每行写 `metadata.sync_run`，最后一页核对本轮写入数后删除不属于本轮的行（= 已取消收藏）。
+- 触发：定时任务 `*/5 2-3 * * *`（每天 UTC 02:00–03:55，每 5 分钟一页，最多 24 页）；站长 `POST /api/github/sync {page, run}`，前端「立即同步」按页循环。可选 secret `GITHUB_TOKEN` 提升 GitHub 限速。
+- `GET /api/github` 改为只返回列表字段（stars/language/topics/pushed_at/starred_at…）并分页读完（PostgREST 单次 1000 行上限）。
+- 前端 `Github.jsx` 重写：标题 + 大搜索框、左侧语言/热门话题筛选（窄屏变横向滑动）、紧凑列表（点开看话题/主页）、排序（最近收藏/Star 最多/最近更新）、每页 30。
+- 图谱：没有关联博客/标签的 GitHub 仓库不进图谱，避免上千孤立点。
+
 ## 3. 下一步（按优先级，接手即可开工）
 
 0. **【待用户决定】首页横幅换成站长自己的素材**：用户手上有 3 段视频 + 若干张 5–6 MB 高清图，想放进首页横幅轮换（预算约 20 MB）。等用户发原文件后：图片缩到 2560 宽 WebP（约 300–800 KB），视频去音轨、1080p、截 10–15 秒循环 MP4（每段 3–8 MB，≤25 MB Pages 单文件上限）+ 一张截图做 poster，手机端只显示截图；压好先给用户看大小和截图再上线。代码入口：`Posts.jsx` 的 `BANNERS`（目前只支持图片，加视频需扩展渲染）。

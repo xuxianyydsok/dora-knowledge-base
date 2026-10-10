@@ -51,8 +51,12 @@ export async function getGraph(request, env) {
   postTags.forEach((l) => push(l.post_id, l.tag_id, 'post-tag'));
   resourceTags.forEach((l) => push(l.resource_id, l.tag_id, 'resource-tag'));
 
+  // GitHub Star 同步进来的仓库可能上千个：图谱里只保留和博客/标签有关联的，避免一屏孤立点
+  const linked = new Set(edges.flatMap((e) => [e.source, e.target]));
+  const shown = nodes.filter((n) => !(n.type === 'resource' && n.resource_type === 'github' && !linked.has(n.id)));
+
   return ok({
-    nodes,
+    nodes: shown,
     edges,
     stats: {
       posts: posts.length,

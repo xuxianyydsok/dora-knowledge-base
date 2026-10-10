@@ -12,7 +12,7 @@ import { LoadingState } from '../components/StateView.jsx';
 const FEATURES = [
   { icon: 'blog', tone: 'indigo', title: 'HTML 博客', desc: '原生 HTML 正文，支持 KaTeX、Three.js、Mermaid、Chart.js 自定义标签，重型库按需懒加载。' },
   { icon: 'video', tone: 'rose', title: '学习视频库', desc: '粘贴 B站 / YouTube 链接自动抓取元信息，内嵌播放器与学习进度记忆。' },
-  { icon: 'github', tone: 'slate', title: 'GitHub 收藏', desc: '保存仓库并抓取 Star、语言、描述，一键刷新最新数据。' },
+  { icon: 'github', tone: 'slate', title: 'GitHub 收藏', desc: '自动同步 GitHub 上的 Star 收藏，按语言、话题筛选与搜索。' },
   { icon: 'movie', tone: 'violet', title: '影视库', desc: '电影 / 剧集元数据抓取（海报、简介、类型、上映时间），HTML5 播放与观看进度。' },
   { icon: 'music', tone: 'teal', title: '音乐收藏', desc: '歌曲元信息搜索、封面与播放地址管理，内置音频播放器与进度记忆。' },
 ];

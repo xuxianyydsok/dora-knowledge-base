@@ -12,10 +12,11 @@ workers_dev = true
 CORS_ORIGINS = "https://dora.xuguochen.de5.net,http://localhost:5173,http://127.0.0.1:5173"
 # 访客模式：未登录也能只读浏览站长的内容（写操作仍需登录）。恢复强制登录改为 "false"
 PUBLIC_MODE = "true"
+GITHUB_STARS_USER = "xuxianyydsok"   # /github 页同步此账号的 GitHub Star
 
 # 不使用 Cron（RSS 模块已移除，显式清空已有定时触发器）
 [triggers]
-crons = []
+crons = ["*/5 2-3 * * *"]   # GitHub Star 同步：每天 UTC 02:00–03:55（北京时间 10:00） 每 5 分钟一页（最多 24 页 = 2400 个）
 
 # NewsNow 热榜服务（独立 Worker，源码 newsnext/newsnow，MIT），通过 service binding 内部调用
 [[services]]

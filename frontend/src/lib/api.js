@@ -80,6 +80,7 @@ export const api = {
   createGithub: (body) => request('/api/github', { method: 'POST', body }),
   updateGithub: (id, body) => request(`/api/github/${id}`, { method: 'PATCH', body }),
   deleteGithub: (id) => request(`/api/github/${id}`, { method: 'DELETE' }),
+  syncGithub: (page, run) => request('/api/github/sync', { method: 'POST', body: { page, run } }),
 
   // 博客
   listPosts: (params = '') => request(`/api/posts${params}`),

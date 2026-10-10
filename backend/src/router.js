@@ -61,6 +61,7 @@ const routes = [
   ['GET', '/api/github', github.listGithub],
   ['POST', '/api/github', github.createGithub],
   ['POST', '/api/github/fetch', github.fetchGithubInfo],
+  ['POST', '/api/github/sync', github.syncGithub],
   ['GET', '/api/github/:id', github.getGithub],
   ['PATCH', '/api/github/:id', github.updateGithub],
   ['DELETE', '/api/github/:id', github.deleteGithub],
