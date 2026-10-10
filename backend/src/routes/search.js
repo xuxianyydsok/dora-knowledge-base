@@ -38,6 +38,7 @@ export async function search(request, env) {
       limit: String(limit)
     };
     if (!all) filters.user_id = `eq.${user.id}`;
+    if (user.isGuest) filters.status = 'eq.published';   // 访客只搜已发布
     const posts = await db.select('posts', qs(filters));
     results.push(...posts.map((p) => ({ kind: 'post', ...p })));
   }

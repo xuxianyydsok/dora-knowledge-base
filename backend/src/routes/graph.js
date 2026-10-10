@@ -17,7 +17,7 @@ export async function getGraph(request, env) {
 
   // 节点：博客、资源、标签
   const [posts, resources, tags] = await Promise.all([
-    db.select('posts', qs({ select: 'id,title,status', ...userFilter })),
+    db.select('posts', qs({ select: 'id,title,status', ...userFilter, ...(user.isGuest ? { status: 'eq.published' } : {}) })),
     db.select('resources', qs({ select: 'id,type,title,url', ...userFilter })),
     db.select('tags', qs({ select: 'id,name,color', ...userFilter }))
   ]);

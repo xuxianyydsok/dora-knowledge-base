@@ -2,6 +2,9 @@
 // - requireAuth：校验 Supabase Auth JWT，加载 user_profiles 角色信息
 // - requireAdmin：在 requireAuth 基础上强制要求 role=admin（供 MCP 与管理员接口复用）
 // 普通用户仅能操作自己的数据；管理员可查看全部。
+// - 访客模式（env.PUBLIC_MODE="true"，2026-10-09 起开启）：未带令牌的 GET 请求、且路径在
+//   PUBLIC_READ 白名单内时，以「站长」（最早创建的 admin）身份只读访问，user.isGuest=true。
+//   写操作、进度、备份、通知、偏好、管理员接口仍必须登录。关闭：把 PUBLIC_MODE 改成 "false"。
 
 import { verifyJwt } from '../lib/jwt.js';
 import { SupabaseClient, qs } from '../lib/supabase.js';
@@ -13,9 +16,48 @@ function extractToken(request) {
   return match ? match[1].trim() : null;
 }
 
+// 访客可只读访问的接口（不含 /progress 等个人数据）
+const PUBLIC_READ = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph)(\/|$)/;
+
+let ownerCache = null;
+
+async function guestContext(request, env) {
+  if (env.PUBLIC_MODE !== 'true' || request.method !== 'GET') return null;
+  const { pathname } = new URL(request.url);
+  if (!PUBLIC_READ.test(pathname) || pathname.endsWith('/progress')) return null;
+
+  const db = new SupabaseClient(env);
+  if (!ownerCache) {
+    const rows = await db.select('user_profiles', qs({
+      role: 'eq.admin', select: '*', order: 'created_at.asc', limit: '1'
+    }));
+    ownerCache = Array.isArray(rows) ? rows[0] : null;
+  }
+  if (!ownerCache) return null;
+
+  return {
+    db,
+    token: null,
+    user: {
+      id: ownerCache.id,
+      email: null,
+      role: 'guest',
+      plan: ownerCache.plan,
+      username: ownerCache.username,
+      displayName: ownerCache.display_name,
+      isAdmin: false,
+      isGuest: true
+    }
+  };
+}
+
 export async function requireAuth(request, env) {
   const token = extractToken(request);
-  if (!token) throw new HttpError(401, '缺少访问令牌');
+  if (!token) {
+    const guest = await guestContext(request, env);
+    if (guest) return guest;
+    throw new HttpError(401, '缺少访问令牌');
+  }
 
   let payload;
   try {

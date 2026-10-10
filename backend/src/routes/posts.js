@@ -100,7 +100,8 @@ export async function listPosts(request, env) {
 
   const filters = { ...userFilter(user, all) };
   const status = url.searchParams.get('status');
-  if (status) filters.status = `eq.${requireEnum(status, 'status', ['draft', 'published'])}`;
+  if (user.isGuest) filters.status = 'eq.published';   // 访客只看已发布
+  else if (status) filters.status = `eq.${requireEnum(status, 'status', ['draft', 'published'])}`;
   const categoryId = url.searchParams.get('category_id');
   if (categoryId) filters.category_id = `eq.${categoryId}`;
 
@@ -124,6 +125,7 @@ export async function getPost(request, env, id) {
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
 
   const post = rows[0];
+  if (user.isGuest && post.status !== 'published') throw new HttpError(404, '文章不存在或无权限');
   const linked = await loadLinkedResources(db, id);
   const tags = await loadPostTags(db, id);
   return ok({
@@ -143,6 +145,7 @@ export async function getPostBySlug(request, env, slug) {
   }));
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
   const post = rows[0];
+  if (user.isGuest && post.status !== 'published') throw new HttpError(404, '文章不存在或无权限');
   const linked = await loadLinkedResources(db, post.id);
   const tags = await loadPostTags(db, post.id);
   return ok({ ...post, tags, linked_resources: linked, heavy_tags: detectHeavyTags(post.content) }, request, env);

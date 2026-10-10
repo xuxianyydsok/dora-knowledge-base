@@ -62,7 +62,7 @@ function Hero({ isAuthenticated }) {
             </>
           ) : (
             <>
-              <button class="primary" onClick={() => route('/login')}>免费开始使用</button>
+              <button class="primary" onClick={() => route('/news')}>开始浏览</button>
               <a href="#features"><button>了解功能</button></a>
             </>
           )}
@@ -324,7 +324,7 @@ export function Home() {
         <h2>现在就开始使用 Dora</h2>
         <p class="muted">使用邮箱注册，几秒钟即可创建属于你的空间。</p>
         <div class="hero-actions">
-          <button class="primary" onClick={() => route('/login')}>免费开始使用</button>
+          <button class="primary" onClick={() => route('/news')}>开始浏览</button>
           <a href="#features"><button>再看一遍功能</button></a>
         </div>
       </section>

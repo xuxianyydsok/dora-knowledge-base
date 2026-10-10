@@ -18,9 +18,15 @@ export class ApiError extends Error {
 }
 
 async function request(path, { method = 'GET', body } = {}) {
+  const auth = await authHeader();
+  // 访客模式（未登录）只能读：进度上报静默跳过，其余写操作给出明确提示
+  if (!auth.Authorization && path.endsWith('/progress')) return null;   // 访客不读写个人进度
+  if (!auth.Authorization && method !== 'GET') {
+    throw new ApiError(401, '访客模式只能浏览，修改内容需要站长登录');
+  }
   const headers = {
     'Content-Type': 'application/json',
-    ...(await authHeader())
+    ...auth
   };
 
   const res = await fetch(`${API_BASE_URL}${path}`, {

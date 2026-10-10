@@ -1,4 +1,5 @@
 // 受保护路由：未登录时重定向到登录页
+// guest：访客模式（2026-10-09 起）下允许未登录只读浏览的页面，后端以站长身份只读返回
 //
 // ⚠️ 重要：preact-router 会把**路由参数**（`:id` 等）连同 path/matches 一起作为 props 传给
 // 匹配到的这个组件，必须原样转发给子组件。否则子页面拿到的 `id` 是 undefined，
@@ -11,15 +12,15 @@ import { route } from 'preact-router';
 import { useAuth } from '../lib/auth.jsx';
 
 import { LoadingState } from '../components/StateView.jsx';
-export function ProtectedRoute({ children, ...rest }) {
+export function ProtectedRoute({ children, guest = false, ...rest }) {
   const { isAuthenticated, loading } = useAuth();
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) route('/login', true);
-  }, [loading, isAuthenticated]);
+    if (!loading && !isAuthenticated && !guest) route('/login', true);
+  }, [loading, isAuthenticated, guest]);
 
   if (loading) return <LoadingState shape="list" count={4} />;
-  if (!isAuthenticated) return null;
+  if (!isAuthenticated && !guest) return null;
 
   // 把 path / matches / 路由参数（id、slug…）转发给子组件
   return cloneElement(children, rest);

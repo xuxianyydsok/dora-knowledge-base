@@ -318,6 +318,11 @@ display(await tab.screenshot({ format: 'webp' }));
 - 迁移 `20261009000014_drop_rss.sql`：删 rss_feeds/rss_articles 表、rss_new 通知，resources.type 去掉 rss_article。
 - 文档中其余 RSS 描述为历史记录，以本节为准。
 
+## 2.13 访客只读模式（2026-10-09）
+
+- 网站对外展示，暂停强制登录：未登录可只读浏览站长内容（博客仅已发布），写操作仍需登录；顶栏隐藏登录按钮。
+- 开关：`backend/wrangler.toml` 的 `PUBLIC_MODE`。详细改动与恢复方法见 `docs/removed-features.md`（RSS 删除记录也在里面）。
+
 ## 3. 下一步（按优先级，接手即可开工）
 
 1. **继续累积影音接口清单**：用户手上还有若干份「影音接口清单」文件，会陆续给路径。

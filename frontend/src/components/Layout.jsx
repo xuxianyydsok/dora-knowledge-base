@@ -105,7 +105,7 @@ export function Layout({ children }) {
         </a>
 
         <nav class={`app-nav${navOpen ? ' open' : ''}`}>
-          {isAuthenticated && PRIMARY.map(([href, label]) => link(href, label))}
+          {PRIMARY.map(([href, label]) => link(href, label))}
           {isAuthenticated && (
             <Dropdown
               label="更多"
@@ -131,7 +131,7 @@ export function Layout({ children }) {
 
         <span class="spacer" />
 
-        {isAuthenticated && (
+        {(
           <a href="/search" class="icon-btn" title="全局搜索" aria-label="全局搜索">
             <Icon name="search" size={18} />
           </a>
@@ -163,9 +163,7 @@ export function Layout({ children }) {
               <span>退出登录</span>
             </button>
           </Dropdown>
-        ) : (
-          <a href="/login" class="login-link"><button type="button" class="primary">登录</button></a>
-        )}
+        ) : null /* 访客模式：暂不展示登录入口，站长可直接访问 /login */}
       </header>
 
       <main class="app-main">{children}</main>
