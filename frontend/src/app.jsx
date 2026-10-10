@@ -1,6 +1,9 @@
 // 应用根组件：Provider 组合 + 路由（按路由懒加载分包）
 import { Suspense } from 'preact/compat';
-import { Router } from 'preact-router';
+import { Router, route } from 'preact-router';
+import { useEffect } from 'preact/hooks';
+
+function Redirect({ to }) { useEffect(() => { route(to, true); }, []); return null; }
 import { AuthProvider, useAuth } from './lib/auth.jsx';
 import { ThemeProvider } from './lib/theme.jsx';
 import { ViewModeProvider } from './lib/viewMode.jsx';
@@ -27,7 +30,8 @@ function RouterView() {
       <ProtectedRoute guest path="/categories"><Categories /></ProtectedRoute>
       <ProtectedRoute guest path="/tags"><Tags /></ProtectedRoute>
       <ProtectedRoute guest path="/news"><News /></ProtectedRoute>
-      <ProtectedRoute guest path="/videos"><Videos /></ProtectedRoute>
+      {/* 视频页 2026-10-09 移除（见 docs/removed-features.md），旧链接回首页 */}
+      <Redirect path="/videos" to="/" />
       <ProtectedRoute guest path="/github"><Github /></ProtectedRoute>
       <ProtectedRoute guest path="/posts"><Posts /></ProtectedRoute>
       <ProtectedRoute guest path="/posts/archive"><BlogArchive /></ProtectedRoute>

@@ -12,7 +12,7 @@ import { Icon } from './Icon.jsx';
 import { useAuth } from '../lib/auth.jsx';
 
 const PRIMARY = [
-  ['/news', 'NewsNow'], ['/videos', '视频'], ['/github', 'GitHub'], ['/posts', '博客'],
+  ['/news', 'NewsNow'], ['/github', 'GitHub'], ['/posts', '博客'],
   ['/music', '音乐'], ['/movies', '影视'], ['/graph', '图谱']
 ];
 
@@ -83,7 +83,7 @@ export function Layout({ children }) {
   const initial = String(user?.email || 'D').trim().charAt(0).toUpperCase();
 
   return (
-    <div class="app-shell">
+    <div class={`app-shell${(router?.url || '').startsWith('/graph') ? ' page-dark' : ''}`}>
       <header class="app-header">
         <a href="/" class="brand" aria-label="Dora 首页">
           <Logo size={30} />

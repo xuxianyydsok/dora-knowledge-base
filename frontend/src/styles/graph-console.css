@@ -149,3 +149,22 @@
   .gc-panels { grid-template-columns: 1fr; }
   .gc-clock { margin-left: 0; }
 }
+
+/* 图谱页整页深色：顶栏也跟着变暗，避免右上角一片白 */
+.app-shell.page-dark { background: #0b0a0c; color-scheme: dark; }
+.app-shell.page-dark .app-header {
+  background: rgba(11, 10, 12, 0.82);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  --text: #e9e4dc; --text-muted: #8a847b; --muted: #8a847b;
+  color: #e9e4dc;
+}
+.app-shell.page-dark .app-header a,
+.app-shell.page-dark .app-header .brand span { color: #cfc8bd; }
+.app-shell.page-dark .app-header a[aria-current='page'] { color: #0b0a0c; }
+.app-shell.page-dark .app-header button {
+  background: rgba(255, 255, 255, 0.06); color: #e9e4dc; border-color: rgba(255, 255, 255, 0.12); box-shadow: none;
+}
+.app-shell.page-dark .app-header button::after { display: none; }
+.app-shell.page-dark .menu-panel { background: #17141a; color: #e9e4dc; border-color: rgba(255, 255, 255, 0.1); }
+.app-shell.page-dark .menu-panel a, .app-shell.page-dark .menu-panel button { color: #e9e4dc; background: transparent; }

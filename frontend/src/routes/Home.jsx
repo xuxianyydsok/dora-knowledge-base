@@ -110,7 +110,6 @@ function Hero({ isAuthenticated }) {
 // 控制台用的模块元数据：磁贴 + 最近添加共用一份
 const MODULES = [
   { key: 'posts', label: '博客', icon: 'blog', tone: 'indigo', to: '/posts', detail: (x) => `/posts/${x.id}`, load: () => api.listPosts() },
-  { key: 'videos', label: '学习视频', icon: 'video', tone: 'rose', to: '/videos', detail: () => '/videos', load: () => api.listVideos() },
   { key: 'github', label: 'GitHub', icon: 'github', tone: 'slate', to: '/github', detail: () => '/github', load: () => api.listGithub() },
   { key: 'music', label: '音乐', icon: 'music', tone: 'teal', to: '/music', detail: (x) => `/music/${x.id}`, load: () => api.listMusic() },
   { key: 'movies', label: '影视', icon: 'movie', tone: 'violet', to: '/movies', detail: (x) => `/movies/${x.id}`, load: () => api.listMovies() }

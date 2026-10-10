@@ -102,3 +102,9 @@
 - 原因：用户要求“不要搞定时任务，直接让它解读”。
 - 现在：`POST /api/github/analyze` 一次并行解读 8 个；打开 GitHub 页有待解读就自动连续调用直到完成；每日 Star 同步后也顺手解读一批。
 - 恢复：在 crons 里加回 `"* * * * *"`，并在 `index.js` 的 scheduled 中对非 `*/5` 的 Cron 调用 `analyzePending(env, 2)`。
+
+## 2026-10-09 移除：视频（/videos）页面
+- 内容：顶栏「视频」入口、首页「学习视频」磁贴、`/videos` 路由（旧链接重定向到首页）。
+- 原因：用户表示后续没有用处。
+- 保留：`frontend/src/routes/Videos.jsx`、后端 `/api/videos` 接口与数据库数据均未删。
+- 恢复：Layout.jsx PRIMARY 加回 `['/videos', '视频']`，Home.jsx MODULES 加回 videos 项，app.jsx 把 Redirect 换回 `<ProtectedRoute guest path="/videos"><Videos /></ProtectedRoute>`。
