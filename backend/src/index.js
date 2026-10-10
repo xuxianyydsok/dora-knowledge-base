@@ -15,8 +15,8 @@ export default {
   //   */5 2-3 * * * → 每天 UTC 02:00–03:55 每 5 分钟同步一页 GitHub Star（lib/githubStars.js）
   //   * * * * *     → 每分钟 AI 解读 2 个还没解读的收藏（lib/githubAi.js）
   async scheduled(event, env, ctx) {
-    if (event.cron === '* * * * *') {
-      ctx.waitUntil(analyzePending(env).catch((e) => console.error('github ai', e.message)));
+    if (!String(event.cron || '').startsWith('*/5')) {
+      ctx.waitUntil(analyzePending(env).then((r) => console.log('github ai', JSON.stringify(r))).catch((e) => console.error('github ai', e.message)));
     } else {
       ctx.waitUntil(scheduledSync(env, new Date(event.scheduledTime)).catch((e) => console.error('github star sync', e.message)));
     }

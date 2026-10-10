@@ -318,37 +318,21 @@ export async function getAnimeClassIds(source) {
 // 默认采集源（可用环境变量 VOD_SOURCES 覆盖，格式为 JSON 数组）
 // 5 个源并发检索，命中率显著高于单源；代价是单次搜索耗时变长（多源均无结果时才等超时）。
 export const DEFAULT_VOD_SOURCES = [
-  // —— 第一梯队：无防盗链，前端可直接播放（实测 m3u8 探活返回 200）——
-  // 顺序即优先级：靠前的源其线路会先进入候选，跨源合并时更容易被保留。
-  { key: 'dytt', name: '电影天堂', api: 'https://caiji.dyttzyapi.com/api.php/provide/vod/' },
-  { key: 'hongniu', name: '红牛资源', api: 'https://www.hongniuzy2.com/api.php/provide/vod/' },
-  // 2026-10-07 实测新增：三个源均命中且直链可播（「庆余年」8/8/3 条，「流浪地球」5/5/3 条）
-  { key: 'jszy', name: '极速资源', api: 'https://jszyapi.com/api.php/provide/vod/' },
-  { key: 'guangsu', name: '光速资源', api: 'https://api.guangsuapi.com/api.php/provide/vod/' },
-  { key: 'ikun', name: '艾坤资源', api: 'https://ikunzyapi.com/api.php/provide/vod/' },
-  // —— 第二梯队：有 Referer 白名单防盗链，仅作资源池补充 ——
-  // 命中率不低，但直链需后端注入 Referer 才能播（见方案 §7），当前用于「多线路」与元信息补全。
-  { key: 'lzi', name: '量子资源', api: 'https://cj.lziapi.com/api.php/provide/vod/' },
-  { key: 'ffzy', name: '非凡资源', api: 'https://api.ffzyapi.com/api.php/provide/vod/' },
-  // 最大资源：补动漫条目；偶发返回非 JSON，由 fetchJson 容错
-  { key: 'zuid', name: '最大资源', api: 'https://api.zuidapi.com/api.php/provide/vod' },
-  // —— 2026-10-07 二次扩容：候选源实测后新增 4 个（均通过 m3u8 拉流探活）——
-  //   jyzy  金鹰资源  关键词搜索 65~177ms，是全部源里最快的；探活 HTTP 206
-  //   hhzy  豪华资源  139~232ms；探活 HTTP 200 application/vnd.apple.mpegurl
-  //   subo  速播资源  179~267ms；探活 HTTP 200
-  //   zy360new 360资源 1.1~1.5s，但目录最深：「凡人修仙传」11 条，其余源多为 3~5 条
-  // 说明：guangsu / hhzy / subo / jyzy 的上游片库高度重合（同一部剧的片名列表一致），
-  // 但它们各自挂不同 CDN（gsm3u8 / hhm3u8 / subm3u8 / jinyingm3u8），
-  // 多一条线路就多一次「这条播不了换下一条」的机会，因此保留。
-  // 已剔除的候选：wolong / sdzy / aosika（返回非 JSON）、tianwei（3.6~5.4s 过慢）、
-  //   jkun（仅 2 条）、hn2（与 hongniu 同库）、bdzy / wujin（直链 403）、
-  //   mozhua / tyys / p210 / ky / xpzy / mtzy / sszy / tiankong / yhm3u8 / hhzy2 /
-  //   libvio / heimuer（域名不可达或返回空）。
-  { key: 'jyzy', name: '金鹰资源', api: 'http://jyzyapi.com/provide/vod/' },
-  { key: 'hhzy', name: '豪华资源', api: 'https://hhzyapi.com/api.php/provide/vod/' },
-  { key: 'subo', name: '速播资源', api: 'https://subocaiji.com/api.php/provide/vod/' },
-  { key: 'zy360new', name: '360资源', api: 'https://360zyzz.com/api.php/provide/vod/' },
+  // 2026-10-09 全量复测（22 个候选 × 5 部片：流浪地球/庆余年/繁花/兰香如故/凡人修仙传）
+  // 判定标准：搜得到 + m3u8 能拉 + 第一个 ts 分片能下载（无 Referer，模拟浏览器直连）；只留 5/5 且快的。
+  // 顺序即优先级（按片源响应速度）。
+  { key: 'guangsu', name: '光速资源', api: 'https://api.guangsuapi.com/api.php/provide/vod/' },   // 5/5 搜索~280ms 片源~130ms
+  { key: 'subo', name: '速播资源', api: 'https://subocaiji.com/api.php/provide/vod/' },           // 5/5 ~370ms / ~180ms
+  { key: 'hhzy', name: '豪华资源', api: 'https://hhzyapi.com/api.php/provide/vod/' },             // 5/5 ~320ms / ~250ms
+  { key: 'ikun', name: '艾坤资源', api: 'https://ikunzyapi.com/api.php/provide/vod/' },           // 5/5 ~100ms / ~500ms
+  { key: 'zy360new', name: '360资源', api: 'https://360zyzz.com/api.php/provide/vod/' },          // 5/5 ~240ms / ~650ms，目录最深
+  { key: 'mdzy', name: '魔都资源', api: 'https://www.mdzyapi.com/api.php/provide/vod/' },         // 5/5 ~150ms / ~1s（新增）
 ];
+// 2026-10-09 移除（详见 docs/removed-features.md）：
+//   片源 403（防盗链/地区限制，点进去播不了）：dytt 电影天堂、jszy 极速、ffzy 非凡、zuid 最大
+//   片源 404（链接失效）：lzi 量子
+//   能播但太慢：hongniu 红牛（片源 2.6s，且 1/5 超时）、jyzy 金鹰（片源 6.2s）
+//   文档候选未采用：wujin/bdzy（403）、bfzy（404）、heimuer/tyyszy/wolong/yinghua（搜索接口坏）、ruyi（可播但搜索 1.1s+片源 1.8s）
 
 // 已移除的源（保留记录，便于以后复查是否恢复）：
 //   zy360 360资源 https://360zy.com/api.php/provide/vod/

@@ -510,3 +510,8 @@ curl -s -x http://127.0.0.1:7897 --max-time 90 -X POST https://api.xuguochen.de5
 ### 2.23 影视播放页控制栏修复 + 倍速（2026-10-09）
 - 原因：「继续观看」卡片的 .watch-bar/.watch-title/.watch-frame 全局样式覆盖了播放器同名类，控制栏被压成 4px 高，返回/暂停/上下集/选集都看不见。改为限定在 .watch-card 下。
 - 新增倍速（0.5x–3x，记住上次选择），上一集/下一集改为图标。
+
+### 2.24 影视源全量复测精简 + AI 解读定时修复（2026-10-09）
+- 影视源 13→6（guangsu/subo/hhzy/ikun/zy360new/mdzy），全部 5 部测试片可播；移除明细见 removed-features.md。线路名映射补上新源。
+- 音乐源复测全部可用，未改。
+- AI 解读：cron 判断改为非 */5 即解读，打开 Workers observability 日志。

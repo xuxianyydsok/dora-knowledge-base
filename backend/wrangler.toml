@@ -36,3 +36,6 @@ bucket_name = "knowledge-base-assets"
 [[routes]]
 pattern = "api.xuguochen.de5.net"
 custom_domain = true
+
+[observability]
+enabled = true

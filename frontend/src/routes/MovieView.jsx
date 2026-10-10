@@ -17,7 +17,12 @@ const ROUTE_LABELS = [
   [/360|zy360/i, '360资源'],
   [/heimuer|hmy/i, '黑木耳'],
   [/wolong|wlm3u8/i, '卧龙资源'],
-  [/cjhw|hwba/i, '新华为']
+  [/cjhw|hwba/i, '新华为'],
+  [/^gs/i, '光速资源'],
+  [/^sub/i, '速播资源'],
+  [/^hh/i, '豪华资源'],
+  [/^ik/i, '艾坤资源'],
+  [/modu/i, '魔都资源']
 ];
 function routeLabel(name) {
   const raw = String(name || '').trim();

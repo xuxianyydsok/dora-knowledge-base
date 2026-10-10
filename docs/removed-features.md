@@ -88,3 +88,11 @@
 - 原因：用户要求左栏先显示应用分类，下面改为编程语言方框；语言下拉与侧栏重复。
 - 现状：左栏「编程语言」方框（前 10 种 + 展开全部），可与应用分类叠加筛选；话题仍可被搜索框搜到。
 - 恢复：在 `frontend/src/routes/Github.jsx` 重新加入 topics 统计（r.topics 计数）与 `.gh-topics` 方框 / 右上 `<select value={lang}>`；样式 `.gh-topics` 仍保留在 global.css。
+
+## 影视采集源精简（2026-10-09 移除 7 个）
+- 原因：用户要求只留「真能播 + 延迟低」的源。用 流浪地球/庆余年/繁花/兰香如故/凡人修仙传 逐源实测（搜索 → m3u8 → 首个 ts 分片，无 Referer，从 Cloudflare 边缘与美国网络各测一遍）。
+- 移除：dytt 电影天堂、jszy 极速、ffzy 非凡、zuid 最大（片源 403）；lzi 量子（片源 404）；hongniu 红牛（片源 2.6s 且偶发超时）、jyzy 金鹰（片源 6.2s）。
+- 新增：mdzy 魔都资源（5/5，搜索约 150ms）。
+- 现存 6 个：guangsu、subo、hhzy、ikun、zy360new、mdzy（均 5/5）。
+- 恢复：把对应条目加回 `backend/src/lib/maccms.js` 的 DEFAULT_VOD_SOURCES，或用环境变量 VOD_SOURCES（JSON 数组）覆盖。注意：403 的源在中国大陆直连网络下可能可播，若以后在大陆无代理访问可复测。
+- 音乐源同日复测（晴天/稻香/海阔天空/孤勇者）：GD 音乐台 netease、Meting qijieya netease/migu 全部 4/4 可播，保持不变；文档里的 Vercel 网易云 API 拿不到播放地址、LX 音源脚本只能在洛雪客户端用，未采用。
