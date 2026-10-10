@@ -419,7 +419,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 | GET | `/api/movies` | 列表（管理员可 `?all=true`；可 `?category_id=&media_type=movie\|tv`），返回含 `title_info` 与 `tags` |
 | POST | `/api/movies/search` | 搜索元信息候选（不落库），body: `{ query, limit? }` |
 | GET | `/api/movies/latest` | 精选片单（首页用），`?limit=&sort=hot\|new`，按评分或年份排序 |
-| GET | `/api/movies/sources/health` | 各采集源健康检查（设置页用） |
+| GET | `/api/movies/sources/health` | 各采集源健康检查（影视页抽屉用），读统一源健康缓存；管理员可 `?refresh=1` |
+| GET | `/api/sources/health` | **统一源健康中心**（影视 + 音乐）。管理员全量探测 / `?refresh=1`；访客只读缓存、**绝不触发探测** |
 | POST | `/api/movies/source-detail` | 按 `{ source, external_id }` 取采集源完整线路与剧集（详情页选集用） |
 | POST | `/api/movies` | 新增，body 见下 |
 | GET | `/api/movies/:id` | 详情（含 `title_info`、`tags`、`progress`） |

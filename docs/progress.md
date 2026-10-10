@@ -126,6 +126,92 @@
 
 ---
 
+## 2.31 影视/音乐源健康中心 + 自动避开失效线路（2026-10-10，分支 feat/source-health-console）
+
+在最新 main（`a475c1a`）上实现第一版「统一源健康中心」：影视采集源与音乐音源共用一份
+健康结构，管理员可一页看清谁挂了，搜索自动跳过 `down` 的源。**没有 commit / push**。
+
+### 本轮完成
+
+1. **新增 `backend/src/lib/sourceHealth.js`**（依赖单向：→ maccms / meting，不反向 import fetchers，避免循环）：
+   - 统一结构：`{ generated_at, cached, ttl_ms, summary, sources[] }`；每条含
+     `key/name/kind/status/ok/latency_ms/checked_at/error/capabilities/notes`。
+   - 纯函数：`rankSources` / `isSourceUsable` / `sourceHealthWeight` / `healthMap` /
+     `judgeMovieProbe` / `judgeMusicProbe` / `summarizeHealth` / `finalizeRecord` /
+     `probeEntries` / `createHealthStore`。
+   - 探测调度 `probeEntries`：单源超时 + 全局预算双保险；单源抛错 / 超时隔离，整体必返回。
+   - 短 TTL 缓存 + 并发去重 `createHealthStore`：TTL 内命中、进行中 Promise 复用、
+     `allowProbe: false` 时**绝不探测**（访客路径）。
+2. **影视探测**：逐源「搜索（固定词 `测试`）→ 详情（`ac=detail`）→ 校验可播放地址」；
+   搜索成功但详情失败 → `degraded`。单源 6s、整体 8s。
+3. **音乐探测**：GD音乐台（`GD_MUSIC_SOURCES` 默认 netease/joox，含实际取流）、
+   Meting（`getMetingInstances` 逐实例逐平台）、Audius、iTunes、Deezer；
+   单源 8s、整体 10s。**iTunes/Deezer 恒为 `degraded` + `trial_only`，绝不声明无损/高音质**。
+4. **`backend/src/router.js`** 注册 `GET /api/sources/health`；`backend/src/routes/movies.js` 新增
+   `getSourcesHealth`（管理员 `requireAdmin` 全量探测 / `?refresh=1`；访客与普通用户只读缓存），
+   并把 `getVodSourceHealth` 改为复用**同一份缓存**（鉴权行为与现状兼容）。
+5. **`backend/src/lib/fetchers.js`**：
+   - `searchMaccmsAll` 读健康缓存后 `rankSources`：跳过 `down`、`degraded` 后置；
+     **健康数据缺失时不剔除任何源**（冷启动安全），且不改变最终的相关度排序。
+   - `fetchMusicMeta` 同理跳过已知 `down` 的音源；iTunes/Deezer 候选带 `trial_only: true`，
+     `mergeCandidate` 保留该标注；`musicScore` 排序逻辑未动。
+6. **前端**：新增 `frontend/src/routes/SourceHealth.jsx`（`/sources`，`ProtectedRoute` 不带 `guest`）；
+   `Layout.jsx` 的「更多」下拉加「源状态」入口（仅 `isAdmin`）；`app.jsx` + `routes.js` 注册路由；
+   `api.js` 新增 `getSourceHealth(params='')`；`Movies.jsx` 抽屉底部加「查看完整源状态」链接（仅管理员）；
+   `global.css` 追加少量 `.sh-*` 响应式样式（桌面 + 手机）。
+7. **测试**：`backend/tests/run.mjs` UNIT 新增 4 个纯离线用例（过滤/排序与冷启动、
+   单源失败隔离、TTL/并发去重/访客不探测、试听源状态判定）。CONTRACT 自动覆盖新接口路径。
+8. **文档**：新增 `docs/source-health.md`；更新 `docs/api.md` 接口表；本节。
+
+### 验证结果（本机，2026-10-10）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端确定性 + 契约测试 | `cd backend && npm run test:unit` | ✅ 48/48 通过（main 基线 42 + 新增 5 项源健康 UNIT 用例 + 1 项 SourceHealth 页面契约用例） |
+| 前端生产构建 | `cd frontend && npm run build` | ✅ 通过 |
+| 凭据扫描 | `node scripts/check-secrets.mjs` | ✅ 通过 |
+| 空白字符检查 | `git diff --check` | ✅ 通过 |
+
+### 验收修正（主代理复核，2026-10-10）
+
+本轮共修两处（第 3 项为连带自查）：
+
+1. **`judgeMovieProbe` 能力自相矛盾**：搜索空结果时 `error` 写「搜索返回空结果」，
+   但 `capabilities.search` 恒为 `true`，前端会误显示「搜索」能力标签。
+   改为 `search: searchCount > 0`（与 `judgeMusicProbe` 一致），并在 UNIT 补断言：
+   空结果时 `capabilities.search === false`、`status === 'degraded'`；
+   详情失败但搜索通时 `capabilities.search === true`。
+2. **缓存过期后访客仍拿到过期数据（严重）**：`createHealthStore` 在缓存过期且
+   `allowProbe=false` 时原本返回过期缓存，导致一次**瞬时 `down` 被无限期沿用**——
+   搜索路径 `rankSources` 会一直剔除该源，直到管理员手动刷新为止，与「短 TTL / 瞬时观测」冲突。
+   改为：过期或缺失时**不发探测、也不返回过期数据**，`sources` 返回空数组 +
+   `empty: true` + `stale: true` + `stale_at`（`cached: false`）；缓存本身保留，管理员路径仍可重探覆盖。
+   `getSourceHealth` 聚合透传 `stale`/`stale_at`；`getVodSourceHealth` 只读影视槽、同样不返回过期 down。
+   空 `sources` → 空 `healthMap` → `rankSources` 不剔除任何源（冷启动式全量尝试）。
+   新增 UNIT 用例覆盖：TTL 内访客可读、TTL 后零网络且不返回过期数据、过期 down 不参与过滤、管理员可重探。
+3. **非管理员刷新按钮假报成功**：`/sources` 页非管理员点「刷新」时后端忽略 `refresh=1` 只返回缓存，
+   前端却弹「已重新探测全部源」。改为：非管理员**不显示刷新按钮**；`load()` 内部对非管理员
+   强制把 `refresh` 退化为普通只读加载，且**不弹任何 success toast**。
+
+### 下一步
+
+- 本页与影视抽屉共用缓存；若上游免费源频繁抖动，可考虑把 TTL 调大或加「最近 24h 可用率」。
+- 目前只有「瞬时观测」，没有历史趋势；如需趋势需额外落库（本轮未做）。
+
+### 坑与注意
+
+- **冷启动安全**：`rankSources` 在健康数据缺失时必须原样返回全部源；任何「先过滤再判断」的
+  改动都要守住这条，否则首次请求会把所有源禁掉、搜索直接空。
+- **访客绝不触发探测**：访客路径走 `getSourceHealth(env, { allowProbe: false })`，
+  该分支不产生任何网络请求；改鉴权时别把它退回真实探测。
+- **过期缓存不得用于过滤**：`allowProbe:false` 且缓存过期/缺失时必须返回空 `sources`
+  （不是返回过期缓存）。否则一次瞬时 `down` 会被无限期沿用，搜索会一直把该源剔除。
+- **健康只调整「源顺序 / 参与与否」，不改相关度排序**：`fetchMovieMeta` 里相关度仍是第一关键字。
+- 探测用的固定词是 `测试`（中文目录）/ `test`（英文目录），只为验证连通，不代表只支持这些词。
+- `docs/api.md` 里 `/api/sources/health` 与 `/api/movies/sources/health` 是两条路径、同一份缓存。
+
+---
+
 ## 0. 项目速览
 
 | 项 | 值 |

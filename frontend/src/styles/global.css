@@ -4589,6 +4589,57 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   text-overflow: ellipsis;
 }
 
+/* ---------------- 源健康中心（/sources，管理员页） ---------------- */
+.sh-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); }
+.sh-summary-card {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.sh-summary-card h3 { margin: 0 0 10px; font-size: var(--fs-lead); font-weight: 620; }
+.sh-summary-card .health-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 0; }
+.sh-meta { font-family: var(--font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.sh-list li { flex-wrap: wrap; }
+.health-dot.degraded { background: #d97706; box-shadow: 0 0 0 3px color-mix(in srgb, #d97706 22%, transparent); }
+.health-list li.degraded { border-color: color-mix(in srgb, #d97706 30%, var(--glass-border)); }
+.sh-kind {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  border: 1px solid var(--glass-border);
+  color: var(--text-muted);
+}
+.sh-kind.music { color: color-mix(in srgb, var(--primary) 70%, var(--text)); border-color: color-mix(in srgb, var(--primary) 30%, var(--glass-border)); }
+.sh-status { flex: 0 0 auto; font-size: 11.5px; font-weight: 600; }
+.sh-status.ok { color: #16a34a; }
+.sh-status.degraded { color: #d97706; }
+.sh-status.down { color: var(--danger); }
+.sh-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.sh-tag {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.sh-time { font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; margin-left: auto; }
+.sh-note { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer-foot-link { display: inline-block; margin-top: 8px; color: var(--primary); font-weight: 550; }
+.drawer-foot-link:hover { text-decoration: underline; }
+
+@media (max-width: 720px) {
+  .sh-summary { grid-template-columns: 1fr; }
+  .sh-summary-card .health-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .health-list li { row-gap: 5px; }
+  .sh-time { margin-left: 0; }
+  .health-err { flex: 1 0 100%; text-align: left; }
+  .sh-note { flex: 1 0 100%; }
+}
+
 /* ---------------- 窄屏 ---------------- */
 @media (max-width: 860px) {
   .watch-row { grid-auto-columns: 124px; gap: 11px; }

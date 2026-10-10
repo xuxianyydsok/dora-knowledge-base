@@ -112,6 +112,9 @@ const routes = [
   ['GET', '/api/movies/:id/progress', movies.getMovieProgress],
   ['PUT', '/api/movies/:id/progress', movies.saveMovieProgress],
 
+  // 统一源健康中心（影视 + 音乐）；管理员可全量探测，访客只读缓存
+  ['GET', '/api/sources/health', movies.getSourcesHealth],
+
   // NewsNow 热榜（代理自部署的 newsnow-api）
   ['GET', '/api/news/sources', news.listNewsSources],
   ['GET', '/api/news/:id', news.getNews],

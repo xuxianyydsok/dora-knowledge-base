@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import * as maccms from '../src/lib/maccms.js';
 import * as fetchers from '../src/lib/fetchers.js';
 import * as imageType from '../src/lib/imageType.js';
+import * as sourceHealth from '../src/lib/sourceHealth.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, '..');
@@ -248,6 +249,167 @@ async function unit() {
     assert(jpegBytes && jpegBytes[0] === 0xff && jpegBytes[1] === 0xd8 && jpegBytes[2] === 0xff,
       `JPEG 头字节被破坏: ${jpegBytes ? [...jpegBytes].join(',') : null}`);
     return '解码/前缀/空白/非法/二进制 6 组断言全过';
+  });
+
+  // ---- 源健康中心：纯离线用例（过滤/排序、单源隔离、缓存、状态判定） ----
+  await test('rankSources / isSourceUsable: down 剔除、ok 在 degraded 前、缺失不剔除（冷启动安全）', async () => {
+    const { rankSources, isSourceUsable, healthMap } = sourceHealth;
+    const sources = [
+      { key: 'a' }, { key: 'b' }, { key: 'c' }, { key: 'd' }
+    ];
+    // 健康数据缺失 → 一个都不能少、顺序不变
+    assert(rankSources(sources, null).length === 4, '健康数据缺失时不应剔除任何源');
+    assert(rankSources(sources, healthMap({ sources: [] })).map((s) => s.key).join('') === 'abcd',
+      '空健康 map 不应剔除或改序');
+
+    const map = healthMap({ sources: [
+      { key: 'a', status: 'degraded' },
+      { key: 'b', status: 'down' },
+      { key: 'c', status: 'ok' }
+    ] });
+    const ranked = rankSources(sources, map).map((s) => s.key);
+    assert(!ranked.includes('b'), `down 源应被剔除: ${ranked}`);
+    assert(ranked[0] === 'c', `ok 源应排最前: ${ranked}`);
+    assert(ranked.join('') === 'cda', `顺序应为 ok → 未知 → degraded: ${ranked}`);
+
+    assert(isSourceUsable({ status: 'ok' }) === true, 'ok 应可用');
+    assert(isSourceUsable({ status: 'degraded' }) === true, 'degraded 应可用');
+    assert(isSourceUsable({ status: 'down' }) === false, 'down 应不可用');
+    assert(isSourceUsable(undefined) === true, '健康缺失应视为可用（冷启动安全）');
+    return '4 组断言全过';
+  });
+
+  await test('probeEntries: 单源失败/超时被隔离，整体仍返回且失败源标 down 带原因', async () => {
+    const { probeEntries } = sourceHealth;
+    const entries = [
+      { key: 'good', name: '正常源', kind: 'movie', probe: async () => ({ status: 'ok', capabilities: { search: true } }) },
+      { key: 'boom', name: '抛错源', kind: 'movie', probe: async () => { throw new Error('模拟连接失败'); } },
+      { key: 'slow', name: '超时源', kind: 'movie', timeoutMs: 20, probe: () => new Promise(() => {}) }
+    ];
+    const out = await probeEntries(entries, { budgetMs: 500, perSourceMs: 200 });
+    const byKey = Object.fromEntries(out.map((r) => [r.key, r]));
+    assert(out.length === 3, `应返回全部 3 条，实得 ${out.length}`);
+    assert(byKey.good.status === 'ok' && byKey.good.ok === true, `正常源应为 ok: ${JSON.stringify(byKey.good)}`);
+    assert(byKey.boom.status === 'down' && /模拟连接失败/.test(byKey.boom.error), `抛错源应 down 且带原因: ${JSON.stringify(byKey.boom)}`);
+    assert(byKey.slow.status === 'down' && /超时/.test(byKey.slow.error), `超时源应 down 且注明超时: ${JSON.stringify(byKey.slow)}`);
+    assert(out.every((r) => typeof r.latency_ms === 'number' && typeof r.checked_at === 'string'),
+      '每条记录都应带 latency_ms 与 checked_at');
+    return `3 源：${out.map((r) => `${r.key}=${r.status}`).join(', ')}`;
+  });
+
+  await test('createHealthStore: TTL 内命中缓存、超 TTL 重探、并发去重只探一次、访客不触发探测', async () => {
+    const { createHealthStore } = sourceHealth;
+    const store = createHealthStore();
+    let clock = 1000;
+    let probes = 0;
+    const probe = async () => { probes += 1; return [{ key: 'x', status: 'ok' }]; };
+
+    const first = await store.get({ ttl: 100, probe, now: () => clock });
+    assert(first.cached === false && probes === 1, `首次应真实探测: probes=${probes}`);
+    const second = await store.get({ ttl: 100, probe, now: () => clock });
+    assert(second.cached === true && probes === 1, `TTL 内应命中缓存: probes=${probes}`);
+    clock += 101;   // 超 TTL
+    const third = await store.get({ ttl: 100, probe, now: () => clock });
+    assert(third.cached === false && probes === 2, `超 TTL 应重新探测: probes=${probes}`);
+
+    // 并发去重：同一时刻两次调用只探测一次
+    const store2 = createHealthStore();
+    let slowProbes = 0;
+    const slowProbe = () => new Promise((resolve) => setTimeout(() => {
+      slowProbes += 1; resolve([{ key: 'y', status: 'ok' }]);
+    }, 20));
+    await Promise.all([
+      store2.get({ ttl: 100, probe: slowProbe, now: () => clock }),
+      store2.get({ ttl: 100, probe: slowProbe, now: () => clock })
+    ]);
+    assert(slowProbes === 1, `并发两次调用只应探测一次: ${slowProbes}`);
+
+    // 访客路径：allowProbe=false 时绝不探测，只读缓存
+    const store3 = createHealthStore();
+    let guestProbes = 0;
+    const guest = await store3.get({
+      ttl: 100, allowProbe: false, now: () => clock,
+      probe: async () => { guestProbes += 1; return [{ key: 'z', status: 'ok' }]; }
+    });
+    assert(guestProbes === 0 && guest.empty === true && guest.sources.length === 0,
+      `访客缓存为空时不得探测，且应返回 empty: ${JSON.stringify(guest)}`);
+    return 'TTL / 并发去重 / 访客不探测 全部通过';
+  });
+
+  await test('缓存过期语义: TTL 内访客可读、TTL 后不返回过期数据且零网络、过期 down 不参与过滤、管理员可重探', async () => {
+    const { createHealthStore, healthMap, rankSources } = sourceHealth;
+    const store = createHealthStore();
+    let clock = 1000;
+    let probes = 0;
+    // 管理员首探：返回一个 down 源（模拟一次瞬时故障）
+    const adminProbe = async () => {
+      probes += 1;
+      return [{ key: 'a', name: 'A源', kind: 'movie', status: 'down', ok: false, error: '模拟故障' }];
+    };
+
+    const first = await store.get({ ttl: 100, allowProbe: true, probe: adminProbe, now: () => clock });
+    assert(first.cached === false && probes === 1, `管理员首探应真实探测: probes=${probes}`);
+
+    // ① TTL 内访客可读缓存：拿到该结果且 cached === true，不新增探测
+    const guestFresh = await store.get({ ttl: 100, allowProbe: false, now: () => clock });
+    assert(guestFresh.cached === true && guestFresh.sources.length === 1
+      && guestFresh.sources[0].status === 'down' && probes === 1,
+      `TTL 内访客应读到缓存且不探测: ${JSON.stringify(guestFresh)} probes=${probes}`);
+
+    // ② TTL 后访客：零网络 + 不返回过期数据
+    clock += 101;
+    const guestStale = await store.get({ ttl: 100, allowProbe: false, now: () => clock });
+    assert(guestStale.sources.length === 0 && guestStale.empty === true && guestStale.stale === true,
+      `TTL 后访客应返回空 + stale: ${JSON.stringify(guestStale)}`);
+    assert(guestStale.cached === false, `过期不是有效缓存命中，cached 应为 false: ${guestStale.cached}`);
+    assert(guestStale.stale_at === first.at, `stale_at 应等于过期缓存的探测时间: ${guestStale.stale_at} vs ${first.at}`);
+    assert(probes === 1, `访客路径不得新增探测: probes=${probes}`);
+
+    // ③ 过期 down 不参与过滤：把访客拿到的空结果喂给 rankSources，所有源必须保留
+    const sources = [{ key: 'a' }, { key: 'b' }, { key: 'c' }];
+    const ranked = rankSources(sources, healthMap({ sources: guestStale.sources }));
+    assert(ranked.length === 3 && ranked.map((s) => s.key).join('') === 'abc',
+      `过期 down 不得剔除源，应全量保留且不改序: ${ranked.map((s) => s.key)}`);
+
+    // ④ 随后管理员可重探：覆盖缓存、拿到新结果、cached === false
+    const adminAgain = await store.get({
+      ttl: 100, allowProbe: true, now: () => clock,
+      probe: async () => {
+        probes += 1;
+        return [{ key: 'a', name: 'A源', kind: 'movie', status: 'ok', ok: true }];
+      }
+    });
+    assert(probes === 2 && adminAgain.cached === false && adminAgain.sources[0].status === 'ok',
+      `管理员应能重探并覆盖缓存: probes=${probes} ${JSON.stringify(adminAgain.sources)}`);
+    return 'TTL内读缓存 / 过期零网络不返回过期 / 过期 down 不参与过滤 / 管理员重探 全部通过';
+  });
+
+  await test('状态判定: 试听源永不 ok、不声明无损；影视详情失败为 degraded', async () => {
+    const { judgeMusicProbe, judgeMovieProbe } = sourceHealth;
+    const trial = judgeMusicProbe({ trialOnly: true, resultCount: 3, hasPlayableUrl: true });
+    assert(trial.status !== 'ok', `试听源不得为 ok: ${trial.status}`);
+    assert(trial.capabilities.play === false, '试听源不得声明 play');
+    assert(trial.capabilities.trial_only === true, '试听源应标记 trial_only');
+    assert(!/无损|高音质|HiFi/i.test(JSON.stringify(trial)), '试听源不得宣称无损/高音质');
+    assert(/试听/.test(trial.notes || ''), `试听源应注明试听: ${trial.notes}`);
+
+    const empty = judgeMusicProbe({ resultCount: 0 });
+    assert(empty.status === 'degraded' && empty.capabilities.play === false, '空结果应为 degraded 且不声明 play');
+
+    const full = judgeMusicProbe({ resultCount: 5, hasPlayableUrl: true });
+    assert(full.status === 'ok' && full.capabilities.play === true, '完整曲目源应为 ok 且声明 play');
+
+    const detailFail = judgeMovieProbe({ searchCount: 5, detailOk: false, detailError: '详情超时' });
+    assert(detailFail.status === 'degraded' && detailFail.capabilities.search === true,
+      `搜索成功但详情失败应为 degraded: ${JSON.stringify(detailFail)}`);
+    // 搜索空结果：status 仍为 degraded，但 capabilities.search 必须为 false（不得与 error 文案矛盾）
+    const emptySearch = judgeMovieProbe({ searchCount: 0 });
+    assert(emptySearch.status === 'degraded', `搜索空结果应为 degraded: ${emptySearch.status}`);
+    assert(emptySearch.capabilities.search === false,
+      `搜索空结果时 capabilities.search 应为 false: ${JSON.stringify(emptySearch)}`);
+    const movieOk = judgeMovieProbe({ searchCount: 5, detailOk: true, hasPlayableUrl: true });
+    assert(movieOk.status === 'ok' && movieOk.capabilities.play === true, '影视搜索+详情+可播放应为 ok');
+    return '试听/空/完整/详情失败/空结果能力 5 组断言全过';
   });
 }
 

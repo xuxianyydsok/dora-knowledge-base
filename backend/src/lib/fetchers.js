@@ -10,6 +10,7 @@ import {
 } from './maccms.js';
 import { cinemetaLookup, bangumiLookup, kitsuLookup } from './metadb.js';
 import { getMetingInstances, searchMetingMusic } from './meting.js';
+import { getSourceHealth, healthMap, rankSources, sourceHealthWeight } from './sourceHealth.js';
 
 const UA = 'knowledge-base-app/0.1 (+https://github.com/)';
 
@@ -298,6 +299,7 @@ async function searchItunesMusic(q, limit) {
     audio_url: null,
     preview_url: r.previewUrl || null,
     quality: 'preview',
+    trial_only: true,   // 仅 30 秒试听；前端据此显示「试听」标签
     duration: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
     genre: r.primaryGenreName || null,
     release_year: r.releaseDate ? new Date(r.releaseDate).getFullYear() : null,
@@ -333,6 +335,7 @@ async function searchDeezerMusic(q, limit) {
     // 注意：Deezer 试听链接带签名，约 15 分钟后失效，仅供即时试听
     preview_url: r.preview || null,
     quality: 'preview',
+    trial_only: true,   // 仅 30 秒试听；前端据此显示「试听」标签
     duration: r.duration || null,
     genre: null,
     release_year: null,
@@ -659,6 +662,8 @@ function mergeCandidate(prev, next) {
     ])].filter((u) => u && u !== (better.audio_url || other.audio_url)).slice(0, 5),
     // 试听片段保留为最后兜底：主直链失效时播放器仍能出声
     preview_url: better.preview_url || null,
+    // 合并后若仍没有完整直链（只有试听片段），保留 trial_only 标注
+    trial_only: !(better.audio_url || other.audio_url) && !!(better.trial_only || other.trial_only),
     // 合并后若已有直链，就不再是「待解析」
     needs_resolve: !(better.audio_url || other.audio_url)
   };
@@ -679,13 +684,27 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
   const perSource = Math.min(Math.max(limit * 3, 60), 100);
   const capped = Math.min(limit, 80);
 
+  // 接入源健康：只读已有健康缓存（allowProbe=false），不在搜索里额外探测。
+  // 已知 down 的音源跳过；没有健康数据时 hmap 为空 → 不跳过任何源（冷启动安全）。
+  let hmap = null;
+  try {
+    hmap = healthMap(await getSourceHealth(env, { allowProbe: false }));
+  } catch {
+    hmap = null;
+  }
+  // 健康权重：0=ok、1=未知、2=degraded、null=down（未知按可用来，保证冷启动全量尝试）
+  const weightOf = (key) => sourceHealthWeight(hmap, key);
+
   // 多源并发，任一失败不影响其余：
   //   Meting 公共实例 —— 搜索即带可直接播放的直链，是结果数量的主力
   //   GD音乐台 —— 完整曲目主源（网易云源，实测 900~1600kbps FLAC 直链）
   //   Audius   —— 独立音乐完整音轨（320kbps）
   //   iTunes / Deezer —— 仅 30 秒试听，主要作为元信息与封面来源
+  // 每个任务带上健康键：健康数据里该源为 down 时跳过（健康数据缺失 → 照常跑）。
   const metingJobs = getMetingInstances(env).flatMap((inst) =>
-    inst.servers.map((server) => searchMetingMusic(inst, server, q, perSource, METING_TIMEOUT_MS))
+    inst.servers
+      .filter((server) => weightOf(`meting:${inst.key}:${server}`) !== null)
+      .map((server) => searchMetingMusic(inst, server, q, perSource, METING_TIMEOUT_MS))
   );
 
   // 每个音源都套时间预算：任一慢源不再拖住整次搜索（Meting 公共实例偶发慢响应）。
@@ -695,14 +714,15 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
   // 且 joox 的 types=url 返回 br=999 的无损 FLAC（探活 206 audio/x-flac），
   // 与 netease 的 1619kbps 互为补充 —— 因此两个都查。
   const gdSources = String(env.GD_MUSIC_SOURCES || 'netease,joox')
-    .split(',').map((s) => s.trim()).filter(Boolean);
+    .split(',').map((s) => s.trim()).filter(Boolean)
+    .filter((src) => weightOf(`gdstudio:${src}`) !== null);
 
   const settled = await Promise.all([
     ...metingJobs,
     ...gdSources.map((src) => searchGdstudioMusic(q, perSource, src)),
-    searchAudiusMusic(q, perSource),
-    searchItunesMusic(q, perSource),
-    searchDeezerMusic(q, perSource)
+    weightOf('audius') === null ? Promise.resolve(null) : searchAudiusMusic(q, perSource),
+    weightOf('itunes') === null ? Promise.resolve(null) : searchItunesMusic(q, perSource),
+    weightOf('deezer') === null ? Promise.resolve(null) : searchDeezerMusic(q, perSource)
   ].map((p) => withBudget(p, MUSIC_BUDGET_MS)));
 
   const sources = [];
@@ -1112,7 +1132,18 @@ const KW_CALL_TIMEOUT_MS = 2600;    // 单源关键词调用的超时（防止�
 const ANIME_CALL_TIMEOUT_MS = 3200;
 
 async function searchMaccmsAll(keyword, limit, env) {
-  const sources = getVodSources(env);
+  const configured = getVodSources(env);
+  // 接入源健康：读**已有**健康缓存（allowProbe=false，绝不在搜索里额外发起探测）。
+  // - 已知 down 的源跳过；degraded 的源仍参与，但排到 ok 源之后。
+  // - 没有健康数据（冷启动）时 healthMap 为空 → rankSources 不剔除任何源、不改顺序，
+  //   保证首次搜索照常工作。
+  let hmap = null;
+  try {
+    hmap = healthMap(await getSourceHealth(env, { allowProbe: false }));
+  } catch {
+    hmap = null;   // 健康数据取不到就当没有，退回「全量尝试」
+  }
+  const sources = rankSources(configured, hmap);
   // 每个源都要求「至少 20 条」：跨源按片名去重后条目会大幅缩水
   //（同一部剧在 9 个源各占一条，去重后只剩 1 条），
   // 若把 limit 直接下传，去重后往往只剩几条 —— 这是「搜一部剧只有很少内容」的主因之一。
