@@ -6,6 +6,7 @@ import { ok, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs, escapeLike } from '../lib/supabase.js';
 import { requireEnum } from '../lib/validate.js';
+import { guestPostFilters, guestResourceFilters } from '../lib/publicScope.js';
 
 // GET /api/search?q=关键词&type=all|post|resource&resource_type=video&limit=20
 export async function search(request, env) {
@@ -38,7 +39,8 @@ export async function search(request, env) {
       limit: String(limit)
     };
     if (!all) filters.user_id = `eq.${user.id}`;
-    if (user.isGuest) filters.status = 'eq.published';   // 访客只搜已发布
+    // 访客只搜「已发布 + 公开」；私密文章即使已发布也不出现在公开检索里
+    if (user.isGuest) Object.assign(filters, guestPostFilters());
     const posts = await db.select('posts', qs(filters));
     results.push(...posts.map((p) => ({ kind: 'post', ...p })));
   }
@@ -52,6 +54,7 @@ export async function search(request, env) {
       limit: String(limit)
     };
     if (!all) filters.user_id = `eq.${user.id}`;
+    if (user.isGuest) Object.assign(filters, guestResourceFilters());   // 访客只搜公开资源
     if (resourceType) filters.type = `eq.${resourceType}`;
     const resources = await db.select('resources', qs(filters));
     results.push(...resources.map((r) => ({ kind: 'resource', ...r })));

@@ -14,6 +14,7 @@ import {
 import {
   setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
+import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
 
 const TABLE = 'resources';
 const EXT = 'music_tracks';
@@ -134,6 +135,7 @@ export async function listMusic(request, env) {
   const all = url.searchParams.get('all') === 'true';
 
   const filters = { type: `eq.${TYPE}`, ...userFilter(user, all) };
+  if (user.isGuest) Object.assign(filters, guestResourceFilters());   // 访客只看公开音乐
   const categoryId = url.searchParams.get('category_id');
   if (categoryId) filters.category_id = `eq.${categoryId}`;
 
@@ -155,10 +157,12 @@ export async function getMusic(request, env, id) {
     ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
   }));
   if (!rows.length) throw new HttpError(404, '音乐不存在或无权限');
+  if (user.isGuest && !isResourceVisibleToGuest(rows[0])) throw new HttpError(404, '音乐不存在或无权限');
 
   const [tagged] = await withTags(db, rows);
   const [withExt] = await withTrack(db, tagged);
-  const progress = await getProgress(db, user.id, id);
+  // 访客的 user.id 是 owner 范围限定，不能把站长的播放进度当公开数据返回
+  const progress = user.isGuest ? null : await getProgress(db, user.id, id);
   return ok({ ...withExt, progress }, request, env);
 }
 

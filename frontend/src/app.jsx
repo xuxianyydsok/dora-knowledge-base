@@ -68,7 +68,8 @@ function RouterView() {
       <ProtectedRoute guest path="/movies/:id"><MovieView /></ProtectedRoute>
       <ProtectedRoute path="/admin/users"><AdminUsers /></ProtectedRoute>
       <ProtectedRoute path="/sources"><SourceHealth /></ProtectedRoute>
-      <ProtectedRoute guest path="/favorites"><Favorites /></ProtectedRoute>
+      {/* 收藏夹属个人数据，不再对访客开放（后端 /api/favorites 也已移出访客白名单） */}
+      <ProtectedRoute path="/favorites"><Favorites /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>
       <NotFound default />

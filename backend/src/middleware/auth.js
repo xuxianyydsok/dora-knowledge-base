@@ -3,12 +3,18 @@
 // - requireAdmin：在 requireAuth 基础上强制要求 role=admin（供 MCP 与管理员接口复用）
 // 普通用户仅能操作自己的数据；管理员可查看全部。
 // - 访客模式（env.PUBLIC_MODE="true"，2026-10-09 起开启）：未带令牌的 GET 请求、且路径在
-//   PUBLIC_READ 白名单内时，以「站长」（最早创建的 admin）身份只读访问，user.isGuest=true。
+//   lib/publicScope.js 白名单内时，以「站长」（最早创建的 admin）身份只读访问，user.isGuest=true。
 //   写操作、进度、备份、通知、偏好、管理员接口仍必须登录。关闭：把 PUBLIC_MODE 改成 "false"。
+//
+// ⚠️ 访客上下文里 user.id 是「站点 owner 的 user_id」，**只用来限定查询范围**，
+//   不是身份认证：访客恒有 isAdmin=false / isGuest=true，且 ?all=true 对访客无效。
+//   因此每个读路由都必须在此基础上**再叠加公开过滤**（见 lib/publicScope.js 的
+//   guestPostFilters / guestResourceFilters），否则会把站长的私密数据当成公开数据发出去。
 
 import { verifyJwt } from '../lib/jwt.js';
 import { SupabaseClient, qs } from '../lib/supabase.js';
 import { HttpError } from '../lib/response.js';
+import { isGuestAllowed } from '../lib/publicScope.js';
 
 function extractToken(request) {
   const header = request.headers.get('Authorization') || '';
@@ -16,21 +22,12 @@ function extractToken(request) {
   return match ? match[1].trim() : null;
 }
 
-// 访客可只读访问的接口（不含 /progress 等个人数据）
-// 少数「只读但用 POST」的检索接口，访客也可调用
-const PUBLIC_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream', '/api/github/analyze']);
-const PUBLIC_READ = /^\/api\/(categories|tags|favorites|videos|github|posts|music|movies|news|search|graph)(\/|$)/;
-
 let ownerCache = null;
 
 async function guestContext(request, env) {
   if (env.PUBLIC_MODE !== 'true') return null;
   const { pathname } = new URL(request.url);
-  if (request.method === 'POST') {
-    if (!PUBLIC_POST.has(pathname)) return null;
-  } else if (request.method !== 'GET' || !PUBLIC_READ.test(pathname) || pathname.endsWith('/progress')) {
-    return null;
-  }
+  if (!isGuestAllowed(request.method, pathname)) return null;
 
   const db = new SupabaseClient(env);
   if (!ownerCache) {

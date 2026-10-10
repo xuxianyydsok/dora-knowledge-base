@@ -57,6 +57,8 @@ async function decorate(db, favorites) {
 // GET /api/favorites
 export async function listFavorites(request, env) {
   const { db, user } = await requireAuth(request, env);
+  // 第二道防线：/api/favorites 已移出访客白名单，这里再挡一次
+  if (user.isGuest) throw new HttpError(403, '收藏夹需要登录');
   const url = new URL(request.url);
   const all = url.searchParams.get('all') === 'true' && user.isAdmin;
 

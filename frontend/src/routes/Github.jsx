@@ -57,7 +57,8 @@ export function Github() {
   const [aiRun, setAiRun] = useState(null);
   const pendingCount = (items || []).filter((r) => !r.ai).length;
   useEffect(() => {
-    if (!items || !pendingCount || aiRun) return undefined;
+    // AI 解读消耗 Workers AI 额度，后端仅管理员可用；访客不触发（否则只会拿到 403）
+    if (!items || !pendingCount || aiRun || !isAdmin) return undefined;
     let alive = true;
     (async () => {
       setAiRun({ msg: `AI 正在解读，剩余 ${pendingCount} 个…` });

@@ -10,6 +10,7 @@ import { requireString, optionalString, requireUuid, optionalBool } from '../lib
 import { setResourceTags, withTags, validateTagIds, validateCategoryId } from '../lib/resources.js';
 import { syncStarsPage, selectAllGithubLite } from '../lib/githubStars.js';
 import { analyzePending } from '../lib/githubAi.js';
+import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
 
 const TABLE = 'resources';
 const TYPE = 'github';
@@ -38,7 +39,10 @@ export async function listGithub(request, env) {
   const { db, user } = await requireAuth(request, env);
   const url = new URL(request.url);
   const all = url.searchParams.get('all') === 'true';
-  const rows = await selectAllGithubLite(db, userFilter(user, all));
+  const rows = await selectAllGithubLite(db, {
+    ...userFilter(user, all),
+    ...(user.isGuest ? guestResourceFilters() : {})   // 访客只看公开的 GitHub 收藏
+  });
   return ok(rows, request, env);
 }
 
@@ -67,6 +71,7 @@ export async function getGithub(request, env, id) {
     ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
   }));
   if (!rows.length) throw new HttpError(404, '仓库收藏不存在或无权限');
+  if (user.isGuest && !isResourceVisibleToGuest(rows[0])) throw new HttpError(404, '仓库收藏不存在或无权限');
   const [item] = await withTags(db, rows);
   return ok(item, request, env);
 }
@@ -168,8 +173,10 @@ export async function deleteGithub(request, env, id) {
   return ok({ id }, request, env);
 }
 
-// POST /api/github/analyze —— 立即解读一批待解读仓库（游客也可触发，只处理还没解读的，不改其他数据）
+// POST /api/github/analyze —— 立即解读一批待解读仓库（仅管理员；消耗 Workers AI 额度，访客不可用）
 export async function analyzeGithub(request, env) {
-  await requireAuth(request, env);
+  // 消耗 Workers AI 额度，仅管理员可用（路径也已移出访客白名单，这里同样是第二道防线）
+  const { user } = await requireAuth(request, env);
+  if (!user.isAdmin) throw new HttpError(403, 'AI 解读需要管理员权限');
   return ok(await analyzePending(env), request, env);
 }

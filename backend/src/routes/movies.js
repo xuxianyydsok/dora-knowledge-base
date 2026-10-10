@@ -16,6 +16,7 @@ import {
 import {
   setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
+import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
 
 const TABLE = 'resources';
 const EXT = 'movie_titles';
@@ -118,6 +119,7 @@ export async function listMovies(request, env) {
   const all = url.searchParams.get('all') === 'true';
 
   const filters = { select: '*', type: `eq.${TYPE}`, ...userFilter(user, all) };
+  if (user.isGuest) Object.assign(filters, guestResourceFilters());   // 访客只看公开影视
   const categoryId = url.searchParams.get('category_id');
   if (categoryId) filters.category_id = `eq.${categoryId}`;
   const mediaType = url.searchParams.get('media_type');
@@ -154,10 +156,12 @@ export async function getMovie(request, env, id) {
     ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
   }));
   if (!rows.length) throw new HttpError(404, '影视不存在或无权限');
+  if (user.isGuest && !isResourceVisibleToGuest(rows[0])) throw new HttpError(404, '影视不存在或无权限');
 
   const [tagged] = await withTags(db, rows);
   const [withExt] = await withTitle(db, tagged);
-  const progress = await getProgress(db, user.id, id);
+  // 访客的 user.id 是 owner 范围限定，不能把站长的播放进度当公开数据返回
+  const progress = user.isGuest ? null : await getProgress(db, user.id, id);
   return ok({ ...withExt, progress }, request, env);
 }
 

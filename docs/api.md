@@ -7,6 +7,9 @@
 - 后端通过 Supabase JWKS（ES256）校验 JWT，或兼容 `SUPABASE_JWT_SECRET` 的 HS256。
 - 校验通过后加载 `user_profiles`：`role=admin` 为管理员，`is_disabled=true` 拒绝访问。
 - 数据隔离：普通用户查询强制 `user_id = 当前用户`；管理员可加 `?all=true` 查看全部。
+- 访客只读模式（`PUBLIC_MODE="true"`）：未登录的 GET 只读接口以「站长 owner 范围 + 公开过滤」
+  返回数据；白名单与公开过滤见 `backend/src/lib/publicScope.js` 与 `docs/public-access.md`。
+  `favorites` 与 `/api/github/analyze` 不在访客白名单内。
 - CORS：仅允许 `env.CORS_ORIGINS` 白名单内的前端域名。
 
 ## 当前用户

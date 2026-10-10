@@ -9,19 +9,24 @@ import { ViewSwitch } from '../components/ViewSwitch.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useViewMode } from '../lib/viewMode.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
-import { LoadingState } from '../components/StateView.jsx';
+import { EmptyState, LoadingState } from '../components/StateView.jsx';
 
 export function Favorites() {
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState('');
+  const [needLogin, setNeedLogin] = useState(false);
   const [loading, setLoading] = useState(true);
   const { viewMode } = useViewMode();
 
   async function load() {
     setLoading(true);
-    try { setItems(await api.listFavorites()); }
-    catch (e) { setError(e.message); }
+    try { setItems(await api.listFavorites()); setNeedLogin(false); }
+    catch (e) {
+      // 403（收藏夹需要登录）走友好空态，其余仍是错误提示
+      if (e.status === 403) { setNeedLogin(true); setError(''); }
+      else setError(e.message);
+    }
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
@@ -85,7 +90,9 @@ export function Favorites() {
 
       {error && <div class="notice danger">{error}</div>}
       {loading ? <LoadingState shape="card" /> :
-        viewMode === 'gallery'
+        needLogin
+          ? <EmptyState icon="heart" title="收藏夹需要登录" hint="登录站长账号后即可查看收藏。" />
+          : viewMode === 'gallery'
           ? <GalleryView items={shown} renderCard={renderCard} />
           : <TimelineView items={shown} renderCard={renderCard} />}
     </section>
