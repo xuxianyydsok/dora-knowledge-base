@@ -6,8 +6,15 @@ import { api } from '../lib/api.js';
 import { MoviePlayer } from '../components/MoviePlayer.jsx';
 import { TagChip } from '../components/TagChip.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { useAuth } from '../lib/auth.jsx';
+import { toastSuccess, toastError } from '../lib/toast.jsx';
 
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
+
+// 只展示可直连播放的剧集（与后端 isPlayableUrl 同规则）：
+// 采集源返回的 vod_play_url 里混着分享页 /share/xxx、网页播放页 /play/123 这类**非直链**，
+// 之前它们也会出现在线路/剧集列表里，用户点到必然报「片源无法解析」。
+const isPlayable = (url = '') => /\.(m3u8|mp4)(\?|#|$)/i.test(String(url));
 // 采集源的线路标识（vod_play_from）是站点内部代号，展示时换成人能读的源名
 const ROUTE_LABELS = [
   [/lzm3u8|lzi/i, '量子资源'],
@@ -55,6 +62,7 @@ function candidateToMovie(c, source, vid) {
 
 export function MovieView({ id, source, vid }) {
   const preview = !!(source && vid);
+  const { isAdmin } = useAuth();
   const [movie, setMovie] = useState(null);
   const [error, setError] = useState('');
   const [routeIndex, setRouteIndex] = useState(0);
@@ -62,6 +70,30 @@ export function MovieView({ id, source, vid }) {
   const [playing, setPlaying] = useState(false);
   const [liveRoutes, setLiveRoutes] = useState(null);   // 回源获取的最新线路
   const [loadingRoutes, setLoadingRoutes] = useState(false);
+  const [rematching, setRematching] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // 站长专用：原采集源下线 / 存库直链已死时，用标题去在用源重新匹配并回填。
+  // 访客与普通用户不显示此入口；后端也只允许本人写。
+  async function rematch() {
+    const targetId = movie?.id || id;
+    if (!targetId) return;
+    setRematching(true);
+    try {
+      const res = await api.refreshMovieSource(targetId);
+      setError('');
+      setLiveRoutes(null);
+      setReloadKey((k) => k + 1);   // 触发下面 effect 重新拉取最新数据
+      toastSuccess(`已重新匹配到「${res?.source_name || res?.source_key || '新片源'}」`);
+      return res;
+    } catch (e) {
+      setError(`重新匹配失败：${e.message}`);
+      toastError(`重新匹配失败：${e.message}`);
+    } finally {
+      setRematching(false);
+    }
+    return null;
+  }
 
   useEffect(() => {
     (async () => {
@@ -75,16 +107,22 @@ export function MovieView({ id, source, vid }) {
         setMovie(candidateToMovie(c, source, vid));
       } catch (e) { setError(e.message); }
     })();
-  }, [id, source, vid]);
+  }, [id, source, vid, reloadKey]);
 
   const t = movie?.title_info || {};
   const poster = t.poster_url || movie?.cover_path;
 
-  // 已保存的线路；若无则尝试回源拉取完整线路（采集源资源）
+  // 已保存的线路；若无则尝试回源拉取完整线路（采集源资源）。
+  // 只保留「至少含一个可直连剧集」的线路，并剔除其中的非直链剧集
+  //（分享页 /share/xxx、网页播放页 /play/123 等交给播放器只会报「片源无法解析」）。
   const routes = useMemo(() => {
     const saved = Array.isArray(t.routes) ? t.routes : [];
-    if (saved.length) return saved;
-    return Array.isArray(liveRoutes) ? liveRoutes : [];
+    const raw = saved.length ? saved : (Array.isArray(liveRoutes) ? liveRoutes : []);
+    const cleaned = raw
+      .map((r) => ({ name: r.name, episodes: (r.episodes || []).filter((e) => isPlayable(e.url)) }))
+      .filter((r) => r.episodes.length);
+    // 兜底：清洗后为空（源站格式异常）时保留原始线路，避免整页无内容
+    return cleaned.length ? cleaned : raw;
   }, [t.routes, liveRoutes]);
 
   // 线路标签去重：同一采集源可能出现多条线路（m3u8 / mp4），加序号区分
@@ -120,8 +158,10 @@ export function MovieView({ id, source, vid }) {
 
   const episodes = routes[routeIndex]?.episodes || [];
   const currentEpisode = episodes[epIndex] || null;
-  // 播放地址优先级：选中剧集 > 保存的播放直链
-  const playUrl = currentEpisode?.url || movie?.url || '';
+  // 播放地址优先级：选中剧集 > 保存的播放直链（保存的地址必须是直链才用）
+  const playUrl = currentEpisode?.url || (isPlayable(movie?.url) ? movie.url : '') || '';
+  // 存库地址不是直链（历史数据里的分享页/网页地址）→ 视为「失效」，供站长看到重匹配入口
+  const urlStale = !!movie?.url && !isPlayable(movie.url) && !episodes.length;
 
   // 进入播放时隐藏全局顶栏，营造影院模式；离开时恢复
   useEffect(() => {
@@ -152,7 +192,19 @@ export function MovieView({ id, source, vid }) {
     );
   }
 
-  if (error && !movie) return <ErrorState title="影视详情加载失败" message={error} />;
+  // 详情加载失败：管理员可点「重新匹配片源」自愈（原采集源可能已下线，如 dytt/jszy/lzi）
+  if (error && !movie) {
+    return (
+      <div class="stack">
+        <ErrorState title="影视详情加载失败" message={error} />
+        {isAdmin && id && (
+          <button class="primary" disabled={rematching} onClick={rematch}>
+            <Icon name="refresh" size={15} /> {rematching ? '正在重新匹配…' : '重新匹配片源'}
+          </button>
+        )}
+      </div>
+    );
+  }
   if (!movie) return <LoadingState shape="poster" count={6} />;
 
   const year = t.release_date ? String(t.release_date).slice(0, 4) : null;
@@ -203,6 +255,12 @@ export function MovieView({ id, source, vid }) {
                 : <span class="muted" style="font-size:13px">
                     暂无播放地址{loadingRoutes ? '（正在获取线路…）' : '，请在编辑页补充或换一个采集源'}
                   </span>}
+              {/* 站长专用：原采集源下线/直链失效时重新匹配（后端只允许本人写） */}
+              {isAdmin && movie.id && (!playUrl || urlStale) && (
+                <button disabled={rematching} onClick={rematch}>
+                  <Icon name="refresh" size={15} /> {rematching ? '正在重新匹配…' : '重新匹配片源'}
+                </button>
+              )}
               {movie.tags?.map((tag) => <TagChip key={tag.id} name={tag.name} color={tag.color} />)}
             </div>
           </div>

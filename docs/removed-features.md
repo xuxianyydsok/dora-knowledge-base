@@ -105,6 +105,19 @@
 - 恢复：把对应条目加回 `backend/src/lib/maccms.js` 的 DEFAULT_VOD_SOURCES，或用环境变量 VOD_SOURCES（JSON 数组）覆盖。注意：403 的源在中国大陆直连网络下可能可播，若以后在大陆无代理访问可复测。
 - 音乐源同日复测（晴天/稻香/海阔天空/孤勇者）：GD 音乐台 netease、Meting qijieya netease/migu 全部 4/4 可播，保持不变；文档里的 Vercel 网易云 API 拿不到播放地址、LX 音源脚本只能在洛雪客户端用，未采用。
 
+## 2026-10-10 复测：恢复 360zy，不采用 ruyi
+- 背景：用户反馈「搜到电影但全部显示片源无法解析」（见 `docs/progress.md` 2.33）。
+- **恢复 1 个源**：`360zy`（360资源备用，`https://360zy.com/api.php/provide/vod/`）。
+  它是与 `zy360new`（`360zyzz.com`）**不同域名**的独立片库；实测 5/5 端到端可播
+  （搜索 → 详情 → master → 变体 → 首个 ts 分片 206），分片在 `vod*.maowushi.com`（常规端口）。
+  该域名曾在 2026-10-07 因「超时/5xx、单源 13.3s 拖垮搜索」被移除，本次复测已恢复正常（约 1.3s）。
+- **不采用**：`ruyi`（如意资源，`https://cj.rycjapi.com/api.php/provide/vod/`）。
+  搜索与详情可用，但 5 部片里有 2 部首条结果**无 m3u8 直链**，命中率 3/5，不满足「5/5 才收录」。
+- 现存 7 个：guangsu、subo、hhzy、ikun、zy360new、mdzy、360zy。
+- 其余历史源（lzi/ffzy/dytt/zuid/wujin/bfzy/jszy/hongniu/jyzy/dbzy/wolong/kuyun/tiankong/tyyszy/heimuer/mahua/cjtv/ffzy5）
+  复测仍为片源 403/404 或搜索接口坏，保持移除。
+- 恢复/移除方式：改 `backend/src/lib/maccms.js` 的 `DEFAULT_VOD_SOURCES`，或用 `VOD_SOURCES` 环境变量覆盖。
+
 ## 2026-10-09 移除：GitHub AI 解读的每分钟定时任务
 - 内容：`backend/wrangler.toml` 的 `* * * * *` Cron（每分钟解读 2 个）。
 - 原因：用户要求“不要搞定时任务，直接让它解读”。

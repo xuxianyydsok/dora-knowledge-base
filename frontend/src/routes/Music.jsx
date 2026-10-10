@@ -270,7 +270,9 @@ export function Music() {
         duration: candidate.duration,
         genre: candidate.genre,
         release_year: candidate.release_year,
-        url: candidate.page_url,
+        // 不再把 page_url（网页地址）当播放地址；后端只接受音频直链。
+        // 直链统一走 audio_url / preview_url，网页地址没有保存价值。
+        url: audioUrl || candidate.preview_url || null,
         source: candidate.platform,
         // 音源身份 + 音质信息：直链会过期，播放失败时凭这些字段重新解析（见 lib/player.jsx）
         platform: candidate.platform,

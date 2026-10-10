@@ -15,6 +15,7 @@ import {
   setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
 import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
+import { isDirectAudioUrl, isStaleAudioUrl, resolveAudioPlayback } from '../lib/mediaUrl.js';
 
 const TABLE = 'resources';
 const EXT = 'music_tracks';
@@ -163,7 +164,11 @@ export async function getMusic(request, env, id) {
   const [withExt] = await withTrack(db, tagged);
   // 访客的 user.id 是 owner 范围限定，不能把站长的播放进度当公开数据返回
   const progress = user.isGuest ? null : await getProgress(db, user.id, id);
-  return ok({ ...withExt, progress }, request, env);
+  // 只读体检：存库的 url / audio_url 若不是媒体直链（历史数据里可能有网页地址），
+  // 标记 url_stale，前端提示「音源可能已过期，点播放会自动重解析」。**不自动改库**。
+  const storedUrl = withExt?.track?.audio_url || withExt?.url || null;
+  const urlStale = isStaleAudioUrl(storedUrl);
+  return ok({ ...withExt, progress, url_stale: urlStale }, request, env);
 }
 
 // POST /api/music
@@ -178,8 +183,19 @@ export async function createMusic(request, env) {
   const artworkUrl = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
   const previewUrl = optionalString(body.preview_url, 'preview_url', { max: 1000 }) ?? null;
   const artistAvatar = optionalString(body.artist_avatar, 'artist_avatar', { max: 1000 }) ?? null;
-  // quality：full=完整音轨，preview=试听片段（由抓取源决定，手动录入默认 full）
-  const quality = body.quality === 'preview' ? 'preview' : 'full';
+  const rawUrl = optionalString(body.url, 'url', { max: 1000 }) ?? null;
+
+  // 播放地址只接受**媒体直链**：网页地址（分享页 / 平台落地页 audius.co/...）一律不用，
+  // 否则前端把它交给 <audio> 必然报「暂无可用的播放地址」。见 lib/mediaUrl.js。
+  // 优先级：完整音轨 audio_url > 显式直链 url > 试听片段 preview_url。
+  const resolved = resolveAudioPlayback({ url: rawUrl, audio_url: audioUrl, preview_url: previewUrl });
+  if (!resolved.url) {
+    throw new HttpError(422, '该曲目暂无可播放的音频直链（只收到网页地址或空地址）');
+  }
+  // quality：full=完整音轨，preview=试听片段（优先按直链类型判定，其次尊重显式声明）
+  const quality = resolved.quality === 'preview'
+    ? 'preview'
+    : (body.quality === 'preview' ? 'preview' : 'full');
   // 备用播放地址（多音源节点），仅接受字符串数组
   const audioFallbacks = Array.isArray(body.audio_fallbacks)
     ? body.audio_fallbacks.filter((u) => typeof u === 'string' && u.length <= 1000).slice(0, 5)
@@ -196,7 +212,8 @@ export async function createMusic(request, env) {
     user_id: user.id,
     type: TYPE,
     title,
-    url: optionalString(body.url, 'url', { max: 1000 }) ?? audioUrl ?? previewUrl ?? null,
+    // 只存媒体直链（网页地址已被 resolveAudioPlayback 过滤掉）
+    url: resolved.url,
     source: optionalString(body.source, 'source', { max: 60 }) ?? 'manual',
     cover_path: artworkUrl,
     summary: optionalString(body.notes, 'notes', { max: 2000 }) ?? null,
@@ -215,7 +232,9 @@ export async function createMusic(request, env) {
       bitrate: optionalInt(body.bitrate, 'bitrate', { min: 0, max: 10000 }) ?? null,
       format: optionalString(body.format, 'format', { max: 20 }) ?? null,
       // file_size 单位是字节（无损 FLAC 常在 20~70MB），不能吃 optionalInt 默认的 1e6 上限
-      file_size: optionalInt(body.file_size, 'file_size', { min: 0, max: 10_000_000_000 }) ?? null
+      file_size: optionalInt(body.file_size, 'file_size', { min: 0, max: 10_000_000_000 }) ?? null,
+      // 仅试听片段时显式标注，避免被误当完整曲目
+      ...(resolved.trialOnly ? { trial_only: true } : {})
     },
     is_public: optionalBool(body.is_public, 'is_public') ?? false
   });
@@ -228,8 +247,9 @@ export async function createMusic(request, env) {
     artist,
     album,
     artwork_url: artworkUrl,
-    audio_url: audioUrl,
-    preview_url: previewUrl,
+    // 直链存进 audio_url；只有试听片段时 audio_url 留空、由 preview_url 承载
+    audio_url: resolved.quality === 'full' ? resolved.url : (audioUrl || null),
+    preview_url: resolved.quality === 'preview' ? resolved.url : previewUrl,
     artist_avatar: artistAvatar,
     quality,
     audio_fallbacks: audioFallbacks,
@@ -262,7 +282,14 @@ export async function updateMusic(request, env, id) {
   if (body.title !== undefined) patch.title = requireString(body.title, 'title', { max: 300 });
   if (body.notes !== undefined) patch.summary = optionalString(body.notes, 'notes', { max: 2000 }) ?? null;
   if (body.artwork_url !== undefined) patch.cover_path = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
-  if (body.url !== undefined) patch.url = optionalString(body.url, 'url', { max: 1000 }) ?? null;
+  // url 只接受媒体直链：网页地址不写入（否则前端拿到网页地址会报「暂无可用的播放地址」）
+  if (body.url !== undefined) {
+    const candidate = optionalString(body.url, 'url', { max: 1000 }) ?? null;
+    if (candidate && !isDirectAudioUrl(candidate)) {
+      throw new HttpError(422, 'url 必须是可播放的音频直链，不能是网页地址');
+    }
+    patch.url = candidate;
+  }
   if (body.is_public !== undefined) patch.is_public = optionalBool(body.is_public, 'is_public');
   if (body.category_id !== undefined) {
     patch.category_id = body.category_id === null
