@@ -54,7 +54,7 @@ Worker 用 **`SUPABASE_SERVICE_ROLE_KEY`** 直连 PostgREST。service_role **绕
 并被离线单测锁定（`backend/tests/run.mjs` 的 `UNIT · 公开读边界`）。
 
 ```js
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline)(\/|$)/;
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline|moments)(\/|$)/;
 export const PUBLIC_POST_PATHS = new Set([
   '/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream'
 ]);
@@ -68,6 +68,8 @@ export function guestResourceFilters() { return { is_public: 'eq.true' }; }
 > （消耗 AI 额度，仅管理员）。
 > 2026-10-10 新增 `gallery`（图片展览）与 `timeline`（公开时间轴）两个只读入口；
 > 两者的访客过滤都在各自路由的查询层显式叠加，见 `docs/gallery-timeline.md`。
+> 同日新增 `now`（此刻页）只读入口；2026-10-11 该页改版为「碎念」，路径改为 `moments`，
+> 访客同样仅见 `is_public=eq.true` 的条目，见 `docs/now-settings.md`。
 
 ## 4. 逐路由权限矩阵
 
@@ -99,6 +101,8 @@ export function guestResourceFilters() { return { is_public: 'eq.true' }; }
 | --- | --- | --- | --- | --- |
 | GET | `/api/search` | ✅ posts 仅 `published+public`；resources 仅 `is_public` | 自己全部 | 自己全部；`?all=true` 全部 |
 | GET | `/api/graph` | ✅ **仅公开子图**（posts `published+public`、resources `is_public`；tags 仍取 owner 的） | 自己 | 自己；`?all=true` 全部 |
+| GET | `/api/graph/blog` | ✅ 公开星图（仅已发布 + 公开博客；分类/标签为 owner 的安全字段） | ✅ | ✅ |
+| GET | `/api/graph/repos` | ✅ 公开星图（仅 `is_public=true` 的 GitHub 收藏） | ✅ | ✅ |
 | GET | `/api/graph/console` | ❌ **403**（聚合 GitHub Star / AI 解读等个人数据） | ✅ 自己 | ✅ 自己 |
 | GET | `/api/graph/board` | ❌ **403** | ✅ 自己 | ✅ 自己 |
 
@@ -119,6 +123,7 @@ export function guestResourceFilters() { return { is_public: 'eq.true' }; }
 | POST | `/api/github/analyze` | ❌ **403**（仅管理员） | 消耗 Workers AI 额度 |
 | GET | `/api/posts/:id/progress`、`/api/videos/:id/progress`、`/api/music/:id/progress`、`/api/movies/:id/progress` | ❌ 401 | 个人进度 |
 | GET | `/api/notifications*`、`/api/preferences`、`/api/backup/export`、`/api/me` | ❌ 401 | 个人数据 |
+| PATCH | `/api/me` | ❌ 401 | 改档案（仅登录本人；访客即使能进也 403） |
 | 任意 | `/api/admin/*`、`/api/mcp/*` | ❌ 401/403 | 管理员接口 |
 
 ### 4.6 图片展览 / 公开时间轴（2026-10-10 新增）
@@ -130,6 +135,16 @@ export function guestResourceFilters() { return { is_public: 'eq.true' }; }
 | GET | `/api/timeline` | ✅ 仅公开内容（posts 已发布+公开、resources 公开、gallery 公开） | 仅公开内容 | 仅公开内容 |
 
 > 详见 `docs/gallery-timeline.md`。
+
+### 4.6.1 碎念 Moments（2026-10-10 新增「此刻」，2026-10-11 改版为「碎念」）
+
+| 方法 | 路径 | 公开访客 | 登录用户 | 管理员 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/moments` | ✅ 仅 `moments.is_public=true` | 仅本人 | 仅本人 |
+| POST/PATCH/DELETE | `/api/moments*` | ❌ 401 | ❌ 403 | ✅ 仅本人 |
+
+> 碎念是**公开内容页**：登录用户与管理员也只返回本人条目，不因登录看到私密项。
+> 条目默认 `is_public=false`（私人），只有站长显式公开才对外可见。详见 `docs/now-settings.md`。
 
 ### 4.7 明确不在本次范围（保持原样）
 

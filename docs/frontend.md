@@ -115,15 +115,22 @@ frontend/src/
 | 路径 | 页面 |
 | --- | --- |
 | `/search` | 全局搜索（按类型/资源类型过滤） |
-| `/graph` | 资源关联图谱（D3 力导向，可拖拽/缩放） |
+| `/graph` | 站长控制台（流动管线图 + 仪表盘 + D3 经典视图；**不在顶栏**，可直接访问） |
+| `/graph/blog` | 博客图谱（顶栏「图谱」入口；Canvas 星图：分类/标签星区 + 文章星点） |
+| `/graph/repos` | 开源项目图谱（Canvas 星图：编程语言 / AI 应用分类星区 + GitHub 收藏星点） |
 | `/favorites` | 收藏夹（画廊/时间流双视图） |
+| `/gallery` | 图片展览（策展 masonry + 灯箱） |
+| `/timeline` | 公开时间轴（按日期聚合） |
+| `/moments` | 碎念（朋友圈式短动态流，可配图，站长发布） |
 | `/backup` | 导入导出备份 |
-| `/settings` | 主题自定义配色 |
+| `/settings` | 设置与安全中心（账号 / 外观 / 安全 / 数据 / 管理员入口） |
 
 顶栏新增：🔍 搜索入口、🔔 通知铃铛（含未读徽标，每分钟轮询）、⚙️ 设置、💾 备份。
 
 ## 懒加载说明
 - **D3** 仅在 `/graph` 路由的 `GraphView` 中通过 `await import('d3')` 加载，首屏不引入。
+- `/graph/blog`、`/graph/repos` 用自写的 `components/StarMap.jsx`（原生 Canvas，**不依赖 D3**）：
+  星区布局 + 随机但稳定的连线 + 光点流动，配色跟随主题，1341 个点仍保持 60fps。
 - 构建验证：`dist/index.html` 无任何重型库 `modulepreload`；入口 JS 对 Graph/D3 chunk 均为动态 `import()`。
 - 现有 KaTeX/Mermaid/Chart.js/Three.js 仍遵循 Phase2 的「博客页按需加载」策略。
 
@@ -301,3 +308,40 @@ import { Icon } from '../components/Icon.jsx';
 ## 相关样式
 `.player` / `.vinyl` / `.vinyl-disc` / `.vinyl-cover` / `.vinyl-avatar` / `.quality-tag` /
 `.lyrics-panel` / `.lyrics-scroll` / `.lyric-line`（`.active` / `.passed` / `.static`）/ `.artist-avatar`。
+
+# 第三套主题 / 登录注册 / 收藏改版 / 碎念附件 / 图谱标签（2026-10-11）
+
+## 主题：纯净 / 素雅 / 天青（三套循环）
+- 显示名的**唯一事实来源**是 `src/lib/theme.jsx` 的 `MODES`（`key` / `label` / `icon`）。
+  用户要求显示名**不带「主题」二字**，因此是「纯净」「素雅」「天青」，不是「白天主题」。
+- 新增 `[data-theme='celadon']`（青绿主色 `#0f9b8e` + 冷白底），定义在 `src/styles/global.css`。
+- `ThemeToggle.jsx` / `ThemeCustomizer.jsx` / `Settings.jsx` 一律用 `modeLabel()` 取显示名，**不要硬编码**。
+- 后端偏好白名单（`backend/src/routes/preferences.js`）同步支持 `celadon`。
+- 窄屏（≤520px）下主题按钮与登录按钮**只留图标**，避免顶栏拥挤。
+
+## 顶栏「设置」入口
+- `src/components/Layout.jsx`：主题按钮右侧常驻一枚齿轮 —— 已登录 → `/settings`，访客 → `/login`。
+- 访客右上角另有明确的「登录」按钮（`.login-link`，原先只有齿轮，入口太隐蔽）。
+
+## 登录 / 注册页（`src/routes/Login.jsx`，`/login`）
+- 标签页：站长登录 / 新用户注册；样式 `.auth-*`（`src/styles/now-settings.css`），沿用 `.set-card` 观感。
+- 注册后账号一律是普通用户（`role='user'`，由数据库触发器保证，前端不参与角色判定）。
+- 已登录时展示「已登录 + 当前账号 + 进入设置 / 退出登录」。
+
+## 收藏页（`src/routes/Favorites.jsx`，`/favorites`）
+- 以**音乐 + 影视**为主：封面网格（音乐 1:1、影视 2:3），顶部「全部 / 音乐 / 影视 / 其它」筛选。
+- 收藏按钮 `src/components/FavoriteButton.jsx` 挂在音乐 / 影视详情页操作区；未登录不渲染。
+
+## 图片展：策展抽屉直接上传
+- `src/routes/Gallery.jsx` 的策展抽屉新增「上传新图片」：`uploadAsset()` → `createGalleryItem()`
+  （默认公开），多选逐张上传带进度；样式 `.gl-upload`。
+
+## 碎念：文件附件（PDF / Word 等）
+- `src/routes/Moments.jsx`：编辑器新增「上传附件 / 从附件库选」（`uploadFile()` → `api.listFiles()`），
+  条目以「类型徽标 + 文件名 + 大小 + 下载」展示；编辑时回填已有配图与附件。
+- 相关样式：`.mo-file*` / `.mo-chosen-file` / `.mo-file-pick`。
+
+## 图谱：标签清晰度
+- `src/components/StarMap.jsx`：枢纽标签改为**实底药丸 + 左侧色条**（底色不透明、字色取主题正文色），
+  并做**纵向避让**（同侧重叠时往下推），不再互相压住、不再发虚。
+- `src/styles/starmap.css`：侧栏 chip 字号 / 色点加大，读数更清楚。

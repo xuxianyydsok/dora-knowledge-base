@@ -37,7 +37,9 @@
   （列表为空）。这是预期行为；要公开展示需站长把相应记录置为 `is_public=true`。
 - 访客可以直接播放影视（2026-10-09 用户要求「访客播放不要加限制」）：点搜索结果进入 `/movies/watch/:source/:vid`，按采集源详情直接播放，不入库、不记进度；也可以调用影视/音乐的只读检索接口（POST `/api/movies/search`、`/api/movies/source-detail`、`/api/music/search`、`/api/music/lyrics`、`/api/music/stream`）。音乐同理：访客点歌直接播放，不入库。
 - 访客不能：新增/编辑/删除任何内容，查看/保存播放进度，访问备份、设置、通知、用户管理等页面。
-- 顶栏不再显示「登录」按钮；站长仍可直接访问 `/login` 登录，登录后一切照旧。
+- ~~顶栏不再显示「登录」按钮~~ → **2026-10-11 起恢复登录入口**：顶栏主题按钮右侧常驻齿轮
+  （已登录 → `/settings`，访客 → `/login`），访客右上角另有明确的「登录」按钮。
+  访客仍可只读浏览全部公开内容，登录只是「获得站长 / 普通用户身份」的入口。
 
 **涉及的配置与代码**
 - `backend/wrangler.toml`：`[vars] PUBLIC_MODE = "true"`。
@@ -66,6 +68,19 @@
 **现在的行为**：≤920px 时一级导航（NewsNow/视频/GitHub/博客/音乐/影视/更多）在 Dora 图标右侧单行横向滑动，右端渐隐提示可滑动；「更多」下拉照常展开。账号操作（设置/备份/用户管理/退出）只在头像菜单里（原抽屉底部的重复入口一并移除）。
 **涉及代码**：`frontend/src/components/Layout.jsx`（删 `.nav-toggle` 按钮、`navOpen` 状态、`.nav-drawer-actions`）；`frontend/src/styles/global.css`（≤920px 抽屉样式改为横向滚动）。
 **恢复**：从 git 历史取回这两个文件中 8c52f80 版本的对应片段。
+
+## 顶栏的「更多」下拉（已移除，2026-10-11）
+
+**原因**：用户要求去掉顶栏的「更多」按钮，把里面的功能放进一级导航。
+当时「更多」里只剩「碎念」（原「此刻」）一项，为一项单独挂个下拉反而多点一次。
+
+**现在的行为**：一级导航为 10 项（NewsNow / GitHub / 博客 / 音乐 / 影视 / 图谱 / 图片展 / 时间轴 / 碎念 / 收藏）；
+管理员专属的「源状态」移入**头像菜单**（与设置 / 备份 / 用户管理 / 退出并列，普通访客本来也看不到它）。
+窄屏（≤1080px）仍是一级导航横向滚动。
+
+**恢复**：从 git 历史取回 `frontend/src/components/Layout.jsx` 中 `TOOLS` 数组与 `<Dropdown label="更多">` 那段
+（`Dropdown` / `MenuLink` 组件本身仍保留，头像菜单还在用）。**若日后功能变多、一级导航放不下，
+再把它做成「更多」下拉**——用户已确认这个方向。
 
 ## 博客首页分类条里的小搜索框与入口（已替换，2026-10-09）
 
@@ -129,3 +144,47 @@
 - 原因：用户表示后续没有用处。
 - 保留：`frontend/src/routes/Videos.jsx`、后端 `/api/videos` 接口与数据库数据均未删。
 - 恢复：Layout.jsx PRIMARY 加回 `['/videos', '视频']`，Home.jsx MODULES 加回 videos 项，app.jsx 把 Redirect 换回 `<ProtectedRoute guest path="/videos"><Videos /></ProtectedRoute>`。
+
+## 2026-10-11 再调整：「更多」下拉没有保留，改成「图谱」一级入口
+
+- 2.33 删掉「更多」下拉、2.34 一度恢复它（只放两个图谱），最后按用户要求**再次取消下拉**：
+  「图谱」直接作为一级导航项（指向 `/graph/blog`），两种图谱在页面内用标签切换。
+- 顶栏最终 10 项：NewsNow · GitHub · 博客 · 音乐 · 影视 · 图片展 · 时间轴 · 碎念 · 图谱 · 收藏。
+- 用户已说明：日后功能再多、顶栏放不下时，再把放不下的收进「更多」下拉。
+- `Layout.jsx` 里的 `MORE` 常量已删除；`global.css` 里为下拉写的 `.nav-more` 样式也已删除。
+- 恢复方式：在 `Layout.jsx` 加回 `MORE` 数组与 `<Dropdown>` 块（参考 git 历史 f2c78f4 之后的这轮改动）。
+
+## 2026-10-11 图谱页不再整页深色（顶栏跟着变暗那条规则被删）
+
+- 位置：`frontend/src/styles/graph-console.css` 末尾。
+- 原因：用户明确要求「暗色不要影响导航栏的颜色」；且新的公开星图页要跟随站点主题色。
+- 现状：`.app-shell.page-dark` 只保留 `background`，整段 `.app-header` / `.menu-panel` 覆盖已删除；
+  `Layout.jsx` 也只对精确等于 `/graph` 的路径加 `page-dark`。
+- 恢复：`git show 7692924 -- frontend/src/styles/graph-console.css` 取回那段覆盖规则。
+
+## 2026-10-11 移除：图书功能（整体下线）
+
+> **2026-10-11 已重新上线**（限制单本 ≤100MB + 上传时自动提取封面 + EPUB/PDF 站内阅读）。
+> 下表只记录当时删除的范围与恢复方式；现行实现在 `backend/src/routes/books.js`、
+> `frontend/src/routes/Books.jsx`，迁移版本号为 `20261011000020`。
+
+- **内容**：一级导航「图书」、前端 `/books` 书架页与站内阅读器、后端 `/api/books*` 全部接口、
+  `books` 数据库表、R2 里 `books/` 前缀下的 24 个电子书对象。
+- **原因**：用户实测后发现电子书文件太大（24 本合计约 2.4GB，最大单本 772MB），
+  占 R2 存储与流量，阅读体验性价比低，决定整体删掉。
+- **已删除的文件**：
+  - `frontend/src/routes/Books.jsx`、`frontend/src/styles/books.css`
+  - `frontend/src/lib/epub.js`、`frontend/src/lib/zipReader.js`（仅图书阅读器使用）
+  - `backend/src/routes/books.js`、`backend/src/lib/bookType.js`
+  - `supabase/migrations/20261011000020_books.sql`
+- **已清理的引用**：`routes.js`、`app.jsx`、`Layout.jsx`（PRIMARY）、`Settings.jsx`（管理员快捷入口）、
+  `Home.jsx`（MODULES / DASH_MODULES / 文案）、`lib/api.js`（uploadBook + 8 个 books 方法）、
+  `backend/src/router.js`、`backend/src/lib/publicScope.js`（`PUBLIC_READ_RE` 去掉 books）、
+  `backend/tests/run.mjs`（图书单测用例与 import）。
+- **数据清理**：
+  - 数据库：`drop table public.books cascade`，并删除 `supabase_migrations` 里
+    `20261011000020` 记录（否则迁移文件删除后 `db push` 会报状态不一致）。
+  - R2：`books/` 前缀 24 个对象已删除，桶里现在只剩 `assets/` 48 个对象。
+- **原件**：用户本地 `/mnt/d/books` 保留全部原始电子书，**未丢失**。
+- **恢复方式**：R2 上的电子书**不可恢复**（需从本地重传）。代码层需按上面的清单重建，
+  并按 `20261011000020_books.sql` 的建表语句重写一份新迁移（版本号取当前最大 +1）。

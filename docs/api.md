@@ -16,6 +16,29 @@
 ### GET /api/me
 返回当前用户 id、email、role、plan、is_admin。
 
+### PATCH /api/me（2026-10-10）
+仅本人可改，且只开放三个安全字段；访客（未登录只读上下文）返回 403。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| PATCH | `/api/me` | 登录本人（访客 403） | 可改 `display_name` / `avatar_path` / `username`；出现 `role` / `plan` / `plan_expires_at` / `is_disabled` / `id` 一律 **422** |
+
+字段规则：
+
+- `display_name`：可选字符串，≤80，允许 `null` 清空；
+- `avatar_path`：可选字符串，≤500，只允许 http/https 绝对地址或站内相对地址，允许 `null`；
+- `username`：可选字符串，3..60，正则 `/^[a-zA-Z0-9_.-]+$/`；唯一冲突返回 **409** `用户名已被占用`。
+
+返回结构（与 `GET /api/me` 一致，不含任何令牌/密钥）：
+
+```json
+{ "id": "<uuid>", "email": "…", "username": "…", "display_name": "…",
+  "role": "user", "plan": "free", "is_admin": false }
+```
+
+> 数据库层另有迁移 `20261010000014` 把 `authenticated` 的表级 update 收窄到这三列，
+> 应用层的 `buildProfilePatch` 是第二道保险。详见 `docs/now-settings.md`。
+
 ## 分类 Categories
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -79,7 +102,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 | DELETE | `/api/github/:id` | 删除 |
 
 `metadata` 含 `stars`、`forks`、`language`、`topics`、`html_url`、`avatar_url` 等。
-> GitHub 匿名接口限流 60 次/小时，可通过 `wrangler secret put GITHUB_TOKEN` 提升额度。
+`metadata.ai` 为 AI 中文解读：`{ ai_version, one_line, summary, tags, keywords, platforms, model, analyzed_at }`。
+> GitHub 匿名接口限流 60 次/小时，可通过 `wrangler secret put GITHUB_TOKEN` 提升额度（本站已配置）。
+> `POST /api/github/analyze` 每次并行解读 8 个待解读仓库；解读要求**简体中文且 summary 不少于 50 个字**，
+> 不达标会自动重试（最多 3 次），仍不达标才记一次失败。改提示词后把 `lib/githubAi.js` 的
+> `AI_VERSION` +1，全部旧解读会被自动重新生成。
 
 ## HTML 博客 Posts
 | 方法 | 路径 | 说明 |
@@ -169,6 +196,18 @@ curl -X POST -H "Authorization: Bearer $ADMIN_JWT" -H "Content-Type: application
 - 边类型：`post-resource`（含 `relation`）/ `post-tag` / `resource-tag`
 - 返回：`{ nodes, edges, stats: { posts, resources, tags, edges } }`
 - 管理员可传 `?all=true`
+
+### GET /api/graph/blog（公开星图：博客）
+返回 `{ nodes, links, stats }`。节点 `kind=hub`（分类 / 标签）或 `kind=leaf`（文章，
+带 `parent` 指向所属分类）。访客只拿已发布且公开的博客。
+
+### GET /api/graph/repos（公开星图：开源项目）
+返回 `{ nodes, links, stats }`。节点 `kind=hub`（编程语言 / AI 应用分类）或 `kind=leaf`
+（GitHub 仓库，带 `owner` / `url` / `one` / `lang` / `cat` / `stars` / `parent`）。
+访客只拿 `is_public=true` 的收藏。
+
+> 这两个接口是给前端 `StarMap` 用的**公开**数据源，不做「连线=真实关系」的承诺：
+> 前端只按 `nodes` 的 `group`/`parent` 分星区，连线由前端随机生成（见 `docs/progress.md` 2.34）。
 
 ## 收藏夹
 | 方法 | 路径 | 说明 |
@@ -638,3 +677,86 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 
 `type` 取值：`post` / `github` / `music` / `movie` / `gallery`。
 排序与分页语义、已知近似分页限制见 `docs/gallery-timeline.md`。
+
+## 碎念 Moments（2026-10-11，取代旧「此刻 Now」）
+
+站长**显式发布**的当下状态（在造 / 在学 / 在读 / 在听 / 在看 / 在想）。
+不是行为追踪：不自动暴露播放历史、阅读记录等私人行为。详见 `docs/now-settings.md`。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/moments` | 访客只读公开 | `?limit=`（默认 30，≤100）`&offset=`；访客仅返回 `is_public=eq.true`；登录用户/管理员也只返回本人 |
+| POST | `/api/moments` | 管理员 | body `{ content, is_public?, asset_ids?, file_ids? }`；`is_public` 默认 **false**；`asset_ids` 最多 9 张、`file_ids` 最多 5 个，且必须都是**本人**素材 / 附件；`user_id` 强制取当前用户 |
+| PATCH | `/api/moments/:id` | 管理员 | 部分更新；仅本人（`id` 且 `user_id` 双限定），非本人 404；传 `asset_ids` / `file_ids` 会**整体替换**该组；改 `is_public` 会同步已挂附件的公开状态 |
+| DELETE | `/api/moments/:id` | 管理员 | 仅本人；只删碎念与配图 / 附件关联，**绝不删除 R2 素材**；返回 `{ id, removed: true }` |
+
+返回结构（**不含 `user_id`**）：
+
+```json
+{ "id": "<uuid>", "content": "…", "is_public": true,
+  "created_at": "…", "updated_at": "…",
+  "images": [{ "id": "<asset-id>", "url": "…/api/assets/<id>", "width": 2560, "height": 1440, "mime_type": "image/webp" }],
+  "files": [{ "id": "<file-id>", "url": "…/api/files/<id>", "name": "报告.pdf", "mime_type": "application/pdf", "size": 12345 }] }
+```
+
+> 2026-10-11 追加：碎念支持**文件附件**（PDF / Word / Excel / PPT / 文本）。附件存 `files` 表、
+> 二进制在 R2；碎念公开时附件自动公开，改回私人时自动收回（见 `docs/now-settings.md`）。
+
+### 文档附件（R2）
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/api/files` | 管理员 | multipart，字段 `file`；仅 PDF / doc / docx / xls / xlsx / ppt / pptx / txt / csv / md（**魔数 + 声明双校验**），单个 ≤20MB |
+| GET | `/api/files` | 管理员 | `?limit=`（默认 24，≤100）`&offset=`；只列本人附件 |
+| GET | `/api/files/:id` | **访客可读** | 只放行 `is_public=true`；`Content-Disposition: inline`（PDF / 文本可直接预览） |
+| DELETE | `/api/files/:id` | 管理员 | 仅本人；被碎念引用时返回 **409**（附引用列表）；删除时一并删 R2 对象 |
+
+> object key 由服务端生成（`files/<user_id>/<年>/<uuid>.<ext>`），用户文件名只作展示；
+> 私人附件即便拿到 UUID 也读不到（`GET` 只认 `is_public=true`）。
+
+> 2026-10-11 改版：原「此刻」（六类状态卡 `/api/now`）按用户要求改为朋友圈式的「碎念」，
+> 接口路径与数据模型一并更换（`now_entries` → `moments` + `moment_assets` + `moment_files`）。
+> 旧 `/api/now` 已下线（六类状态卡的字段规则与返回结构一并作废，不再返回 `kind` / `title` / `started_at`）。
+
+## 图书 Books（2026-10-11 重新上线）
+
+> 历史：2026-10-11 曾整体下线（24 本约 2.4GB，最大单本 772MB）。本轮重新上线，
+> **单本上限 100MB**，并新增「上传时自动提取封面 + 书名 / 作者」与「站内在线阅读」。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/api/books` | 管理员 | **原始请求体直传**（不是 multipart）：body = 文件字节，文件名走 `X-Book-Name` 头（`encodeURIComponent` 编码）。仅 PDF / EPUB / MOBI / AZW3（魔数嗅探），单本 ≤100MB |
+| GET | `/api/books` | **访客可读** | `?limit=`（默认 60，≤200）`&offset=` `&format=`；访客只返回 `is_public=true` |
+| GET | `/api/books/:id` | **访客可读** | 单本元数据（JSON）；私人书仅本人 |
+| GET | `/api/books/:id/file` | **访客可读** | 正文字节，**支持 `Range`**（PDF 内嵌翻页 / 阅读器按需取字节）；`?download=1` 发 `Content-Disposition: attachment` 强制下载 |
+| GET | `/api/books/:id/cover` | **访客可读** | 上传时自动提取的封面图 |
+| PATCH | `/api/books/:id` | 管理员 | 改 `title` / `author` / `description` / `is_public` / `sort_order`；仅本人 |
+| DELETE | `/api/books/:id` | 管理员 | 仅本人；同时删正文与封面两个 R2 对象 |
+
+返回结构（**不含 `object_key` / `cover_key` / `user_id`**）：
+
+```json
+{ "id": "<uuid>", "title": "三体读客版（套装共3册）", "author": "刘慈欣",
+  "description": "", "format": "epub", "mime_type": "application/epub+zip",
+  "size": 80198493, "file_url": "…/api/books/<id>/file",
+  "cover_url": "…/api/books/<id>/cover", "is_public": true,
+  "sort_order": 0, "created_at": "…", "updated_at": "…",
+  "read_mode": "reader" }
+```
+
+`read_mode` 是后端给出的阅读能力位，前端据此决定按钮：
+`pdf → inline`（浏览器内嵌）、`epub → reader`（站内阅读器）、`mobi` / `azw3 → download`。
+
+**为什么不用 multipart**：电子书可达 100MB，而 Worker 内存上限 128MB，
+`request.formData()` 会整体读进内存直接爆掉。改为原始 body 流式直传 R2，全程只缓冲头部 4KB 做魔数嗅探。
+
+**封面提取**（`backend/src/lib/bookCover.js`，零依赖，随机读取字节源）：
+- EPUB：最小 zip 中央目录解析 → `META-INF/container.xml` → OPF → `meta[name=cover]` / `properties=cover-image`；
+- PDF：扫描头部若干 MB 里的 `/Subtype /Image` + `/Filter /DCTDecode` 流，取第一张 >8KB 的 JPEG；
+- MOBI / AZW3：PalmDB 记录表 + MOBI header + EXTH（type 201 封面 / 100 作者 / 503 书名）。
+- 只按需 range 读取几段字节，**从不整本读进内存**（80MB EPUB 实测堆增量 ≈ 0.3MB）。
+
+**站内阅读**（`frontend/src/lib/epubReader.js`，零依赖）：
+EPUB 在浏览器里解压并按 spine 顺序渲染章节，带 nav / NCX 章节目录；
+资源（图片 / CSS）重写成 `blob:` URL，脚本 / 事件属性 / 外链一律清洗掉；
+用 `sandbox="allow-same-origin"` 的 `srcDoc` iframe 呈现。
