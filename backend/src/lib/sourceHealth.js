@@ -15,6 +15,7 @@ import {
   getVodSources, searchMaccms, detailMaccms, isPlayableUrl
 } from './maccms.js';
 import { getMetingInstances, searchMetingMusic } from './meting.js';
+import { searchNeteaseMusic, searchKugouMusic } from './musicSources.js';
 
 // —— 探测预算（毫秒）——
 // 影视：6 个源并发，单源 6s、整体 8s；音乐：多路并发，单源 8s、整体 10s。
@@ -406,6 +407,22 @@ async function probeTrial(kind) {
   return judgeMusicProbe({ trialOnly: true, resultCount: list.length });
 }
 
+// 官方接口两路（网易云 / 酷狗）：搜到了且条目自带可播地址 → ok。
+// 只声明 search + play 两项能力（没有「详情」概念）。
+async function probeOfficialMusic(kind) {
+  const res = kind === 'kugou'
+    ? await searchKugouMusic(PROBE_KEYWORD_CN, 5)
+    : await searchNeteaseMusic(PROBE_KEYWORD_CN, 5);
+  const list = res?.candidates || [];
+  return judgeMusicProbe({
+    resultCount: list.length,
+    hasPlayableUrl: list.some((c) => c.audio_url)
+  });
+}
+
+const probeNetease = () => probeOfficialMusic('netease');
+const probeKugou = () => probeOfficialMusic('kugou');
+
 export async function probeMusicSources(env = {}) {
   const entries = [];
 
@@ -436,6 +453,10 @@ export async function probeMusicSources(env = {}) {
   entries.push({ key: 'audius', name: 'Audius', kind: 'music', probe: probeAudius });
   entries.push({ key: 'itunes', name: 'iTunes（试听）', kind: 'music', probe: () => probeTrial('itunes') });
   entries.push({ key: 'deezer', name: 'Deezer（试听）', kind: 'music', probe: () => probeTrial('deezer') });
+
+  // 官方接口两路（2026-10-11 新增，见 lib/musicSources.js）
+  entries.push({ key: 'netease', name: '网易云（官方）', kind: 'music', probe: probeNetease });
+  entries.push({ key: 'kugou', name: '酷狗（官方）', kind: 'music', probe: probeKugou });
 
   return probeEntries(entries, { budgetMs: MUSIC_BUDGET_MS, perSourceMs: MUSIC_SOURCE_TIMEOUT_MS });
 }

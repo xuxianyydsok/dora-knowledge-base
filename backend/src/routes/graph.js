@@ -8,6 +8,7 @@ import { ok, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { guestPostFilters, guestResourceFilters } from '../lib/publicScope.js';
+import { selectAllGithubLite } from '../lib/githubStars.js';
 
 // GET /api/graph
 export async function getGraph(request, env) {
@@ -208,4 +209,151 @@ export async function getBoard(request, env) {
   });
   R.forEach((r) => { delete r.kw; });
   return ok({ posts: P, repos: R, links }, request, env);
+}
+
+// ---------------- 星图（2026-10-11）----------------
+// 「更多 → 图谱」下的两个公开图谱：博客图谱 / 开源项目图谱。
+// 与 getConsole（站长个人控制台）不同，这两个是**给访客看的公开星图**：
+// 只取已发布且公开的博客、公开的资源，不返回任何 user_id / 私密字段。
+// 前端不做力导向（上千个仓库会卡），改为「聚类轨道」：中心枢纽 + 卫星绕行，
+// 所以这里只需要给出**带权重的节点 + 连线**，坐标由前端按稳定伪随机算。
+
+// GET /api/graph/blog —— 博客图谱：分类（枢纽）→ 文章（卫星）+ 标签（枢纽）
+export async function getBlogGraph(request, env) {
+  const { db, user } = await requireAuth(request, env);
+  const uf = { user_id: `eq.${user.id}` };
+  const [posts, cats, tags, postTags] = await Promise.all([
+    db.select('posts', qs({
+      select: 'id,title,slug,category_id,published_at,created_at,excerpt',
+      ...uf, ...(user.isGuest ? guestPostFilters() : {}), limit: '2000'
+    })),
+    db.select('categories', qs({ select: 'id,name,slug', ...uf, limit: '200' })),
+    db.select('tags', qs({ select: 'id,name,slug,color', ...uf, limit: '500' })),
+    db.select('post_tags', qs({ select: 'post_id,tag_id', ...uf, limit: '5000' }))
+  ]);
+
+  const postIds = new Set(posts.map((p) => p.id));
+  const tagName = new Map(tags.map((t) => [t.id, t.name]));
+
+  // 每个标签被多少篇（可见的）文章使用 —— 只有真正挂上文章的标签才上图，避免孤立点
+  const tagCount = new Map();
+  postTags.forEach((l) => {
+    if (!postIds.has(l.post_id)) return;
+    tagCount.set(l.tag_id, (tagCount.get(l.tag_id) || 0) + 1);
+  });
+
+  const catCount = new Map();
+  posts.forEach((p) => { const k = p.category_id || 'none'; catCount.set(k, (catCount.get(k) || 0) + 1); });
+
+  const nodes = [
+    ...cats.filter((c) => catCount.get(c.id)).map((c) => ({
+      id: `c:${c.id}`, kind: 'hub', group: '分类', label: c.name, slug: c.slug,
+      count: catCount.get(c.id), color: '#3ee6a8'
+    })),
+    ...[...tagCount.entries()].map(([id, n]) => ({
+      id: `t:${id}`, kind: 'hub', group: '标签', label: tagName.get(id) || '标签', slug: null,
+      count: n, color: '#4cc9ff'
+    })),
+    ...posts.map((p) => ({
+      id: `p:${p.id}`, kind: 'leaf', group: '文章', label: p.title, parent: `c:${p.category_id || 'none'}`,
+      date: (p.published_at || p.created_at || '').slice(0, 10), color: '#ffb547'
+    }))
+  ];
+
+  const known = new Set(nodes.map((n) => n.id));
+  const links = [];
+  postTags.forEach((l) => {
+    if (!postIds.has(l.post_id) || !tagCount.get(l.tag_id)) return;
+    links.push({ source: `p:${l.post_id}`, target: `t:${l.tag_id}`, kind: 'tag' });
+  });
+  // 文章 → 分类：用 parent 表达，前端画成轨道；这里也补一条显式连线，便于统计与悬停高亮
+  posts.forEach((p) => {
+    const k = `c:${p.category_id || 'none'}`;
+    if (known.has(k)) links.push({ source: `p:${p.id}`, target: k, kind: 'category' });
+  });
+  // 分类里没挂到任何分类的文章（未分类）不产生孤立点：把它们挂到「未分类」枢纽上
+  const orphans = nodes.filter((n) => n.kind === 'leaf' && !known.has(n.parent));
+  if (orphans.length) {
+    nodes.push({ id: 'c:none', kind: 'hub', group: '分类', label: '未分类', slug: null, count: orphans.length, color: '#8a847b' });
+    orphans.forEach((o) => { o.parent = 'c:none'; links.push({ source: o.id, target: 'c:none', kind: 'category' }); });
+  }
+
+  const shown = new Set(nodes.map((n) => n.id));
+  return ok({
+    nodes,
+    links: links.filter((l) => shown.has(l.source) && shown.has(l.target)),
+    stats: {
+      posts: posts.length, categories: nodes.filter((n) => n.group === '分类').length,
+      tags: nodes.filter((n) => n.group === '标签').length,
+      links: links.length
+    },
+    now: new Date().toISOString()
+  }, request, env);
+}
+
+// GET /api/graph/repos —— 开源项目图谱：编程语言（外环枢纽）+ AI 应用分类（内环枢纽）→ 仓库（卫星）
+export async function getRepoGraph(request, env) {
+  const { db, user } = await requireAuth(request, env);
+  const rows = await selectAllGithubLite(db, {
+    ...{ user_id: `eq.${user.id}` },
+    ...(user.isGuest ? guestResourceFilters() : {})
+  });
+
+  const repo = (r) => ({
+    id: `r:${r.id}`,
+    title: r.title || '',                       // owner/name
+    name: String(r.title || '').split('/').pop() || r.title,
+    owner: String(r.title || '').split('/')[0] || '',
+    url: r.url,
+    one: String(r.ai?.one_line || r.summary || '').slice(0, 90),
+    lang: r.language || '',
+    tags: Array.isArray(r.ai?.tags) ? r.ai.tags : [],
+    stars: Number(r.stars) || 0,
+    starred_at: r.starred_at || null
+  });
+  const repos = rows.map(repo);
+
+  const tally = (fn) => {
+    const m = new Map();
+    repos.forEach((r) => fn(r).forEach((k) => { if (k) m.set(k, (m.get(k) || 0) + 1); }));
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  };
+
+  const langs = tally((r) => [r.lang]).slice(0, 12);
+  const cats = tally((r) => (r.tags.length ? [r.tags[0]] : [])).slice(0, 12);
+  const langSet = new Set(langs.map(([l]) => l));
+  const catSet = new Set(cats.map(([c]) => c));
+
+  const nodes = [
+    ...langs.map(([name, count]) => ({ id: `L:${name}`, kind: 'hub', ring: 'outer', group: '编程语言', label: name, count, color: '#4cc9ff' })),
+    ...cats.map(([name, count]) => ({ id: `A:${name}`, kind: 'hub', ring: 'inner', group: '应用分类', label: name, count, color: '#b48cff' })),
+    ...repos.map((r) => ({
+      id: r.id, kind: 'leaf', group: '仓库', label: r.name, owner: r.owner, url: r.url, one: r.one,
+      lang: langSet.has(r.lang) ? r.lang : '', cat: catSet.has(r.tags[0]) ? r.tags[0] : '',
+      stars: r.stars, date: (r.starred_at || '').slice(0, 10),
+      parent: `L:${langSet.has(r.lang) ? r.lang : '其他'}`, color: '#ffb547'
+    }))
+  ];
+
+  const known = new Set(nodes.map((n) => n.id));
+  const links = [];
+  if (repos.some((r) => !langSet.has(r.lang))) {
+    nodes.push({ id: 'L:其他', kind: 'hub', ring: 'outer', group: '编程语言', label: '其他', count: repos.filter((r) => !langSet.has(r.lang)).length, color: '#8a847b' });
+  }
+  nodes.filter((n) => n.kind === 'leaf').forEach((n) => {
+    if (known.has(n.parent)) links.push({ source: n.id, target: n.parent, kind: 'lang' });
+    if (n.cat) links.push({ source: n.id, target: `A:${n.cat}`, kind: 'cat' });
+  });
+
+  return ok({
+    nodes,
+    links,
+    stats: {
+      repos: repos.length,
+      languages: nodes.filter((n) => n.group === '编程语言').length,
+      categories: nodes.filter((n) => n.group === '应用分类').length,
+      links: links.length
+    },
+    now: new Date().toISOString()
+  }, request, env);
 }

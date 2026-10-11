@@ -6,11 +6,12 @@
 // - 安全红线（只输出安全字段）也在这里集中保证，避免路由层不小心把 object_key 带出去。
 
 // 时间轴允许的内容类型。video 页 2026-10-09 已删除，故不含 video。
-export const TIMELINE_TYPES = ['post', 'github', 'music', 'movie'];
+// 2026-10-11 用户要求：图书也进时间轴。
+export const TIMELINE_TYPES = ['post', 'github', 'music', 'movie', 'book'];
 
 // 各类型的中文标签（前端可直接复用，避免两边各写一套）
 export const TIMELINE_TYPE_LABELS = {
-  post: '博客', github: 'GitHub', music: '音乐', movie: '影视', gallery: '图片'
+  post: '博客', github: 'GitHub', music: '音乐', movie: '影视', gallery: '图片', book: '图书'
 };
 
 export const TIMELINE_MAX_LIMIT = 50;
@@ -117,16 +118,67 @@ export function mapGallery(row = {}) {
   });
 }
 
-// 合并三类 + 按 date 倒序（同 date 按 id 升序，保证稳定分页）+ 复合游标分页
-export function mergeTimeline({ posts = [], resources = [], gallery = [] } = {}, { limit = 20, before = null } = {}) {
+// 图书（2026-10-11 用户要求）：按上架时间进时间轴，封面用上传时自动提取的封面，
+// 点击回到书架（书是就地弹阅读器，没有独立详情页）。
+// 标题优先用书内解析出的书名，缺失时回退文件名去扩展名。
+export function mapBook(row = {}) {
+  const fallback = typeof row.original_name === 'string'
+    ? row.original_name.replace(/\.[a-z0-9]+$/i, '')
+    : '';
+  const format = typeof row.format === 'string' ? row.format.toUpperCase() : '';
+  const author = typeof row.author === 'string' ? row.author.trim() : '';
+  return build({
+    prefix: 'book',
+    type: 'book',
+    sourceId: row.id,
+    title: row.title || fallback,
+    summary: [author, format].filter(Boolean).join(' · '),
+    date: row.created_at,
+    url: '/books',
+    cover: row.cover_url
+  });
+}
+
+// 观看 / 收听历史（2026-10-11 用户要求）：
+// 时间轴上的「音乐 / 影视」不再按资源入库时间排，而是按**实际观看时间**排
+// （user_progress.updated_at），并带上进度百分比，等于一条可回看的观看记录。
+// row 由路由层把 user_progress 与 resources 拍平后传入。
+export function mapProgress(row = {}) {
+  const type = row.type === 'music' ? 'music' : 'movie';
+  const pct = Number(row.progress);
+  const label = Number.isFinite(pct) && pct > 0 ? `观看至 ${Math.round(pct)}%` : '最近观看';
+  return build({
+    prefix: `${type}-progress`,
+    type,
+    sourceId: row.resource_id,
+    title: row.title,
+    summary: label,
+    date: row.updated_at,
+    url: type === 'music' ? `/music/${row.resource_id}` : `/movies/${row.resource_id}`,
+    cover: row.cover_path
+  });
+}
+
+// 合并各类 + 按 date 倒序（同 date 按 id 升序，保证稳定分页）+ 复合游标分页
+//
+// 2026-10-11 起支持 `types` 白名单：只合并指定的类型。
+// 为什么需要它：GitHub 一次同步会把上千条收藏写成**同一秒**的 created_at，
+// 它们会占满时间轴前几十页，导致「博客」标签翻很久都看不到内容。
+// 前端按标签单独请求（type=post / github / gallery / music / movie），
+// 每类各自分页，就再也不会被别的类型挤掉。
+export function mergeTimeline({ posts = [], resources = [], gallery = [], progress = [], books = [] } = {}, { limit = 20, before = null, types = null } = {}) {
   const capped = Math.min(Math.max(Number(limit) || 20, 1), TIMELINE_MAX_LIMIT);
   const cursor = parseCursor(before);
+  const allow = Array.isArray(types) && types.length ? new Set(types) : null;
 
-  const mapped = [
+  let mapped = [
     ...(Array.isArray(posts) ? posts.map(mapPost) : []),
     ...(Array.isArray(resources) ? resources.map(mapResource) : []),
-    ...(Array.isArray(gallery) ? gallery.map(mapGallery) : [])
+    ...(Array.isArray(gallery) ? gallery.map(mapGallery) : []),
+    ...(Array.isArray(progress) ? progress.map(mapProgress) : []),
+    ...(Array.isArray(books) ? books.map(mapBook) : [])
   ].filter((item) => item.source_id && item.date);
+  if (allow) mapped = mapped.filter((item) => allow.has(item.type));
 
   const visible = mapped.filter((item) => isAfterCursor(item, cursor));
 

@@ -22,14 +22,18 @@ import * as news from './routes/news.js';
 import * as douban from './routes/douban.js';
 import * as musicCharts from './routes/musicCharts.js';
 import * as assets from './routes/assets.js';
+import * as files from './routes/files.js';
 import * as gallery from './routes/gallery.js';
+import * as moments from './routes/moments.js';
 import * as timeline from './routes/timeline.js';
+import * as books from './routes/books.js';
 import { vodProxy } from './routes/vodProxy.js';
 
 // 路由表：[method, pattern, handler]
 // pattern 中 :name 表示路径参数；handler 依次接收 (request, env, param1, param2, ...)
 const routes = [
   ['GET', '/api/me', me.getMe],
+  ['PATCH', '/api/me', me.updateMe],
 
   // 管理员用户管理（仅管理员）
   ['GET', '/api/admin/users', admin.listUsers],
@@ -91,6 +95,33 @@ const routes = [
   ['PATCH', '/api/gallery/:id', gallery.updateGalleryItem],
   ['DELETE', '/api/gallery/:id', gallery.deleteGalleryItem],
 
+  // 文档附件（R2）：上传/列出/删除需管理员；按 id 读取公开可读（仅 is_public=true 的文件）
+  ['POST', '/api/files', files.uploadFile],
+  ['GET', '/api/files', files.listFiles],
+  ['GET', '/api/files/:id', files.getFile],
+  ['DELETE', '/api/files/:id', files.deleteFile],
+
+  // 图书（R2）：上传/改元数据/删除需管理员；列出对访客只返回 is_public=true；
+  // 正文与封面按 id 公开可读（私人书仅本人），正文支持 Range 供 PDF 内嵌 / EPUB 阅读。
+  // 分片上传三条 + 放弃一条：大文件走它（每片 8MiB，不受单请求体 100MB 平台上限约束）。
+  ['POST', '/api/books', books.uploadBook],
+  ['POST', '/api/books/multipart', books.createBookMultipart],
+  ['PUT', '/api/books/multipart/:uploadId/parts/:partNumber', books.uploadBookPart],
+  ['POST', '/api/books/multipart/:uploadId/complete', books.completeBookMultipart],
+  ['DELETE', '/api/books/multipart/:uploadId', books.abortBookMultipart],
+  ['GET', '/api/books', books.listBooks],
+  ['GET', '/api/books/:id', books.getBook],
+  ['GET', '/api/books/:id/file', books.getBookFile],
+  ['GET', '/api/books/:id/cover', books.getBookCover],
+  ['PATCH', '/api/books/:id', books.updateBook],
+  ['DELETE', '/api/books/:id', books.deleteBook],
+
+  // 碎念（朋友圈式短动态）：读写需管理员；访客经公开读边界只看公开条目
+  ['GET', '/api/moments', moments.listMoments],
+  ['POST', '/api/moments', moments.createMoment],
+  ['PATCH', '/api/moments/:id', moments.updateMoment],
+  ['DELETE', '/api/moments/:id', moments.deleteMoment],
+
   // 公开时间轴（聚合已发布博客 + 公开资源 + 公开展览）
   ['GET', '/api/timeline', timeline.listTimeline],
 
@@ -138,10 +169,14 @@ const routes = [
 
   // 关联图谱
   ['GET', '/api/graph', graph.getGraph],
+  ['GET', '/api/graph/blog', graph.getBlogGraph],
+  ['GET', '/api/graph/repos', graph.getRepoGraph],
   ['GET', '/api/graph/console', graph.getConsole],
   ['GET', '/api/graph/board', graph.getBoard],
 
   // 收藏夹
+  // 站长收藏（公开只读）：3 段路径，先于 2 段的 /api/favorites 匹配（避免被前缀规则吞掉）
+  ['GET', '/api/favorites/public', favorites.listAdminFavorites],
   ['GET', '/api/favorites', favorites.listFavorites],
   ['POST', '/api/favorites', favorites.createFavorite],
   ['DELETE', '/api/favorites/target', favorites.deleteFavoriteByTarget],

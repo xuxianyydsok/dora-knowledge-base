@@ -18,6 +18,7 @@ import {
   setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
 import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
+import { isAdminFavorited } from './favorites.js';
 
 const TABLE = 'resources';
 const EXT = 'movie_titles';
@@ -185,12 +186,18 @@ export async function getMovie(request, env, id) {
   const { db, user } = await requireAuth(request, env);
   requireUuid(id, 'id');
 
-  const rows = await db.select(TABLE, qs({
-    select: '*', id: `eq.${id}`, type: `eq.${TYPE}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
-  }));
+  // 可见性不能只靠 user_id 过滤：站长收藏的影视对所有登录用户也开放（见下方判定）。
+  const rows = await db.select(TABLE, qs({ select: '*', id: `eq.${id}`, type: `eq.${TYPE}` }));
   if (!rows.length) throw new HttpError(404, '影视不存在或无权限');
-  if (user.isGuest && !isResourceVisibleToGuest(rows[0])) throw new HttpError(404, '影视不存在或无权限');
+  const row = rows[0];
+  // 可见性：本人 / 管理员 / 公开影视 / **站长收藏**（站长收藏对所有人可看）。
+  // ⚠ 访客的 user.id 就是站长的 id（见 middleware/auth.js），「本人」分支必须排除访客，
+  //   否则站长的私密影视会被访客当成自己的资源读走。
+  const visible = user.isAdmin
+    || (!user.isGuest && row.user_id === user.id)
+    || isResourceVisibleToGuest(row)
+    || (await isAdminFavorited(db, row.id));
+  if (!visible) throw new HttpError(404, '影视不存在或无权限');
 
   const [tagged] = await withTags(db, rows);
   const [withExt] = await withTitle(db, tagged);

@@ -37,7 +37,8 @@ async function decorate(db, favorites) {
 
   const [resources, posts] = await Promise.all([
     resourceIds.length
-      ? db.select('resources', qs({ select: 'id,type,title,url,source,summary', id: `in.(${resourceIds.join(',')})` }))
+      // cover_path 用于收藏页展示封面（音乐 / 影视）；metadata 里带音质等展示信息
+      ? db.select('resources', qs({ select: 'id,type,title,url,source,summary,cover_path,metadata', id: `in.(${resourceIds.join(',')})` }))
       : [],
     postIds.length
       ? db.select('posts', qs({ select: 'id,title,slug,status,excerpt', id: `in.(${postIds.join(',')})` }))
@@ -70,6 +71,44 @@ export async function listFavorites(request, env) {
   return ok(await decorate(db, rows), request, env);
 }
 
+// 站长的收藏对所有人公开（2026-10-11 用户要求）：
+// 「站长收藏的影视 / 音乐要同步给所有注册用户，默认每个访问的人都能看 / 能听」。
+// 实现上不做「收藏时偷偷改 is_public」这种隐式副作用，而是把公开范围收在**读接口**里：
+// 站长收藏的资源即便 is_public=false，访客也能通过下面两条路径读到 ——
+//   ① GET /api/favorites/public（收藏页的「站长收藏」分区）
+//   ② getMusic / getMovie 的访客可见性判定会额外放行「站长收藏过的资源」
+// 这样「取消收藏」不会连带改数据，站长仍可用 is_public 控制其它场景的可见性。
+
+// 找出站长（最早创建的 admin）的 user_id。
+// 访客上下文里 user.id 已经就是站长 id，但这里显式查一次，保证登录用户调用时同样正确。
+export async function adminOwnerId(db) {
+  const rows = await db.select('user_profiles', qs({
+    select: 'id', role: 'eq.admin', order: 'created_at.asc', limit: '1'
+  }));
+  return rows[0]?.id || null;
+}
+
+// 站长收藏过的资源 id 集合（只含资源类收藏；用于放行访客读取详情页）
+export async function adminFavoriteResourceIds(db, adminId) {
+  if (!adminId) return [];
+  const rows = await db.select('favorites', qs({
+    select: 'resource_id', user_id: `eq.${adminId}`, resource_id: 'not.is.null'
+  }));
+  return rows.map((r) => r.resource_id).filter(Boolean);
+}
+
+// 访客能否打开某条**非公开**资源：仅当它被站长收藏。
+// 详情页（音乐 / 影视）在访客可见性判定里调用本函数，保证「站长收藏点了就能听 / 能看」。
+export async function isAdminFavorited(db, resourceId) {
+  if (!resourceId) return false;
+  const adminId = await adminOwnerId(db);
+  if (!adminId) return false;
+  const rows = await db.select('favorites', qs({
+    select: 'id', user_id: `eq.${adminId}`, resource_id: `eq.${resourceId}`, limit: '1'
+  }));
+  return rows.length > 0;
+}
+
 // POST /api/favorites
 export async function createFavorite(request, env) {
   const { db, user } = await requireAuth(request, env);
@@ -83,6 +122,23 @@ export async function createFavorite(request, env) {
   });
   const [item] = await decorate(db, rows);
   return ok(item, request, env, 201);
+}
+
+// GET /api/favorites/public —— 站长的公开收藏（影视 / 音乐），所有访客可读
+// 只返回「资源类」收藏，且只保留影视与音乐（博客 / 其它资源不进这个分区）。
+export async function listAdminFavorites(request, env) {
+  const { db } = await requireAuth(request, env);
+  const adminId = await adminOwnerId(db);
+  if (!adminId) return ok([], request, env);
+
+  const rows = await db.select('favorites', qs({
+    select: '*', user_id: `eq.${adminId}`, resource_id: 'not.is.null', order: 'created_at.desc', limit: '200'
+  }));
+  const decorated = await decorate(db, rows);
+  const items = decorated
+    .filter((f) => f.target?.kind === 'resource' && (f.target.type === 'music' || f.target.type === 'movie'))
+    .map((f) => ({ ...f, owner: 'admin' }));
+  return ok(items, request, env);
 }
 
 // DELETE /api/favorites/:id

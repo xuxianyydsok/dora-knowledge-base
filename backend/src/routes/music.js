@@ -8,6 +8,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchMusicMeta, fetchLyrics, resolveGdstudioUrl, GD_DEFAULT_SOURCE } from '../lib/fetchers.js';
 import { getMetingInstances, metingStreamUrl } from '../lib/meting.js';
+import { neteaseOuterUrl, kugouStreamUrl } from '../lib/musicSources.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool
 } from '../lib/validate.js';
@@ -15,7 +16,8 @@ import {
   setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
 import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
-import { isDirectAudioUrl, isStaleAudioUrl, resolveAudioPlayback } from '../lib/mediaUrl.js';
+import { looksLikeAudioStream, isStaleAudioUrl, resolveAudioPlayback } from '../lib/mediaUrl.js';
+import { isAdminFavorited } from './favorites.js';
 
 const TABLE = 'resources';
 const EXT = 'music_tracks';
@@ -113,6 +115,32 @@ export async function resolveMusicStream(request, env) {
   }
 
   if (platform !== 'gdstudio') {
+    // 网易云官方：外链端点本身就是稳定地址，直接重建即可（不需要再发请求）
+    if (platform === 'netease') {
+      return ok({
+        platform,
+        external_id: externalId,
+        source: gdSource,
+        audio_url: neteaseOuterUrl(externalId),
+        bitrate: null,
+        file_size: null,
+        quality: 'full'
+      }, request, env);
+    }
+    // 酷狗官方：直链是带时间戳的签名地址，会过期 —— 按 hash 重新取一条
+    if (platform === 'kugou') {
+      const fresh = await kugouStreamUrl(externalId);
+      if (!fresh) throw new HttpError(404, '该曲目暂时拿不到播放地址，请稍后重试');
+      return ok({
+        platform,
+        external_id: externalId,
+        source: gdSource,
+        audio_url: fresh,
+        bitrate: null,
+        file_size: null,
+        quality: 'full'
+      }, request, env);
+    }
     throw new HttpError(422, `该音源不支持重新解析：${platform || 'unknown'}`);
   }
   const info = await resolveGdstudioUrl(externalId, gdSource);
@@ -153,12 +181,18 @@ export async function getMusic(request, env, id) {
   const { db, user } = await requireAuth(request, env);
   requireUuid(id, 'id');
 
-  const rows = await db.select(TABLE, qs({
-    select: '*', id: `eq.${id}`, type: `eq.${TYPE}`,
-    ...(user.isAdmin ? {} : { user_id: `eq.${user.id}` })
-  }));
+  // 可见性不能只靠 user_id 过滤：站长收藏的曲目对所有登录用户也开放（见下方判定）。
+  const rows = await db.select(TABLE, qs({ select: '*', id: `eq.${id}`, type: `eq.${TYPE}` }));
   if (!rows.length) throw new HttpError(404, '音乐不存在或无权限');
-  if (user.isGuest && !isResourceVisibleToGuest(rows[0])) throw new HttpError(404, '音乐不存在或无权限');
+  const row = rows[0];
+  // 可见性：本人 / 管理员 / 公开音乐 / **站长收藏**（站长收藏对所有人可听）。
+  // ⚠ 访客的 user.id 就是站长的 id（见 middleware/auth.js），所以「本人」分支必须排除访客，
+  //   否则站长的私密音乐会被访客当成自己的资源读走。
+  const visible = user.isAdmin
+    || (!user.isGuest && row.user_id === user.id)
+    || isResourceVisibleToGuest(row)
+    || (await isAdminFavorited(db, row.id));
+  if (!visible) throw new HttpError(404, '音乐不存在或无权限');
 
   const [tagged] = await withTags(db, rows);
   const [withExt] = await withTrack(db, tagged);
@@ -282,10 +316,12 @@ export async function updateMusic(request, env, id) {
   if (body.title !== undefined) patch.title = requireString(body.title, 'title', { max: 300 });
   if (body.notes !== undefined) patch.summary = optionalString(body.notes, 'notes', { max: 2000 }) ?? null;
   if (body.artwork_url !== undefined) patch.cover_path = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
-  // url 只接受媒体直链：网页地址不写入（否则前端拿到网页地址会报「暂无可用的播放地址」）
+  // url 只接受可直接播的地址：网页地址不写入（否则前端拿到网页地址会报「暂无可用的播放地址」）。
+  // 注意用 looksLikeAudioStream 而不是 isDirectAudioUrl —— Meting 的取流端点是
+  // 无后缀的 302 地址，用后者会被误判成网页地址。
   if (body.url !== undefined) {
     const candidate = optionalString(body.url, 'url', { max: 1000 }) ?? null;
-    if (candidate && !isDirectAudioUrl(candidate)) {
+    if (candidate && !looksLikeAudioStream(candidate)) {
       throw new HttpError(422, 'url 必须是可播放的音频直链，不能是网页地址');
     }
     patch.url = candidate;

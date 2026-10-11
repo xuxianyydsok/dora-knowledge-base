@@ -10,6 +10,7 @@ import {
 } from './maccms.js';
 import { cinemetaLookup, bangumiLookup, kitsuLookup } from './metadb.js';
 import { getMetingInstances, searchMetingMusic } from './meting.js';
+import { searchNeteaseMusic, searchKugouMusic } from './musicSources.js';
 import { getSourceHealth, healthMap, rankSources, sourceHealthWeight } from './sourceHealth.js';
 
 const UA = 'knowledge-base-app/0.1 (+https://github.com/)';
@@ -362,14 +363,19 @@ async function searchDeezerMusic(q, limit) {
 // ---------------------------------------------------------------
 // 时间预算（毫秒）：外部接口质量参差，用预算把「最坏耗时」钉死，
 // 避免个别慢接口把整次搜索拖到十几秒。
-const MUSIC_BUDGET_MS = 6000;   // 音乐：全部音源并发阶段的整体预算
+// 2026-10-11 调整（用户反馈「音源变少 / 有些歌搜不出来」）：
+//   ① 新增两路官方接口（netease / kugou，见 lib/musicSources.js）—— 直连 <1s，
+//      其中酷狗是**独立片库**，能补上网易云因版权下架而搜不到的原唱；
+//   ② 预算从 6s 放宽到 7s：慢源（GD / Deezer）实测在 Cloudflare 边缘偶尔要 6s+，
+//      预算卡太紧会把它们整体丢弃，反而让「能用的音源」变少。
+const MUSIC_BUDGET_MS = 7000;   // 音乐：全部音源并发阶段的整体预算
 // 各音源的单独超时：整段预算只是兜底，真正的限流靠这里 ——
 // 任何一路挂住时，其余音源的结果照常返回，而不是一起等到 6s。
 const METING_TIMEOUT_MS = 5000;
-const GD_TIMEOUT_MS = 5000;
+const GD_TIMEOUT_MS = 6500;
 const AUDIUS_TIMEOUT_MS = 5000;
 const ITUNES_TIMEOUT_MS = 4000;
-const DEEZER_TIMEOUT_MS = 4000;
+const DEEZER_TIMEOUT_MS = 6500;
 const ENRICH_BUDGET_MS = 2200;  // 影视：搜索后元信息补全阶段（只补前 4 条，不需要 4s）
 const COVER_BUDGET_MS = 2500;   // 音乐：封面 / 歌手头像补全阶段
 const GD_BASE = 'https://music-api.gdstudio.xyz/api.php';
@@ -533,6 +539,36 @@ async function fetchArtistProfile(name) {
   }
 }
 
+// 单源配额：从已按分数排序的列表里取前 limit 条，但**每个平台最多占一半名额**。
+//
+// 为什么需要（2026-10-11 实测）：搜「晴天 周杰伦」时，网易云系（官方 + Meting 的
+// netease 上游）能贡献几十条同质结果，会把酷狗的**真·周杰伦原唱《晴天》**整体挤出去
+// —— 前 40 条全是网易云的翻唱 / 深情版。配额让每个源都有机会露头，
+// 剩余名额再按原分数顺序回填，因此结果总数不变、只是更均衡。
+export function pickDiverse(sorted, limit) {
+  if (!Array.isArray(sorted) || limit <= 0) return [];
+  if (sorted.length <= limit) return sorted.slice(0, limit);
+  const cap = Math.max(1, Math.ceil(limit / 2));
+  const used = new Map();
+  const picked = [];
+  const rest = [];
+  for (const c of sorted) {
+    const p = c.platform || 'unknown';
+    const n = used.get(p) || 0;
+    if (n < cap && picked.length < limit) { picked.push(c); used.set(p, n + 1); }
+    else rest.push(c);
+  }
+  // 配额没用满（源不够多）时按原顺序回填
+  for (const c of rest) {
+    if (picked.length >= limit) break;
+    picked.push(c);
+  }
+  // 回填会打乱分数顺序 → 重新按原顺序稳定排列（保持「高分在前」的观感）
+  const order = new Map(sorted.map((c, i) => [c, i]));
+  picked.sort((a, b) => order.get(a) - order.get(b));
+  return picked;
+}
+
 // 归一化用于去重：同名同歌手视为同一首
 function dedupeKey(c) {
   const norm = (s) => String(s || '').toLowerCase().replace(/[\s\-_.()（）[\]【】]/g, '');
@@ -548,7 +584,12 @@ function dedupeKey(c) {
 // 因此**未解析出直链的 GD 仍然降档**（见 candidateRank 的 needs_resolve），
 // 不会把一堆「点了还要等解析」的条目顶到 Meting 的稳定结果前面。
 const QUALITY_RANK = { full: 3, preview: 1 };
-const PLATFORM_RANK = { gdstudio: 4, meting: 3, audius: 2, deezer: 1, itunes: 1 };
+// 音源可信度：完整曲目且链路稳定 > 完整曲目（链路可能慢/挂） > 小众 > 试听。
+// netease / kugou 是官方接口（外链端点稳定、不过期），排在与 GD 同档；
+// kugou 略高是因为它的片库与 netease 互补（有原唱），能救「搜不出来」的场景。
+const PLATFORM_RANK = {
+  kugou: 5, netease: 5, gdstudio: 4, meting: 3, audius: 2, deezer: 1, itunes: 1
+};
 
 // 综合排序分 = 质量档 ×100 + 音源 ×10 + 是否已拿到直链。
 // 「待解析（GD 未取直链）」降一档但仍高于试听片段：它有完整曲目的潜力，
@@ -717,9 +758,17 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
     .split(',').map((s) => s.trim()).filter(Boolean)
     .filter((src) => weightOf(`gdstudio:${src}`) !== null);
 
+  // 2026-10-11 新增两路官方接口（见 lib/musicSources.js）：
+  //   netease —— 网易云官方搜索 + 官方外链取流。与 Meting 同一个片库，
+  //              但**独立链路**：Meting 单实例挂掉时它仍能出结果。
+  //   kugou   —— 酷狗官方搜索 + 移动端取流。**完全不同的片库**，
+  // 全部并发，各自套预算：任一慢源被丢弃时，其余源的结果照常返回。
+  // 整次搜索的最坏耗时 = MUSIC_BUDGET_MS（实测快源 1~2s 就返回，多数请求远快于此）。
   const settled = await Promise.all([
     ...metingJobs,
     ...gdSources.map((src) => searchGdstudioMusic(q, perSource, src)),
+    weightOf('netease') === null ? Promise.resolve(null) : searchNeteaseMusic(q, perSource),
+    weightOf('kugou') === null ? Promise.resolve(null) : searchKugouMusic(q, perSource),
     weightOf('audius') === null ? Promise.resolve(null) : searchAudiusMusic(q, perSource),
     weightOf('itunes') === null ? Promise.resolve(null) : searchItunesMusic(q, perSource),
     weightOf('deezer') === null ? Promise.resolve(null) : searchDeezerMusic(q, perSource)
@@ -775,7 +824,14 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
   merged.sort((a, b) => musicScore(b, q, artistTally) - musicScore(a, q, artistTally)
     || candidateRank(b) - candidateRank(a));
 
-  const top = merged.slice(0, capped);
+  // 单源配额（2026-10-11 新增）：
+  // 各源片库大小差异极大 —— 网易云官方一次能给 100 条，酷狗给 40 条，
+  // 而排序后「网易云系」（官方 + Meting 的 netease 上游）条目又多又同质，
+  // 会把酷狗的**原唱**条目整体挤出前 N 条（实测搜「晴天 周杰伦」前 40 条全是网易云，
+  // 酷狗那条真·周杰伦《晴天》一条都进不来）。
+  // 做法：先按分数排序，再按「平台配额」取前 N 条 —— 每个平台最多占 capped 的一半，
+  // 剩下的名额按原分数顺序回填，保证总数仍是 capped。
+  const top = pickDiverse(merged, capped);
   // 封面补全：GD音乐台不返回可直接引用的封面地址，优先用同曲的 iTunes/Deezer 封面（mergeCandidate 已合）；
   // 对仍缺封面的 GD 结果再补查 pic 接口 —— 最多 3 条，避免吃掉限频额度。
   const needCover = top

@@ -75,7 +75,9 @@ export async function syncStarsPage(env, userId, page, run) {
       seen.add(key);
       body.push({
         id: idByName.get(key) || crypto.randomUUID(),
-        user_id: userId, type: TYPE, source: 'github', cover_path: null, is_public: false, ...r,
+        // GitHub Star 是公开内容（同步自公开的 star 列表），默认公开，否则访客视角 /api/github 恒为空。
+        // 若站长想隐藏某些仓库，可在数据里单独改 is_public=false（upsert 时该字段由数据决定）。
+        user_id: userId, type: TYPE, source: 'github', cover_path: null, is_public: true, ...r,
         // 保留已有的 AI 解读（upsert 会整列覆盖 metadata）
         metadata: aiByName.has(key) ? { ...r.metadata, ai: aiByName.get(key) } : r.metadata
       });

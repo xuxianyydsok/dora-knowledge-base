@@ -19,10 +19,14 @@ const KNOWN_HOSTS = [
   'xluuss.com', 'xlzyd.com', 'subokk.com', 'subocaiji.com',
   'hhuus.com', 'hhwenjian.com', 'hhzyapi.com',
   'bfikuncdn.com', 'kkzycdn.com', 'ikunzyapi.com',
-  'guoluche.com', '360zyzz.com',
+  'guoluche.com', '360zyzz.com', '360zy.com', 'maowushi.com',
+  // 魔都的分片域名带序号（modujx13 / modujx16 / …），用 modujx 前缀 + 数字一起匹配
   'modujx13.com', 'mdzyapi.com'
 ];
 const MEDIA_EXT = /\.(m3u8|m3u|ts|key|m4s|mp4|m4a|m4v|aac|vtt|webvtt|jpg|jpeg|png|gif|bmp|webp|image)$/i;
+// 播放页形态：/<...>/play/<id>（可带 /index.m3u8 后缀）。采集源常把播放页当线路地址给出，
+// 归一化后就是 <播放页>/index.m3u8，因此代理必须允许取这种路径（否则取不到 master playlist）。
+const PLAY_PAGE_RE = /\/play\/[A-Za-z0-9_-]+(\/index\.m3u8)?\/?$/i;
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS',
@@ -53,7 +57,10 @@ function isPrivateHost(host) {
 
 function isKnownHost(host) {
   const h = host.toLowerCase();
-  return KNOWN_HOSTS.some((d) => h === d || h.endsWith(`.${d}`));
+  if (KNOWN_HOSTS.some((d) => h === d || h.endsWith(`.${d}`))) return true;
+  // 魔都一类的序号域名：modujx16.com / modujx13.com …
+  if (/^modujx\d+\.com$/.test(h)) return true;
+  return false;
 }
 
 // 校验目标地址；不合法返回 null
@@ -63,7 +70,8 @@ function checkTarget(raw) {
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
   if (u.username || u.password) return null;
   if (isPrivateHost(u.hostname)) return null;
-  if (!isKnownHost(u.hostname) && !MEDIA_EXT.test(u.pathname)) return null;
+  // 放行三类：已知域名 / 媒体后缀 / 播放页形态（后者用于取 master playlist）
+  if (!isKnownHost(u.hostname) && !MEDIA_EXT.test(u.pathname) && !PLAY_PAGE_RE.test(u.pathname)) return null;
   return u;
 }
 

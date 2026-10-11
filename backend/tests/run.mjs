@@ -17,12 +17,18 @@ import { dirname, join } from 'node:path';
 import * as maccms from '../src/lib/maccms.js';
 import * as fetchers from '../src/lib/fetchers.js';
 import * as imageType from '../src/lib/imageType.js';
+import * as fileType from '../src/lib/fileType.js';
+import * as bookType from '../src/lib/bookType.js';
 import * as sourceHealth from '../src/lib/sourceHealth.js';
 import * as publicScope from '../src/lib/publicScope.js';
 import * as timelineMerge from '../src/lib/timelineMerge.js';
 import * as timelineRoute from '../src/routes/timeline.js';
 import * as mediaUrl from '../src/lib/mediaUrl.js';
 import * as movies from '../src/routes/movies.js';
+import * as safeUrl from '../src/lib/safeUrl.js';
+import * as momentsRoute from '../src/routes/moments.js';
+import * as meRoute from '../src/routes/me.js';
+import * as githubAi from '../src/lib/githubAi.js';
 // 前端纯函数（无依赖、无 import，Node 可直接加载）：验证前后端直链判定一致
 import * as feMediaUrl from '../../frontend/src/lib/mediaUrl.js';
 
@@ -434,7 +440,11 @@ async function unit() {
       '/api/preferences', '/api/backup/export', '/api/admin/users', '/api/me', '/api/mcp/tools'
     ];
     for (const p of deniedGet) assert(!isGuestAllowed('GET', p), `访客不应读 ${p}`);
-    return `放行 ${allowedGet.length} 条 / 拒绝 ${deniedGet.length} 条`;
+    // 例外：站长收藏（/api/favorites/public）对所有人公开，必须与个人收藏分开判定
+    assert(isGuestAllowed('GET', '/api/favorites/public'), '站长收藏应允许访客只读');
+    assert(!isGuestAllowed('GET', '/api/favorites/public/x'), '站长收藏子路径不应被额外放行');
+    assert(!isGuestAllowed('GET', '/api/favorites'), '个人收藏仍应对访客关闭');
+    return `放行 ${allowedGet.length} 条 / 拒绝 ${deniedGet.length} 条 + 站长收藏例外 3 断言`;
   });
 
   await test('访客 POST：仅只读检索放行，analyze 与写操作拒绝', async () => {
@@ -643,7 +653,50 @@ async function unit() {
     // 第一页（无游标）不应带任何时间过滤
     assert(!postFilters(user, null, 30).or && !resourceFilters(user, null, 30).created_at,
       '无游标时不应附加时间过滤');
+
+    // 2026-10-11 用户要求：图书也进时间轴，粗过滤方向同样必须是 lte
+    const book = timelineRoute.bookFilters(user, cursor, 30);
+    assert(book.created_at === `lte.2026-10-09T00:00:00.000Z`, `books 应用 lte: ${book.created_at}`);
+    assert(book.is_public === 'eq.true', 'books 必须叠加 is_public=true（时间轴是公开页）');
+    assert(book.user_id === 'eq.u1', 'books 必须限定 owner');
+    assert(!timelineRoute.bookFilters(user, null, 30).created_at, 'books 无游标时不应附加时间过滤');
     return 'posts/resources/gallery 粗过滤方向全部为 lte 且覆盖回退日期列';
+  });
+
+  await test('timeline 图书映射：书名 / 作者 / 封面 / 链接 / 安全字段', async () => {
+    const { mapBook, mergeTimeline, TIMELINE_TYPES } = timelineMerge;
+    assert(TIMELINE_TYPES.includes('book'), 'TIMELINE_TYPES 应含 book');
+
+    const mapped = mapBook({
+      id: 'b1', title: '三体', author: '刘慈欣', format: 'epub',
+      cover_url: 'https://api.example/api/books/b1/cover',
+      original_name: '三体 （典藏版·三册）.epub',
+      created_at: '2026-10-11T10:34:40Z',
+      // 故意混入内部字段，确认映射层不外传
+      object_key: 'books/u1/2026/x.epub', cover_key: 'books/u1/2026/x.epub-cover.jpg', user_id: 'u1'
+    });
+    assert(mapped.type === 'book', `类型应为 book: ${mapped.type}`);
+    assert(mapped.title === '三体', `书名应取 title: ${mapped.title}`);
+    assert(mapped.summary === '刘慈欣 · EPUB', `副标题应为「作者 · 格式」: ${mapped.summary}`);
+    assert(mapped.url === '/books', `链接应回书架: ${mapped.url}`);
+    assert(mapped.cover === 'https://api.example/api/books/b1/cover', '封面应用 cover_url');
+    for (const k of ['object_key', 'cover_key', 'user_id']) {
+      assert(!(k in mapped), `图书映射不应含 ${k}: ${JSON.stringify(mapped)}`);
+    }
+
+    // 书名缺失时回退文件名去扩展名；作者缺失时副标题只剩格式
+    const fallback = mapBook({ id: 'b2', format: 'pdf', original_name: '盗墓笔记（全集）.pdf', created_at: '2026-10-11T00:00:00Z' });
+    assert(fallback.title === '盗墓笔记（全集）', `应回退去扩展名的文件名: ${fallback.title}`);
+    assert(fallback.summary === 'PDF', `无作者时副标题应为格式: ${fallback.summary}`);
+    assert(fallback.cover === null, '无封面时 cover 应为 null');
+
+    // 缺 created_at 的图书不进时间轴（时间轴必须有日期）
+    const res = mergeTimeline({ books: [
+      { id: 'ok', title: 'A', format: 'epub', created_at: '2026-10-11T00:00:00Z' },
+      { id: 'nodate', title: 'B', format: 'epub' }
+    ] }, { limit: 10 });
+    assert(res.items.length === 1 && res.items[0].source_id === 'ok', `缺日期应被过滤: ${JSON.stringify(res.items)}`);
+    return '图书映射（书名 / 作者 / 格式 / 封面 / 回退 / 安全字段）全部正确';
   });
 
   await test('timeline 跨日翻页回归：第一页末条 2026-10-09，第二页能取到 2026-10-08', async () => {
@@ -693,6 +746,139 @@ async function unit() {
     return 'decorate 带 owner 过滤 / ASSET_SELECT 与 alt 均不含 original_name';
   });
 
+  await test('gallery 路由：ASSET_SELECT 必须含 is_public（否则公开展览永远 409）', async () => {
+    // 回归（2026-10-11 线上实测）：ASSET_SELECT 漏掉 is_public 时，findOwnAsset 返回的 asset
+    // 没有 is_public 字段，createGalleryItem 的 `asset.is_public !== true` 恒为真，
+    // 导致「加入公开展览」永远 409、前端看不到任何公开图。这里把该列钉死。
+    const src = readFileSync(join(BACKEND, 'src', 'routes', 'gallery.js'), 'utf8');
+    const selectLine = src.match(/const ASSET_SELECT = '([^']+)'/);
+    assert(selectLine, '应能找到 ASSET_SELECT 定义');
+    const cols = selectLine[1].split(',').map((c) => c.trim());
+    assert(cols.includes('is_public'),
+      `ASSET_SELECT 必须包含 is_public（公开展览校验依赖它），实际: ${selectLine[1]}`);
+    // 校验逻辑确实依赖 asset.is_public，两者必须成对存在
+    assert(/asset\.is_public !== true/.test(src), '公开展览校验应基于 asset.is_public');
+    return `ASSET_SELECT 含 is_public：${selectLine[1]}`;
+  });
+
+  // ---- 此刻页 + 设置安全中心（2026-10-10） ----
+  section('UNIT · 碎念页与设置安全中心（URL 安全 / 字段白名单 / 访客边界）');
+
+  await test('isSafeUrl: 放行 http/https 与站内相对地址，拒绝伪协议/协议相对/反斜杠', async () => {
+    const { isSafeUrl } = safeUrl;
+    for (const ok of ['https://example.com/x', 'http://example.com', '/posts/abc', '/moments?a=1']) {
+      assert(isSafeUrl(ok) === true, `应放行: ${ok}`);
+    }
+    for (const bad of [
+      'javascript:alert(1)', 'data:text/html,x', '//evil.com', '/\\evil.com', '/\\/evil.com',
+      'https://', '', null, 123, 'mailto:a@b.c', 'file:///etc/passwd'
+    ]) {
+      assert(isSafeUrl(bad) === false, `应拒绝: ${JSON.stringify(bad)}`);
+    }
+    return '放行 4 条 / 拒绝 11 条';
+  });
+
+  await test('normalizeSafeUrl: 非法返回 null 且不抛错，合法原样返回', async () => {
+    const { normalizeSafeUrl } = safeUrl;
+    assert(normalizeSafeUrl('https://example.com/x') === 'https://example.com/x', '合法外链应原样返回');
+    assert(normalizeSafeUrl('/posts/abc') === '/posts/abc', '合法站内地址应原样返回');
+    for (const bad of ['javascript:alert(1)', '//evil.com', '', null, undefined, 42, {}]) {
+      assert(normalizeSafeUrl(bad) === null, `非法输入应返回 null: ${JSON.stringify(bad)}`);
+    }
+    return '合法原样返回 / 非法一律 null（无异常）';
+  });
+
+  await test('momentGuestFilters: 访客读碎念必须叠加 is_public=eq.true', async () => {
+    const f = publicScope.momentGuestFilters();
+    assert(f.is_public === 'eq.true', `访客过滤应为 eq.true: ${JSON.stringify(f)}`);
+    return JSON.stringify(f);
+  });
+
+  await test('normalizeAssetIds: 去重保序 / 上限 9 张 / 非数组与非法 uuid 报 422', async () => {
+    const { normalizeAssetIds } = momentsRoute;
+    const a = '11111111-1111-4111-8111-111111111111';
+    const b = '22222222-2222-4222-8222-222222222222';
+    assert(normalizeAssetIds(undefined) === undefined, '未传应返回 undefined（表示不改配图）');
+    assert(JSON.stringify(normalizeAssetIds(null)) === '[]', 'null 应清空为空数组');
+    assert(JSON.stringify(normalizeAssetIds([a, b, a])) === JSON.stringify([a, b]), '重复 id 应去重且保序');
+    assert(publicScope.MAX_MOMENT_ASSETS === 9, '配图上限应为 9（朋友圈九宫格）');
+
+    let threw = false;
+    try { normalizeAssetIds('nope'); } catch (e) { threw = e.status === 422; }
+    assert(threw, '非数组应 422');
+
+    threw = false;
+    try { normalizeAssetIds([a, 'not-a-uuid']); } catch (e) { threw = e.status === 422; }
+    assert(threw, '非法 uuid 应 422');
+
+    threw = false;
+    try { normalizeAssetIds(Array.from({ length: 10 }, (_, i) => `33333333-3333-4333-8333-${String(i).padStart(12, '0')}`)); }
+    catch (e) { threw = e.status === 422; }
+    assert(threw, '超过 9 张应 422');
+    return '去重保序 / null 清空 / 上限 9 / 非法输入 422';
+  });
+
+  await test('moments 路由契约：GET 按 user_id + 访客 is_public、写操作 requireAdmin、无 select:*、不回传 user_id', async () => {
+    for (const fn of ['listMoments', 'createMoment', 'updateMoment', 'deleteMoment']) {
+      assert(typeof momentsRoute[fn] === 'function', `moments.js 应导出 ${fn}`);
+    }
+    const src = readFileSync(join(BACKEND, 'src', 'routes', 'moments.js'), 'utf8');
+    const listSrc = src.slice(src.indexOf('export async function listMoments'), src.indexOf('// POST /api/moments'));
+    assert(/user_id:\s*`eq\.\$\{user\.id\}`/.test(listSrc), 'listMoments 必须按 user_id 过滤');
+    assert(/momentGuestFilters\(\)/.test(listSrc), 'listMoments 访客分支应叠加 momentGuestFilters()');
+    assert(/is_public:\s*'eq\.true'/.test(readFileSync(join(BACKEND, 'src', 'lib', 'publicScope.js'), 'utf8')),
+      'momentGuestFilters 必须返回 is_public=eq.true');
+    assert((src.match(/requireAdmin\(/g) || []).length >= 3, '三个写操作都应 requireAdmin');
+    assert(!/select:\s*'\*'/.test(src), '不得使用 select:*（防止 user_id 回传）');
+    assert(/const SELECT = 'id,content,is_public,created_at,updated_at'/.test(src),
+      'SELECT 应为不含 user_id 的字段白名单');
+    const shapeSrc = src.slice(src.indexOf('function shape'), src.indexOf('// 规范化配图数组'));
+    assert(!/user_id/.test(shapeSrc), 'shape 不得回传 user_id');
+    // 配图必须逐条校验归属，否则可挂他人素材
+    assert(/assertOwnAssets\(/.test(src), '写入配图前必须校验素材归属');
+    assert(/user_id:\s*`eq\.\$\{userId\}`/.test(src), 'decorate 取素材必须显式按 owner 过滤');
+    return 'user_id 过滤 + 访客 is_public + requireAdmin + 字段白名单 + 配图归属校验 全部就位';
+  });
+
+  await test('buildProfilePatch: 只挑安全列，特权列逐个 422，长度/格式校验生效', async () => {
+    const { buildProfilePatch } = meRoute;
+
+    const patch = buildProfilePatch({ display_name: 'Dora', username: 'ok_name-1' });
+    assert(Object.keys(patch).join(',') === 'display_name,username',
+      `patch 只应含 display_name/username: ${JSON.stringify(patch)}`);
+
+    for (const body of [{ role: 'admin' }, { plan: 'pro' }, { is_disabled: false }, { id: 'x' }]) {
+      let threw = false;
+      try { buildProfilePatch(body); } catch (e) { threw = e.status === 422; }
+      assert(threw, `特权字段必须 422: ${JSON.stringify(body)}`);
+    }
+
+    let shortThrew = false;
+    try { buildProfilePatch({ username: 'a' }); } catch (e) { shortThrew = e.status === 422; }
+    assert(shortThrew, 'username 太短应 422');
+    assert(buildProfilePatch({ username: 'ok_name-1' }).username === 'ok_name-1', '合法 username 应通过');
+
+    let emptyThrew = false;
+    try { buildProfilePatch({}); } catch (e) { emptyThrew = e.status === 422; }
+    assert(emptyThrew, '没有可更新字段应 422');
+
+    assert(buildProfilePatch({ display_name: null }).display_name === null, 'display_name 传 null 应清空');
+    let badUrlThrew = false;
+    try { buildProfilePatch({ avatar_path: 'javascript:alert(1)' }); } catch (e) { badUrlThrew = e.status === 422; }
+    assert(badUrlThrew, 'avatar_path 非法地址应 422');
+    return '安全列挑出 / 特权列 4 个 422 / 长度与 URL 校验通过';
+  });
+
+  await test('访客白名单：/api/moments GET 放行，写操作全拒绝；旧 /api/now 已下线', async () => {
+    const { isGuestAllowed } = publicScope;
+    assert(isGuestAllowed('GET', '/api/moments') === true, '访客应可读 /api/moments');
+    assert(isGuestAllowed('POST', '/api/moments') === false, '访客不应 POST /api/moments');
+    assert(isGuestAllowed('PATCH', '/api/moments/x') === false, '访客不应 PATCH /api/moments');
+    assert(isGuestAllowed('DELETE', '/api/moments/x') === false, '访客不应 DELETE /api/moments');
+    assert(isGuestAllowed('GET', '/api/now') === false, '旧 /api/now 不应再放行（已改名为 /api/moments）');
+    return 'GET 放行 / 写操作拒绝 / 旧 now 路径已下线';
+  });
+
   await test('契约：auth.js 已委托 publicScope，且不再内联 favorites / github-analyze', async () => {
     const authSrc = readFileSync(join(BACKEND, 'src', 'middleware', 'auth.js'), 'utf8');
     assert(/from '\.\.\/lib\/publicScope\.js'/.test(authSrc), 'auth.js 应 import publicScope.js');
@@ -715,8 +901,10 @@ async function unit() {
     return '5 组断言全过';
   });
 
-  await test('normalizeVod: 剔除非直链线路与剧集（片源无法解析的根因）', async () => {
-    // 真实形态：一条线路里既有网页分享页，也有真 m3u8；另一条线路全是网页地址
+  await test('normalizeVod: 剔除分享页，保留并归一网页播放页（2026-10-11 修复）', async () => {
+    // 真实形态：一条线路里既有真 m3u8，也有分享页；另一条线路是网页播放页。
+    // 分享页（/share/<hash>）交给 <video> 必然失败 → 剔除；
+    // 网页播放页（/play/<id>）的真直链固定在 <播放页>/index.m3u8 → 归一后保留。
     const raw = {
       vod_id: 50482,
       vod_name: '复仇者联盟4',
@@ -725,30 +913,70 @@ async function unit() {
       vod_play_from: 'dyttm3u8$$$dytt',
       vod_play_url: [
         'HD国语$https://vip.dytt-kan.com/2025/index.m3u8#HD中字$https://vip.dytt-kan.com/share/abc123',
-        'HD国语$https://vip.dytt-kan.com/share/def456'
+        'HD国语$https://v.gsuus.com/play/kazVzrma'
       ].join('$$$')
     };
     const out = maccms.normalizeVod(raw, { key: 'dytt', name: '电影天堂' });
-    assert(out.routes.length === 1, `应只剩 1 条含直链的线路，实际 ${out.routes.length}`);
-    assert(out.routes[0].name === 'dyttm3u8', `应保留 dyttm3u8 线路，实际 ${out.routes[0].name}`);
-    assert(out.routes[0].episodes.length === 1, `应只保留 1 个直链剧集，实际 ${out.routes[0].episodes.length}`);
-    assert(out.routes[0].episodes[0].url.endsWith('index.m3u8'), '保留的应是 m3u8');
-    assert(out.playable_url.endsWith('index.m3u8'), 'playable_url 应是 m3u8');
-    assert(out.episode_count === 1, `episode_count 应为 1，实际 ${out.episode_count}`);
-    return '非直链线路/剧集已剔除，playable_url 为 m3u8';
+    assert(out.routes.length === 2, `两条线路都应保留，实际 ${out.routes.length}`);
+    const first = out.routes[0];
+    assert(first.name === 'dyttm3u8', `含真 m3u8 的线路应排前面，实际 ${first.name}`);
+    assert(first.episodes.length === 1, `分享页应被剔除，实际剩 ${first.episodes.length}`);
+    assert(first.episodes[0].url === 'https://vip.dytt-kan.com/2025/index.m3u8', '保留的应是原始 m3u8');
+    const second = out.routes[1];
+    assert(second.episodes.length === 1, `网页播放页应归一后保留，实际 ${second.episodes.length}`);
+    assert(second.episodes[0].url === 'https://v.gsuus.com/play/kazVzrma/index.m3u8', '播放页应归一为 index.m3u8');
+    assert(second.episodes[0].original_url === 'https://v.gsuus.com/play/kazVzrma', '应保留 original_url 便于排查');
+    assert(out.playable_url === 'https://vip.dytt-kan.com/2025/index.m3u8', 'playable_url 应是 m3u8');
+    assert(out.episode_count === 2, `episode_count 应为 2，实际 ${out.episode_count}`);
+    return '分享页剔除、网页播放页归一保留，playable_url 为 m3u8';
   });
 
-  await test('normalizeVod: 全部为非直链时兜底保留原始线路（不产生空壳）', async () => {
+  await test('normalizeVod: 全部为分享页时兜底保留原始线路（不产生空壳）', async () => {
     const raw = {
       vod_id: 1, vod_name: '测试', type_id_1: 1,
-      vod_play_from: 'yun', vod_play_url: '正片$https://x.com/play/123'
+      vod_play_from: 'yun', vod_play_url: '正片$https://x.com/share/abc123'
     };
     const out = maccms.normalizeVod(raw, { key: 'k', name: 'K' });
     assert(out.routes.length === 1, '兜底应保留原始线路');
     assert(out.playable_url === null, '无可播直链时 playable_url 应为 null');
     assert(out.routes[0].diagnostic === true, '兜底线路必须打 diagnostic 标记，供前端识别为不可播');
-    assert(out.episode_count === 0, `网页地址不应算作剧集，实际 ${out.episode_count}`);
+    assert(out.episode_count === 0, `分享页不应算作剧集，实际 ${out.episode_count}`);
     return '兜底保留原始线路，playable_url 为 null';
+  });
+
+  await test('normalizeVod: 网页播放页归一为直链，不再落入兜底（只有 360 能播的根因）', async () => {
+    // 回归：光速/速播/豪华 三个源给的是网页播放页，旧逻辑把它当「非直链」整条丢弃，
+    // 用户看到的就是「只有 360 能播」。归一后必须变成正常直链线路。
+    const raw = {
+      vod_id: 2, vod_name: '繁花', type_id_1: 2,
+      vod_play_from: 'guangsu', vod_play_url: '第01集$https://v.gsuus.com/play/kazVzrma'
+    };
+    const out = maccms.normalizeVod(raw, { key: 'guangsu', name: '光速资源' });
+    assert(out.routes.length === 1, '应保留 1 条线路');
+    assert(out.routes[0].diagnostic !== true, '归一成功不应打 diagnostic 标记');
+    assert(out.playable_url === 'https://v.gsuus.com/play/kazVzrma/index.m3u8', 'playable_url 应是归一后的 m3u8');
+    assert(out.episode_count === 1, `归一后应算作 1 集，实际 ${out.episode_count}`);
+    return '网页播放页已归一为可播直链';
+  });
+
+  await test('toPlayableUrl: 播放页归一、分享页拒绝、直链原样（前后端同规则）', async () => {
+    const cases = [
+      ['https://v.gsuus.com/play/kazVzrma', 'https://v.gsuus.com/play/kazVzrma/index.m3u8'],
+      ['https://v.gsuus.com/play/kazVzrma/', 'https://v.gsuus.com/play/kazVzrma/index.m3u8'],
+      ['https://a.com/2025/index.m3u8', 'https://a.com/2025/index.m3u8'],
+      ['https://a.com/movie.mp4?x=1', 'https://a.com/movie.mp4?x=1'],
+      ['https://vip.dytt-kan.com/share/abc123', ''],
+      ['https://a.com/detail/1', ''],
+      ['', ''],
+      [null, '']
+    ];
+    for (const [input, expected] of cases) {
+      const be = maccms.toPlayableUrl(input);
+      const fe = feMediaUrl.toPlayableUrl(input);
+      assert(be === expected, `后端 toPlayableUrl(${input}) 应为 ${expected}，实际 ${be}`);
+      assert(fe === expected, `前端 toPlayableUrl(${input}) 应为 ${expected}，实际 ${fe}`);
+    }
+    return `${cases.length} 组前后端归一一致`;
   });
 
   // ---- 前端播放地址归一（2026-10-10 回归：清洗为空后回退 raw，网页地址仍进播放器） ----
@@ -772,14 +1000,25 @@ async function unit() {
     return `${cases.length} 组前后端判定一致`;
   });
 
-  await test('前端 cleanRoutes: 清洗为空时绝不回退原始网页线路', async () => {
-    // 回归场景：源站只给了分享页/播放页，清洗后必须为空（旧实现在此回退 raw → 网页地址进播放器）
+  await test('前端 cleanRoutes: 分享页剔除、播放页归一、绝不回退原始网页线路', async () => {
+    // 回归场景（2026-10-11 更新）：源站只给分享页时清洗后必须为空（旧实现在此回退 raw → 网页地址进播放器）；
+    // 但网页播放页 /play/<id> 现在能归一成直链，必须保留而不是丢弃。
     const webOnly = [
       { name: 'dytt', episodes: [{ name: 'HD', url: 'https://vip.dytt-kan.com/share/abc123' }] },
       { name: 'lzi', episodes: [{ name: '正片', url: 'https://hn.bfvvs.com/play/lejLLq4b' }] }
     ];
-    assert(feMediaUrl.cleanRoutes(webOnly).length === 0, '全是网页地址时应清洗为空，不得回退 raw');
-    assert(feMediaUrl.hasOnlyWebRoutes(webOnly) === true, '应识别出「只剩网页地址」');
+    const cleanedWeb = feMediaUrl.cleanRoutes(webOnly);
+    assert(cleanedWeb.length === 1, '分享页线路应被剔除，播放页线路应保留');
+    assert(cleanedWeb[0].episodes.length === 1, '播放页应归一成 1 个直链剧集');
+    assert(cleanedWeb[0].episodes[0].url === 'https://hn.bfvvs.com/play/lejLLq4b/index.m3u8', '播放页应归一为 index.m3u8');
+    assert(feMediaUrl.hasOnlyWebRoutes(webOnly) === false, '播放页归一后不算「只剩网页地址」');
+
+    // 全是分享页（无法归一）时才清洗为空，且不得回退 raw
+    const shareOnly = [
+      { name: 'dytt', episodes: [{ name: 'HD', url: 'https://vip.dytt-kan.com/share/abc123' }] }
+    ];
+    assert(feMediaUrl.cleanRoutes(shareOnly).length === 0, '全是分享页时应清洗为空，不得回退 raw');
+    assert(feMediaUrl.hasOnlyWebRoutes(shareOnly) === true, '应识别出「只剩网页地址」');
 
     // 混合场景：只保留直链剧集，网页剧集剔除
     const mixed = [{
@@ -792,17 +1031,20 @@ async function unit() {
     const cleaned = feMediaUrl.cleanRoutes(mixed);
     assert(cleaned.length === 1 && cleaned[0].episodes.length === 1, '应只保留 1 个直链剧集');
     assert(feMediaUrl.hasOnlyWebRoutes(mixed) === false, '含直链时不应判为只剩网页');
-    return '空回退已消除，混合场景只留直链';
+    return '空回退已消除，分享页剔除 / 播放页归一 / 混合只留直链';
   });
 
-  await test('前端 resolvePlayUrl: 剧集与存库地址都必须是直链', async () => {
+  await test('前端 resolvePlayUrl: 只接受可播地址，分享页一律拒绝', async () => {
     const { resolvePlayUrl } = feMediaUrl;
     assert(resolvePlayUrl('https://a.com/x.m3u8', 'https://b.com/y.mp4') === 'https://a.com/x.m3u8', '剧集直链优先');
     assert(resolvePlayUrl(null, 'https://b.com/y.mp4') === 'https://b.com/y.mp4', '剧集缺失时回退存库直链');
     assert(resolvePlayUrl(null, 'https://vip.dytt-kan.com/share/abc123') === '', '存库网页地址必须返回空');
-    assert(resolvePlayUrl('https://hn.bfvvs.com/play/lejLLq4b', null) === '', '剧集网页地址必须返回空');
+    assert(
+      resolvePlayUrl('https://hn.bfvvs.com/play/lejLLq4b', null) === 'https://hn.bfvvs.com/play/lejLLq4b/index.m3u8',
+      '剧集网页播放页应归一为直链'
+    );
     assert(resolvePlayUrl('', '') === '', '都为空时返回空');
-    return '5 组断言全过（网页地址一律不产生播放地址）';
+    return '5 组断言全过（分享页不产生播放地址，播放页归一为直链）';
   });
 
   await test('契约：MovieView / MoviePlayer 不得再把未校验地址喂给播放器', async () => {
@@ -814,10 +1056,11 @@ async function unit() {
     assert(/resolvePlayUrl\(/.test(view), 'MovieView 应用 resolvePlayUrl 计算播放地址');
     assert(/cleanRoutes\(/.test(view), 'MovieView 应用 cleanRoutes 清洗线路');
     assert(!/cleaned\.length \? cleaned : raw/.test(view), 'MovieView 不得再回退原始线路');
-    // 播放器必须对地址做直链校验
+    // 播放器必须对地址做归一/直链校验（2026-10-11 起统一走 toPlayableUrl：
+    // 既拒绝分享页，又能把网页播放页归一成直链）
     assert(/from '\.\.\/lib\/mediaUrl\.js'/.test(player), 'MoviePlayer 应 import lib/mediaUrl.js');
-    assert(/isDirectVideoUrl\(/.test(player), 'MoviePlayer 应对播放地址做直链校验');
-    return 'MovieView / MoviePlayer 已统一走直链校验';
+    assert(/toPlayableUrl\(/.test(player), 'MoviePlayer 应对播放地址做归一/直链校验');
+    return 'MovieView / MoviePlayer 已统一走直链归一';
   });
 
   await test('默认采集源：含 360zy、不含已下线源', async () => {
@@ -831,7 +1074,10 @@ async function unit() {
   });
 
   await test('mediaUrl: 音频直链判定与播放地址归一', async () => {
-    const { isDirectAudioUrl, isDirectVideoUrl, resolveAudioPlayback, looksLikeAudioStream, isStaleAudioUrl } = mediaUrl;
+    const {
+      isDirectAudioUrl, isDirectVideoUrl, resolveAudioPlayback,
+      looksLikeAudioStream, isStaleAudioUrl, isMetingStreamUrl
+    } = mediaUrl;
     assert(isDirectAudioUrl('https://m801.music.126.net/x/y.flac') === true, 'flac 应为音频直链');
     assert(isDirectAudioUrl('https://api.audius.co/v1/tracks/abc/stream') === false, '无后缀端点不是直链');
     assert(isDirectAudioUrl('https://audius.co/byone/周杰伦-七里香') === false, '平台网页地址不是直链');
@@ -852,7 +1098,22 @@ async function unit() {
     assert(isStaleAudioUrl('https://api.audius.co/v1/tracks/abc/stream') === false, 'Audius stream 端点不应标 stale');
     assert(isStaleAudioUrl('https://audius.co/byone/周杰伦-七里香') === true, '平台网页地址应标 stale');
     assert(isStaleAudioUrl('https://m801.music.126.net/x.flac') === false, 'flac 直链不应标 stale');
-    return '音频/影视直链判定 + 三级优先级 + url_stale 体检共 13 组断言全过';
+
+    // Meting 取流端点（无后缀、302 跳转）必须被当作可播，否则「搜得到、加不进收藏」
+    const meting = 'https://api.qijieya.cn/meting/?server=netease&type=url&id=210049';
+    assert(isMetingStreamUrl(meting) === true, 'Meting type=url 端点应被识别');
+    assert(looksLikeAudioStream(meting) === true, 'Meting 端点应视为可播流');
+    assert(isStaleAudioUrl(meting) === false, 'Meting 端点不应标 stale');
+    const metingResolved = resolveAudioPlayback({ url: meting, audio_url: null });
+    assert(metingResolved.url === meting && metingResolved.quality === 'full',
+      `Meting 端点应被 resolveAudioPlayback 接受: ${JSON.stringify(metingResolved)}`);
+    // 判定要收紧：普通网页（哪怕路径含 meting）不能混进来
+    assert(isMetingStreamUrl('https://api.qijieya.cn/meting/?server=netease&type=pic&id=1') === false,
+      'Meting 的 type=pic 封面端点不是音频流');
+    assert(isMetingStreamUrl('https://example.com/meting/?type=url') === true
+      && isMetingStreamUrl('https://example.com/foo?type=url') === false,
+      'Meting 端点判定应要求路径 /meting');
+    return '音频/影视直链判定 + 三级优先级 + url_stale 体检 + Meting 端点共 19 组断言全过';
   });
 
   await test('pickBestMovieCandidate: 只接受可信标题，拒绝同名异片', async () => {
@@ -882,6 +1143,185 @@ async function unit() {
   });
 }
 
+// ---------------------------------------------------------------- UNIT · 文档附件类型嗅探
+async function fileTypeUnit() {
+  section('UNIT · 文档附件（PDF / Word / 文本，拒绝脚本类）');
+
+  const PDF = Buffer.from('%PDF-1.7\n%âãÏÓ\n1 0 obj\n<<>>\nendobj\n');
+  const OLE = Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(32)]);
+  const ZIP = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(28)]);
+
+  await test('文档类型 · 魔数 + 声明一致才放行', () => {
+    assert(fileType.resolveFileType(PDF, 'application/pdf')?.ext === 'pdf', 'PDF 应识别');
+    assert(fileType.resolveFileType(PDF, '')?.ext === 'pdf', 'PDF 空声明应以魔数为准');
+    assert(fileType.resolveFileType(PDF, 'application/msword') === null, 'PDF 字节 + Word 声明应拒绝');
+
+    const docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const xlsx = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    assert(fileType.resolveFileType(ZIP, docx)?.ext === 'docx', 'zip + docx 声明应放行');
+    assert(fileType.resolveFileType(ZIP, xlsx)?.ext === 'xlsx', 'zip + xlsx 声明应放行');
+    // zip 容器无法只靠魔数区分三兄弟，没有合法 OOXML 声明时必须拒绝（不能当 exe/zip 收进来）
+    assert(fileType.resolveFileType(ZIP, 'application/zip') === null, '裸 zip 声明应拒绝');
+    assert(fileType.resolveFileType(ZIP, '') === null, 'zip 无声明应拒绝');
+    assert(fileType.resolveFileType(OLE, 'application/msword')?.ext === 'doc', 'OLE + doc 声明应放行');
+    return 'PDF / doc / docx / xlsx 均按魔数+声明双校验，裸 zip 被拒';
+  });
+
+  await test('文档类型 · HTML / 脚本 / 二进制伪装成文本一律拒绝', () => {
+    const html = Buffer.from('<!DOCTYPE html><html><script>alert(1)</script></html>');
+    // HTML 内容看起来像文本，但声明 text/plain 之外的 mime 会被拒；声明 text/plain 时会被当纯文本收下
+    assert(fileType.resolveFileType(html, 'text/html') === null, 'HTML 声明必须拒绝（存储型 XSS）');
+    assert(fileType.resolveFileType(Buffer.from('PK\x03\x04\u0000\u0001binary'), 'text/plain') === null, '含 NUL 的二进制不能当文本');
+    const binary = Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+    assert(fileType.resolveFileType(binary, 'text/plain') === null, '二进制伪装 text/plain 应拒绝');
+    return 'HTML / 二进制伪装均被拒';
+  });
+
+  await test('文档类型 · 纯文本 / CSV / Markdown 放行且大小有上限', () => {
+    const txt = Buffer.from('这是一个纯文本说明。\n第二行。\n');
+    assert(fileType.resolveFileType(txt, 'text/plain')?.ext === 'txt', 'text/plain 应识别');
+    assert(fileType.resolveFileType(txt, 'text/csv')?.ext === 'csv', 'text/csv 应识别');
+    assert(fileType.resolveFileType(txt, 'text/markdown')?.ext === 'md', 'markdown 应识别');
+    assert(fileType.resolveFileType(txt, '')?.ext === 'txt', '空声明按 text/plain 处理');
+
+    const limit = fileType.MAX_FILE_BYTES;
+    assert(fileType.isWithinFileLimit(limit), '等于上限应通过');
+    assert(!fileType.isWithinFileLimit(limit + 1), '超过上限应拒绝');
+    assert(!fileType.isWithinFileLimit(0), '空文件应拒绝');
+    return `上限 ${Math.round(limit / 1024 / 1024)}MB，文本三兄弟识别正常`;
+  });
+
+  await test('文档类型 · 文件名清洗与 object key 不含用户输入', () => {
+    assert(!fileType.sanitizeFilename('../../etc/passwd', 'txt').includes('/'), '目录穿越片段必须去掉');
+    assert(!fileType.sanitizeFilename('..\\..\\win.ini', 'txt').includes('\\'), '反斜杠必须去掉');
+    const key = fileType.buildFileKey('11111111-1111-1111-1111-111111111111', 'pdf', new Date('2026-10-11T00:00:00Z'));
+    assert(/^files\/11111111-1111-1111-1111-111111111111\/2026\/[0-9a-f-]{36}\.pdf$/.test(key), `object key 形态不对: ${key}`);
+    return '文件名清洗 + key 形态校验通过';
+  });
+}
+
+// ---------------------------------------------------------------- UNIT · 电子书类型
+async function bookTypeUnit() {
+  section('UNIT · 电子书类型（魔数嗅探 / 上限 / key 形态）');
+
+  const ascii = (s) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
+  const head = (prefix, len = 64) => {
+    const out = new Uint8Array(len);
+    out.set(ascii(prefix).subarray(0, len), 0);
+    return out;
+  };
+
+  await test('电子书 · 按魔数识别 PDF / EPUB，普通 zip 被拒', () => {
+    assert(bookType.sniffBookFormat(head('%PDF-1.7'))?.format === 'pdf', 'PDF 头应识别');
+
+    // EPUB：zip 头 + 头部的 application/epub+zip 标记
+    const epub = new Uint8Array(200);
+    epub.set([0x50, 0x4b, 0x03, 0x04], 0);
+    epub.set(ascii('application/epub+zip'), 30);
+    assert(bookType.sniffBookFormat(epub)?.format === 'epub', 'EPUB 应识别');
+
+    // 只有 zip 头、没有 epub 标记的（如 docx）必须被拒，避免把 Office 文件当电子书收
+    const notEpub = new Uint8Array(200);
+    notEpub.set([0x50, 0x4b, 0x03, 0x04], 0);
+    assert(bookType.sniffBookFormat(notEpub) === null, '普通 zip 不应被当成电子书');
+    return 'PDF / EPUB 识别正确，非电子书 zip 被拒';
+  });
+
+  await test('电子书 · PalmDB(MOBI/AZW3) 按 version 区分格式', () => {
+    const build = (version) => {
+      const buf = new Uint8Array(200);
+      buf.set(ascii('BOOK'), 60);
+      buf[76] = 0; buf[77] = 1;               // 记录数 = 1（大端 uint16）
+      buf[78] = 0; buf[79] = 0; buf[80] = 0; buf[81] = 78;   // 记录 0 偏移 = 78
+      buf.set(ascii('MOBI'), 78 + 16);         // PalmDOC(16B) 之后是 MOBI header
+      const v = 78 + 16 + 0x24;                // version 在 MOBI header +0x24
+      buf[v + 3] = version;
+      return buf;
+    };
+    assert(bookType.sniffBookFormat(build(6))?.format === 'mobi', 'version 6 应为 mobi');
+    assert(bookType.sniffBookFormat(build(8))?.format === 'azw3', 'version 8 应为 azw3');
+    return 'PalmDB 记录表 + MOBI version 判定通过';
+  });
+
+  await test('电子书 · 上限 100MB 与 object key 形态', () => {
+    assert(bookType.isWithinBookLimit(bookType.MAX_BOOK_BYTES), '等于上限应通过');
+    assert(!bookType.isWithinBookLimit(bookType.MAX_BOOK_BYTES + 1), '超过上限应拒绝');
+    assert(!bookType.isWithinBookLimit(0), '空文件应拒绝');
+    assert(bookType.MAX_BOOK_BYTES > fileType.MAX_FILE_BYTES, '电子书上限应比普通附件宽');
+
+    const key = bookType.buildBookKey('11111111-1111-1111-1111-111111111111', 'epub', new Date('2026-10-11T00:00:00Z'));
+    assert(/^books\/11111111-1111-1111-1111-111111111111\/2026\/[0-9a-f-]{36}\.epub$/.test(key), `object key 形态不对: ${key}`);
+    assert(bookType.buildCoverKey(key, 'jpg') === `${key}-cover.jpg`, '封面 key 应挂在正文同目录');
+    assert(!bookType.buildCoverKey(key, 'exe').endsWith('.exe'), '封面扩展名必须白名单化');
+    return `上限 ${Math.round(bookType.MAX_BOOK_BYTES / 1024 / 1024)}MB，key=${key}`;
+  });
+
+  await test('电子书 · 文件名清洗不含用户输入路径', () => {
+    assert(!bookType.sanitizeFilename('../../etc/passwd', 'epub').includes('/'), '目录穿越片段必须去掉');
+    assert(!bookType.sanitizeFilename('..\\..\\win.ini', 'epub').includes('\\'), '反斜杠必须去掉');
+    assert(bookType.sanitizeFilename('', 'pdf').endsWith('.pdf'), '空名要有兜底');
+    return '文件名清洗通过';
+  });
+
+  await test('电子书 · 封面魔数只认图片格式', () => {
+    assert(bookType.sniffCoverMime(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]))?.ext === 'jpg', 'JPEG 应识别');
+    assert(bookType.sniffCoverMime(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]))?.ext === 'png', 'PNG 应识别');
+    assert(bookType.sniffCoverMime(head('GIF89a'))?.ext === 'gif', 'GIF 应识别（老 MOBI 封面常见）');
+    assert(bookType.sniffCoverMime(head('RIFF0000WEBP'))?.ext === 'webp', 'WebP 应识别');
+    assert(bookType.sniffCoverMime(ascii('not an image')) === null, '非图片必须拒绝');
+    return 'JPEG / PNG / GIF / WebP 识别正确，非图片被拒';
+  });
+}
+
+// ---------------------------------------------------------------- UNIT · GitHub AI 解读
+async function githubAiUnit() {
+  section('UNIT · GitHub AI 解读（中文 / 字数下限 / README 清洗）');
+
+  await test('GitHub AI · 概述不足 50 个汉字必须判失败', () => {
+    const short = '一个扫描密钥的工具。';
+    let failed = false;
+    try {
+      githubAi.parseAnswer({ response: JSON.stringify({ one_line: '密钥扫描工具', summary: short, tags: ['安全工具'] }) });
+    } catch (e) { failed = /50/.test(e.message); }
+    assert(failed, '不足 50 个汉字时应当抛错（否则会把「一句就交差」的解读写进库）');
+
+    const ok = githubAi.parseAnswer({ response: JSON.stringify({
+      one_line: '密钥扫描工具',
+      summary: '这是一款用于扫描代码仓库中泄露的 API 密钥与凭据的安全工具，支持增量扫描、代理访问和智能过滤，适合安全研究人员与开发者在持续集成流程中使用。',
+      tags: ['安全工具'], keywords: ['密钥扫描'], platforms: ['cli']
+    }) });
+    assert(githubAi.countZh(ok.summary) >= 50, '合格概述应当通过校验');
+    assert(ok.ai_version === githubAi.AI_VERSION, '解读要带上当前版本号，便于以后自动重做');
+    return `阈值 ${githubAi.MIN_ZH} 字，拒绝 ${githubAi.countZh(short)} 字，接受 ${githubAi.countZh(ok.summary)} 字`;
+  });
+
+  await test('GitHub AI · 英文术语多但中文够数不应被误判', () => {
+    const mixed = 'Insomnia 是一款开源的 API 客户端，支持 GraphQL、REST、WebSockets、gRPC 等多种接口协议，可用于接口调试、设计、测试与模拟，并提供环境变量管理与代码生成能力，适合后端开发者与测试工程师日常使用。';
+    const r = githubAi.parseAnswer({ response: JSON.stringify({ one_line: 'API 调试客户端', summary: mixed, tags: ['开发工具'] }) });
+    assert(githubAi.countZh(r.summary) >= 50, `中文术语混排的概述应当通过，实际 ${githubAi.countZh(r.summary)} 字`);
+    return `术语混排仍识别为中文（${githubAi.countZh(mixed)} 字）`;
+  });
+
+  await test('GitHub AI · README 里的控制字符被清掉（8006 报错根因）', () => {
+    const dirty = 'a\u0000b\u200bc\u2028d\ufffd\n\n\n\nend';
+    const clean = githubAi.sanitizeReadme(dirty);
+    assert(!/[\u0000\u200b\u2028\ufffd]/.test(clean), '不可见字符必须清干净');
+    assert(clean.includes('abcd'), '正常字符要保留');
+    assert(!/\n{3,}/.test(clean), '连续空行要压掉');
+
+    const p = githubAi.buildPrompt({ full_name: 'a/b', description: 'x\u0000y', topics: ['t\u200b1'] }, '');
+    assert(!/[\u0000\u200b]/.test(p), '提示词里也不能残留不可见字符');
+    return '控制字符 / 零宽字符 / 连续空行均已清理';
+  });
+
+  await test('GitHub AI · 提示词含中文与 50 字要求', () => {
+    const p = githubAi.buildPrompt({ full_name: 'a/b', description: '一个工具' }, 'README');
+    assert(p.includes('简体中文'), '提示词必须明确要求简体中文');
+    assert(p.includes('不少于 50 个字'), '提示词必须写明 summary 不少于 50 个字');
+    return '提示词含「简体中文」与「不少于 50 个字」';
+  });
+}
+
 // ---------------------------------------------------------------- CONTRACT
 async function contract() {
   section('CONTRACT · 页面 ↔ 接口（全页面覆盖）');
@@ -906,6 +1346,19 @@ async function contract() {
   for (const m of apiSrc.matchAll(/API_BASE_URL\}([/]api[^`'"]*)[`'"]/g)) {
     if (!apiCalls.some((c) => c.path === m[1])) apiCalls.push({ method: 'GET', path: m[1] });
   }
+  // XHR 直传（uploadAsset / uploadFile）：xhr.open('PUT', `${API_BASE_URL}/api/...`)
+  // 这些请求不经 request()，方法写在 xhr.open 里，必须单独识别，否则会被当成 GET 误报「路由不存在」。
+  const xhrPaths = new Set();
+  for (const m of apiSrc.matchAll(/xhr\.open\(\s*'([A-Z]+)'\s*,\s*`\$\{API_BASE_URL\}([/]api[^`'"]*)/g)) {
+    xhrPaths.add(m[2]);
+    if (!apiCalls.some((c) => c.path === m[2] && c.method === m[1])) {
+      apiCalls.push({ method: m[1], path: m[2] });
+    }
+  }
+  // 上面那个「无方法默认 GET」的兜底会把 xhr 路径也收成 GET，这里剔除误判的 GET 条目
+  for (let i = apiCalls.length - 1; i >= 0; i--) {
+    if (apiCalls[i].method === 'GET' && xhrPaths.has(apiCalls[i].path)) apiCalls.splice(i, 1);
+  }
 
   // 归一化：去掉查询串；`/xxx/${id}` → `/xxx/:id`；`/xxx${params}`（查询串载体）→ `/xxx`
   const norm = (p) => p
@@ -922,6 +1375,73 @@ async function contract() {
     }
     assert(missing.length === 0, `前端调了后端不存在的路由:\n    ${missing.join('\n    ')}`);
     return `${Object.keys(Object.fromEntries(routerMap)).length} 条后端路由`;
+  });
+
+  // 前端 Context 解构护栏（2026-10-11 新增）
+  // 起因：Settings.jsx 曾把 theme/toggleTheme 从 useAuth() 解构（它们其实属于 useTheme()），
+  // 主题按钮文案恒错、点击 toggleTheme() 抛 TypeError 导致整页崩溃；vite build 不做运行时检查，抓不到。
+  // 这里静态比对：页面从 useAuth()/useTheme() 解构的每个字段，必须是 Provider 真正暴露的键。
+  function contextKeys(src, startMarker, endMarker) {
+    const i = src.indexOf(startMarker);
+    if (i < 0) throw new Error(`找不到 ${startMarker}`);
+    const j = src.indexOf(endMarker, i);
+    if (j < 0) throw new Error(`找不到 ${endMarker}`);
+    const body = src.slice(i + startMarker.length, j) + ',';
+    return new Set([...body.matchAll(/([A-Za-z_$][\w$]*)\s*[:,]/g)].map((m) => m[1]));
+  }
+
+  const authKeys = contextKeys(readFileSync(join(FRONTEND_SRC, 'lib', 'auth.jsx'), 'utf8'), 'const value = {', '};');
+  const themeKeys = contextKeys(readFileSync(join(FRONTEND_SRC, 'lib', 'theme.jsx'), 'utf8'), 'value={{', '}}>');
+  // 自校验：解析结果必须与 Provider 实际暴露的键完全一致，否则说明解析器坏了（宁可炸这里，也不要假绿）
+  assert([...authKeys].sort().join(',') === 'isAdmin,isAuthenticated,loading,profile,session,signIn,signOut,signUp,user',
+    `useAuth 暴露键解析异常: ${[...authKeys].sort().join(',')}`);
+  assert([...themeKeys].sort().join(',') === 'colors,currentColors,isSepia,resetColors,saveColors,setColor,setTheme,theme,toggleTheme',
+    `useTheme 暴露键解析异常: ${[...themeKeys].sort().join(',')}`);
+
+  const ctxScanFiles = [
+    join(FRONTEND_SRC, 'app.jsx'),
+    ...readdirSync(join(FRONTEND_SRC, 'routes')).filter((f) => f.endsWith('.jsx')).map((f) => join(FRONTEND_SRC, 'routes', f)),
+    ...readdirSync(join(FRONTEND_SRC, 'components')).filter((f) => f.endsWith('.jsx')).map((f) => join(FRONTEND_SRC, 'components', f))
+  ];
+
+  await test('useAuth()/useTheme() 解构字段都在 Provider 暴露范围内', async () => {
+    const problems = [];
+    for (const file of ctxScanFiles) {
+      const src = readFileSync(file, 'utf8');
+      for (const [hook, keys] of [['useAuth', authKeys], ['useTheme', themeKeys]]) {
+        const re = new RegExp(`const\\s*\\{([^}]*)\\}\\s*=\\s*${hook}\\(\\)`, 'g');
+        for (const m of src.matchAll(re)) {
+          for (const field of m[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+            if (field.startsWith('...')) continue;
+            const name = field.split(':')[0].trim();
+            if (!keys.has(name)) problems.push(`${file.split('/src/')[1]} → ${hook}() 解构了不存在的 ${name}`);
+          }
+        }
+      }
+    }
+    assert(problems.length === 0, `Context 解构越界:\n    ${problems.join('\n    ')}`);
+    return `${ctxScanFiles.length} 个文件 / useAuth ${authKeys.size} 键 / useTheme ${themeKeys.size} 键`;
+  });
+
+  await test('资料字段（display_name / avatar_path / role…）必须取 profile，不能取 useAuth().user', async () => {
+    // useAuth().user 是 Supabase 会话对象（session.user），只有 email / id 等 auth 字段；
+    // display_name / avatar_path / username / role / plan 都在 profile 上。
+    // 曾把 user?.displayName 当昵称用，线上恒为空（2026-10-11 碎念页）。
+    const PROFILE_ONLY = ['displayName', 'display_name', 'avatar_path', 'avatarPath', 'username', 'role', 'plan', 'isAdmin'];
+    const problems = [];
+    for (const file of ctxScanFiles) {
+      const src = readFileSync(file, 'utf8');
+      // 找出从 useAuth() 解构出名为 user 的文件
+      const hasUser = /const\s*\{[^}]*\buser\b[^}]*\}\s*=\s*useAuth\(\)/.test(src);
+      if (!hasUser) continue;
+      for (const field of PROFILE_ONLY) {
+        // 只查 user?.field / user.field 这种读取，避免误报把字段写在别处的情况
+        const re = new RegExp(`\\buser\\s*\\??\\.\\s*${field}\\b`, 'g');
+        if (re.test(src)) problems.push(`${file.split('/src/')[1]} → user.${field}（应从 profile 取）`);
+      }
+    }
+    assert(problems.length === 0, `资料字段取错对象:\n    ${problems.join('\n    ')}`);
+    return `扫描 ${ctxScanFiles.length} 个文件，未发现从 user 读资料字段`;
   });
 
   // 每个页面用到的 api.* 方法必须存在
@@ -1038,7 +1558,7 @@ async function live() {
 
 // ---------------------------------------------------------------- main
 const t0 = Date.now();
-if (!ONLY || ONLY === 'unit') { await unit(); await contract(); }
+if (!ONLY || ONLY === 'unit') { await unit(); await fileTypeUnit(); await bookTypeUnit(); await githubAiUnit(); await contract(); }
 if (!ONLY || ONLY === 'live') await live();
 
 const failed = results.filter((r) => !r.ok);

@@ -137,6 +137,42 @@ export function isPlayableUrl(url = '') {
   return /\.(m3u8|mp4)(\?|#|$)/i.test(url);
 }
 
+// —— 网页播放页 → 直链（2026-10-11 修复「只有 360 能播」）——
+//
+// 背景：光速 / 速播 / 豪华 三个源在 vod_play_url 里给的不是 m3u8，而是**网页播放页**
+// （形如 https://v.gsuus.com/play/kazVzrma）。旧逻辑按 isPlayableUrl 把它们当「非直链」过滤掉，
+// 结果这三个源在详情页永远显示「暂无播放地址」，用户只看到 360 / 魔都（它们直接给 m3u8）。
+//
+// 实测规律（2026-10-11，三个源 × 多部片）：这些网页播放页的 HLS 播放列表固定在
+// `<播放页>/index.m3u8`，而且返回的是标准 master playlist（含变体地址），
+// 变体地址再解析就能拿到真正的 .ts 分片（分片在 999 / 9999 / 65 等非标准端口，必须走 /api/vod/proxy）。
+// 因此这里把「无后缀的播放页」归一成 `<原地址>/index.m3u8`，让它重新变成可播直链。
+// 不做网络探测：归一化是**纯字符串操作**，真正能否播仍由播放器（先直连、失败切代理）决定。
+//
+// 只认两类形态，避免误伤：
+//   1) 路径含 /play/<id>（各源通用形态）；
+//   2) 完全无后缀的 http(s) 地址（如 https://host/abc123，且不含 query）。
+// 已经带 .m3u8 / .mp4 的地址原样返回；明显是其它网页（.html / .php / 分享页 /share/）不动。
+const WEB_PLAY_PATH_RE = /\/play\/[A-Za-z0-9_-]+\/?$/;
+// 明显是网页/分享页的路径段：即使无后缀也**不能**当成播放页归一（否则 /share/xxx 会变成假直链）
+const NON_PLAY_PATH_RE = /\/(share|vodplay|voddetail|detail|download|subject|vodlist)\//i;
+export function toPlayableUrl(url = '') {
+  const raw = String(url).trim();
+  if (!raw) return '';
+  if (isPlayableUrl(raw)) return raw;
+  let u;
+  try { u = new URL(raw); } catch { return ''; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return '';
+  const path = u.pathname.replace(/\/+$/, '');
+  // 网页播放页：/<...>/play/<id>（末尾可有斜杠）
+  if (WEB_PLAY_PATH_RE.test(path)) return `${u.origin}${path}/index.m3u8`;
+  // 无后缀、无 query 的裸路径：按播放页处理（这类地址交给 <video> 也没意义，归一化只有好处）
+  if (!NON_PLAY_PATH_RE.test(path) && !/\.[a-z0-9]{2,5}$/i.test(path) && !u.search) {
+    return `${u.origin}${path}/index.m3u8`;
+  }
+  return '';
+}
+
 // 把一条采集记录整理为统一候选结构
 //
 // 2026-10-10：**过滤非直链线路与剧集**。
@@ -148,7 +184,17 @@ export function isPlayableUrl(url = '') {
 // 并打上 diagnostic 标记。此时 playable_url 必为 null，前端按标记/直链判定后
 // 只会显示空态与「重新匹配片源」，**绝不把网页地址当播放地址**。
 export function normalizeVod(raw, source) {
-  const rawRoutes = parsePlayUrls(raw.vod_play_url).map((eps, i) => ({
+  // 先做「网页播放页 → 直链」归一（见 toPlayableUrl 注释）：光速 / 速播 / 豪华 给的是
+  // 播放页地址，不归一就会被下面的 isPlayableUrl 过滤掉，导致这三个源详情页永远空。
+  // 保留 original_url 便于排查上游到底给的是什么。
+  const parsedRoutes = parsePlayUrls(raw.vod_play_url).map((eps) => eps.map((e) => {
+    const direct = toPlayableUrl(e.url);
+    return direct && direct !== e.url
+      ? { name: e.name, url: direct, original_url: e.url }
+      : e;
+  }));
+
+  const rawRoutes = parsedRoutes.map((eps, i) => ({
     name: String(raw.vod_play_from || '').split('$$$')[i]?.trim() || `线路${i + 1}`,
     episodes: eps
   }));

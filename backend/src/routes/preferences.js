@@ -1,4 +1,5 @@
-// 用户偏好：主题（白天 light / 素雅 sepia）与自定义配色持久化。暗色主题 2026-10-09 已移除，旧值 dark 按 light 处理
+// 用户偏好：主题（纯净 light / 素雅 sepia / 天青 celadon）与自定义配色持久化。
+// 暗色主题 2026-10-09 已移除（旧值 dark 按 light 处理）；天青（celadon）2026-10-11 新增。
 // 权限：普通用户仅读写自己的偏好；管理员可读全部
 
 import { ok, readJson, HttpError } from '../lib/response.js';
@@ -17,10 +18,12 @@ function validateTheme(theme) {
   }
   const out = {};
   if (theme.mode !== undefined) {
-    if (!['light', 'sepia', 'dark'].includes(theme.mode)) throw new HttpError(422, "theme.mode 必须为 'light' 或 'sepia'");
+    if (!['light', 'sepia', 'celadon', 'dark'].includes(theme.mode)) {
+      throw new HttpError(422, "theme.mode 必须为 'light' / 'sepia' / 'celadon'");
+    }
     out.mode = theme.mode === 'dark' ? 'light' : theme.mode;
   }
-  for (const variant of ['light', 'sepia']) {
+  for (const variant of ['light', 'sepia', 'celadon']) {
     if (theme[variant] === undefined) continue;
     const colors = theme[variant];
     if (typeof colors !== 'object' || colors === null) {

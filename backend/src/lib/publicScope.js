@@ -7,7 +7,18 @@
 
 // 访客可只读的 GET 路径。
 // 注意：不含 favorites（收藏夹属个人数据），也不含 /progress（个人播放进度）。
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline)(\/|$)/;
+// 含 moments（碎念页）：只读公开动态；它的写操作（POST/PATCH/DELETE）天然不在 GET 白名单内，
+// 且写方法只走 PUBLIC_POST_PATHS，因此不要往那里加 moments。
+// 含 files（碎念附件）：GET /api/files/:id 对访客放行，但路由层只返回 is_public=true 的文件；
+//   GET /api/files（列表）仍被 requireAdmin 挡住，不会因为放进白名单而泄露私人附件清单。
+// 含 books（图书）：书架面向读者，列出/正文/封面都对访客放行，但路由层只放行
+//   is_public=true 的书（私人书对访客一律按「不存在」处理）。
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline|moments|files|books)(\/|$)/;
+
+// 站长收藏（2026-10-11 用户要求）：站长收藏的影视 / 音乐对所有人可见可播。
+// 它是一条**精确路径**（不是前缀），因此单独判定 —— 不能塞进上面的前缀正则，
+// 否则 `/api/favorites/public/anything` 也会被连带放行。
+export const PUBLIC_EXACT_GET_PATHS = new Set(['/api/favorites/public']);
 
 // 访客可调用的「只读但用 POST」的检索接口。
 // 注意：不含 /api/github/analyze（消耗 Workers AI 额度，仅管理员可用）。
@@ -24,6 +35,7 @@ export function isGuestAllowed(method, pathname) {
   if (method === 'POST') return PUBLIC_POST_PATHS.has(pathname);
   if (method !== 'GET') return false;
   if (pathname.endsWith('/progress')) return false;
+  if (PUBLIC_EXACT_GET_PATHS.has(pathname)) return true;
   return PUBLIC_READ_RE.test(pathname);
 }
 
@@ -39,6 +51,18 @@ export function guestPostFilters() {
 
 // 访客读资源（影视/音乐/GitHub/视频）时必须满足的公开条件。
 export function guestResourceFilters() {
+  return { is_public: 'eq.true' };
+}
+
+// 碎念配图张数上限（前后端共用口径；前端超过就不让选）。
+export const MAX_MOMENT_ASSETS = 9;
+
+// 碎念文件附件个数上限（PDF / Word 等；与配图分开计数）。
+export const MAX_MOMENT_FILES = 5;
+
+// 访客读碎念时必须叠加的查询条件（供路由与测试共用）。
+// Worker 用 service_role 直连 PostgREST，RLS 不替它过滤，这一条必须在查询层显式带上。
+export function momentGuestFilters() {
   return { is_public: 'eq.true' };
 }
 

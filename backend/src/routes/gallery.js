@@ -29,7 +29,10 @@ const TABLE = 'gallery_items';
 const ASSETS = 'assets';
 // 只取展示需要的列：绝不带 object_key / sha256，也不带 original_name
 // （原始文件名属内部信息，公开访客不应看到；alt 一律用策展标题）。
-const ASSET_SELECT = 'id,public_url,width,height,mime_type';
+// ⚠️ 必须带 is_public：createGalleryItem/updateGalleryItem 要靠 asset.is_public 做
+//    「展览公开 ⇒ 素材公开」校验。曾漏掉该列导致 asset.is_public 恒为 undefined，
+//    使「加入公开展览」永远返回 409（回归用例见 tests/run.mjs 的 gallery 小节）。
+const ASSET_SELECT = 'id,public_url,width,height,mime_type,is_public';
 
 // 把「条目 + 素材」组装成对外的安全结构（丢弃内部字段）
 function shape(item, asset) {
