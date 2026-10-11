@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon.jsx';
 import { api } from '../lib/api.js';
 import { API_BASE_URL } from '../lib/config.js';
-import { isDirectVideoUrl } from '../lib/mediaUrl.js';
+import { toPlayableUrl } from '../lib/mediaUrl.js';
 
 // 代理兜底：部分资源站分片放在 999/9999/65 等非常规端口，很多网络会拦；
 // 先直连，失败或 6 秒内没拿到画面就改走 Worker 代理（/api/vod/proxy，顺带去广告）。
@@ -68,12 +68,16 @@ export function MoviePlayer({
   useEffect(() => { setViaProxy(isHls(rawSrc) && proxyHosts().has(hostOf(rawSrc))); }, [rawSrc]);
   // 最后一道防线：只有 m3u8/mp4 直链才允许进入播放器。
   // 网页地址（分享页 / 播放页）交给 <video> 只会报「片源无法解析」，
-  // 宁可明确报错，也不要把非直链喂进去。
-  const src = rawSrc && isDirectVideoUrl(rawSrc) ? (viaProxy ? proxied(rawSrc) : rawSrc) : '';
+  // 但**网页播放页可以归一成直链**（toPlayableUrl，光速/速播/豪华给的就是这种），
+  // 归一不了才明确报错，绝不把分享页之类的非直链喂进去。
+  const directSrc = toPlayableUrl(rawSrc);
+  const src = directSrc ? (viaProxy ? proxied(directSrc) : directSrc) : '';
   // 直连失败 → 切代理；已经是代理还失败 → 换下一条线路
   function fallback(reason) {
-    if (!viaProxy && isHls(rawSrc)) {
-      rememberProxy(rawSrc);
+    // 用 directSrc 而非 rawSrc：rawSrc 可能是网页播放页（不含 .m3u8），
+    // 记错域名会让「记住直连失败过的域名」失效，代理兜底也就不会触发。
+    if (!viaProxy && isHls(directSrc)) {
+      rememberProxy(directSrc);
       autoPlayRef.current = true;
       setSaved('直连较慢或被拦截，已切换代理线路');
       setViaProxy(true);
@@ -347,6 +351,7 @@ export function MoviePlayer({
           value={current}
           onInput={seek}
           aria-label="播放进度"
+          style={`--watch-p:${duration ? Math.min(100, (current / duration) * 100) : 0}%`}
         />
         <div class="watch-controls">
           <button

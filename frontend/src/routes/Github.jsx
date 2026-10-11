@@ -3,7 +3,7 @@
 //   左栏与右侧搜索卡顶端对齐，左栏 sticky 且自身可滚动（修正原项目左右不对齐的问题）
 //   数据：后端每日同步 GitHub Star（lib/githubStars.js），每分钟 AI 解读 2 个（lib/githubAi.js）
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { api } from '../lib/api.js';
+import { api, clearApiCache } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -84,6 +84,8 @@ export function Github() {
         const r = await api.syncGithub(p, run);
         if (r.done) { setSync({ busy: false, msg: r.warning || `同步完成：共 ${r.total} 个，移除 ${r.removed} 个` }); break; }
       }
+      // 同步是「手工拉最新」，必须丢掉缓存再取，否则可能拿回同步前的列表
+      clearApiCache('/api/github');
       await load();
     } catch (e) { setSync({ busy: false, msg: `同步失败：${e.message}` }); }
   }
@@ -207,7 +209,7 @@ export function Github() {
               const [owner, name] = r.title.split('/');
               const text = showAi && r.ai ? r.ai.summary : (r.summary || '（无描述）');
               return (
-                <li key={r.id} class="gh-card">
+                <li key={r.id} class="gh-card" data-tilt="4">
                   <div class="gh-card-head">
                     {r.avatar_url ? <img class="gh-avatar" src={`${r.avatar_url}&s=80`} alt="" loading="lazy" /> : <span class="gh-avatar" />}
                     <div class="gh-card-title">

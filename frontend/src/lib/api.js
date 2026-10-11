@@ -22,6 +22,53 @@ export class ApiError extends Error {
 // 访客模式下允许的只读 POST 检索接口（与后端 PUBLIC_POST 保持一致）
 const GUEST_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream']);
 
+// ---------------------------------------------------------------
+// 读缓存 / 并发去重（2026-10-11 提速）
+//
+// 动机：Worker → Supabase 的往返常有 1.5–6s，而用户会在标签间来回切。
+// 做法：GET 结果在内存里留一小段时间（默认 60s），期间重复请求直接命中；
+//       同一 URL 的并发请求共享同一个 promise（避免「首屏几个组件同时拉同一接口」）。
+// 失效：任何写操作成功后，按路径前缀清掉相关 GET 缓存，保证读到的不是旧数据。
+// 注意：只缓存成功结果，不缓存错误；不落 localStorage（关页面即清空，避免脏数据）。
+// ---------------------------------------------------------------
+const CACHE_TTL = 60 * 1000;
+const CACHE_MAX = 120;
+const cache = new Map();          // key -> { at, data }
+const INFLIGHT = new Map();       // key -> Promise
+
+function readCache(key) {
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at > CACHE_TTL) { cache.delete(key); return undefined; }
+  return hit.data;
+}
+
+function writeCache(key, data) {
+  // 简单的 LRU：超上限时删最早插入的一条
+  if (cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, { at: Date.now(), data });
+}
+
+// 写操作后失效相关缓存。按「资源段」匹配：/api/movies/xxx → 清所有 /api/movies*
+function invalidate(path) {
+  const clean = String(path).split('?')[0];
+  const seg = clean.split('/').filter(Boolean).slice(0, 2).join('/');   // 如 api/movies
+  for (const key of [...cache.keys()]) {
+    if (key.includes(`/${seg}`)) cache.delete(key);
+  }
+}
+
+// 供页面在「确知数据已变」时手动清缓存（如上传完成后强制刷新列表）
+export function clearApiCache(match) {
+  if (!match) { cache.clear(); return; }
+  for (const key of [...cache.keys()]) {
+    if (key.includes(match)) cache.delete(key);
+  }
+}
+
 async function request(path, { method = 'GET', body, timeout = 20000, signal } = {}) {
   const auth = await authHeader();
   // 访客模式（未登录）只能读：进度上报静默跳过，其余写操作给出明确提示
@@ -29,11 +76,41 @@ async function request(path, { method = 'GET', body, timeout = 20000, signal } =
   if (!auth.Authorization && method !== 'GET' && !GUEST_POST.has(path)) {
     throw new ApiError(401, '访客模式只能浏览，修改内容需要站长登录');
   }
+  // 读缓存 + 并发去重（2026-10-11 提速）：
+  //   后端到 Supabase 的往返常有 1.5–6s，同一页来回切换时没必要反复请求。
+  //   仅对 GET 生效；写操作成功后会按前缀失效相关缓存（见 invalidate()）。
+  if (method === 'GET') {
+    const key = `${auth.Authorization ? 'me' : 'guest'}|${path}`;
+    const hit = readCache(key);
+    if (hit !== undefined) return hit;
+    const inflight = INFLIGHT.get(key);
+    if (inflight) return inflight;      // 同一 URL 并发请求共享同一个 promise
+    const p = doRequest(path, method, body, timeout, signal, headers(auth));
+    INFLIGHT.set(key, p);
+    try {
+      const data = await p;
+      writeCache(key, data);
+      return data;
+    } finally {
+      INFLIGHT.delete(key);
+    }
+  }
+
+  const data = await doRequest(path, method, body, timeout, signal, headers(auth));
+  // 写操作后立刻失效缓存：下次读一定是新数据（避免「改了但页面还是旧的」）
+  invalidate(path);
+  return data;
+}
+
+function headers(auth) {
   const headers = {
     'Content-Type': 'application/json',
     ...auth
   };
+  return headers;
+}
 
+async function doRequest(path, method, body, timeout, signal, reqHeaders) {
   // 默认 20 秒超时，避免请求无限挂起；调用方可传 timeout 覆盖（如源探活接口）
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort('timeout'), timeout);
@@ -47,7 +124,7 @@ async function request(path, { method = 'GET', body, timeout = 20000, signal } =
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       method,
-      headers,
+      headers: reqHeaders,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal
     });
@@ -93,6 +170,35 @@ async function requestText(path, { timeout = 20000 } = {}) {
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (controller.signal.aborted) throw new ApiError(0, `请求超时（${Math.round(timeout / 1000)} 秒）`, 'timeout');
+    throw new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 二进制响应（电子书正文）：带 Authorization（私人书登录后可读）+ 长超时。
+// 与 request() 的区别：不 JSON 解析、不走读缓存（电子书动辄几十 MB，不该缓存）。
+async function requestBinary(path, { timeout = 120000 } = {}) {
+  const auth = await authHeader();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort('timeout'), timeout);
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      headers: auth,
+      signal: controller.signal
+    });
+    if (!res.ok) {
+      let message = `请求失败 (${res.status})`;
+      try {
+        const payload = await res.json();
+        if (payload?.error) message = payload.error;
+      } catch { /* 非 JSON 错误体，保留状态码文案 */ }
+      throw new ApiError(res.status, message);
+    }
+    return await res.arrayBuffer();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (controller.signal.aborted) throw new ApiError(0, `取书超时（${Math.round(timeout / 1000)} 秒）`, 'timeout');
     throw new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error');
   } finally {
     clearTimeout(timer);
@@ -145,6 +251,169 @@ export async function uploadAsset(file, { onProgress } = {}) {
   });
 }
 
+// 文档附件上传（PDF / Word / Excel / PPT / 文本）：与 uploadAsset 同款 XHR，
+// 只是打到 /api/files。同样不要手动设 Content-Type，浏览器会补 multipart boundary。
+export async function uploadFile(file, { onProgress } = {}) {
+  const auth = await authHeader();
+  if (!auth.Authorization) {
+    throw new ApiError(401, '上传附件需要站长登录');
+  }
+
+  return await new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}/api/files`);
+    xhr.timeout = 120000;   // 文档可能到 20MB，给足 2 分钟
+    xhr.setRequestHeader('Authorization', auth.Authorization);
+
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+
+    xhr.onload = () => {
+      let payload = null;
+      if (xhr.responseText) {
+        try {
+          payload = JSON.parse(xhr.responseText);
+        } catch {
+          reject(new ApiError(xhr.status, `服务返回了无法识别的响应 (${xhr.status})`, 'invalid_response'));
+          return;
+        }
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(payload?.data);
+      else reject(new ApiError(xhr.status, payload?.error || `上传失败 (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error'));
+    xhr.ontimeout = () => reject(new ApiError(0, '上传超时（120 秒）', 'timeout'));
+    xhr.onabort = () => reject(new ApiError(0, '上传已取消', 'aborted'));
+
+    xhr.send(form);
+  });
+}
+
+// 电子书上传（PDF / EPUB / MOBI / AZW3）：**不用 FormData**，直接把 File 当请求体发。
+// 原因：电子书可以很大，multipart 在 Worker 侧要整体读进内存（上限 128MB）会爆；
+// 后端 /api/books 收的是原始字节流，文件名走 X-Book-Name 头（encodeURIComponent 编码）。
+// 进度条仍然可用：XHR 的 upload.onprogress 对原始 body 一样生效。
+//
+// 两条通道（2026-10-11 起）：
+//   · ≤ 80MB  → 一次性直传（POST /api/books），简单、少一次往返；
+//   · > 80MB  → 分片上传（8MiB 一片），绕开「Cloudflare Workers 单请求体约 100MB」
+//               这条平台硬上限，因此单本不再有 100MB 的应用层限制。
+// 两条通道的返回值结构完全一致（都是上传后的书对象），调用方（Books.jsx）不用区分。
+const DIRECT_UPLOAD_MAX = 80 * 1024 * 1024;   // 直传阈值（给平台 100MB 上限留余量）
+const MULTIPART_PART_SIZE = 8 * 1024 * 1024;  // 片长，必须与后端 bookType.js 保持一致
+const HEAD_PROBE_SIZE = 4096;                 // 首片前 4KB，用于后端嗅探格式
+
+// 读文件开头若干字节并转成 base64（创建分片上传时后端要拿它嗅探格式）
+async function readHeadBase64(file, bytes = HEAD_PROBE_SIZE) {
+  const buf = await file.slice(0, bytes).arrayBuffer();
+  const arr = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin);
+}
+
+// 一次性直传：整个 File 作为请求体
+function uploadBookDirect(file, { onProgress, auth }) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}/api/books`);
+    // 大文件给足 10 分钟（慢网络上确实要很久）
+    xhr.timeout = 600000;
+    xhr.setRequestHeader('Authorization', auth.Authorization);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('X-Book-Name', encodeURIComponent(file.name || 'book'));
+
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+
+    xhr.onload = () => {
+      let payload = null;
+      if (xhr.responseText) {
+        try {
+          payload = JSON.parse(xhr.responseText);
+        } catch {
+          reject(new ApiError(xhr.status, `服务返回了无法识别的响应 (${xhr.status})`, 'invalid_response'));
+          return;
+        }
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(payload?.data);
+      else reject(new ApiError(xhr.status, payload?.error || `上传失败 (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error'));
+    xhr.ontimeout = () => reject(new ApiError(0, '上传超时（10 分钟）', 'timeout'));
+    xhr.onabort = () => reject(new ApiError(0, '上传已取消', 'aborted'));
+
+    xhr.send(file);
+  });
+}
+
+// 分片上传：创建 → 逐片 PUT → 合并。任何一步失败都 best-effort abort，避免 R2 留碎片。
+async function uploadBookMultipart(file, { onProgress, auth }) {
+  const totalBytes = file.size;
+  const totalParts = Math.ceil(totalBytes / MULTIPART_PART_SIZE);
+  const head = await readHeadBase64(file);
+
+  const created = await api.createBookMultipart({
+    name: encodeURIComponent(file.name || 'book'),
+    size: totalBytes,
+    parts: totalParts,
+    head
+  });
+  const { upload_id: uploadId, ticket } = created || {};
+  if (!uploadId || !ticket) {
+    throw new ApiError(0, '分片上传初始化失败（服务未返回上传凭据）', 'invalid_response');
+  }
+
+  const uploadedParts = [];
+  let uploadedBytes = 0;
+  try {
+    for (let n = 1; n <= totalParts; n++) {
+      const start = (n - 1) * MULTIPART_PART_SIZE;
+      const blob = file.slice(start, Math.min(start + MULTIPART_PART_SIZE, totalBytes));
+      const part = await api.uploadBookPart(uploadId, n, blob, {
+        ticket, totalParts, auth,
+        onProgress: (loaded) => {
+          if (onProgress) {
+            const done = uploadedBytes + loaded;
+            onProgress(Math.min(99, Math.round((done / totalBytes) * 100)));
+          }
+        }
+      });
+      uploadedParts.push({ part_number: part.part_number, etag: part.etag });
+      uploadedBytes += blob.size;
+      if (onProgress) onProgress(Math.min(99, Math.round((uploadedBytes / totalBytes) * 100)));
+    }
+
+    const book = await api.completeBookMultipart(uploadId, {
+      name: encodeURIComponent(file.name || 'book'),
+      size: totalBytes,
+      parts: uploadedParts
+    }, { ticket, totalParts });
+    if (onProgress) onProgress(100);
+    return book;
+  } catch (err) {
+    // 取消/失败都尽量清掉 R2 上的临时分片（失败不影响原始错误上报）
+    try { await api.abortBookMultipart(uploadId, { ticket }); } catch { /* best-effort */ }
+    throw err;
+  }
+}
+
+export async function uploadBook(file, { onProgress } = {}) {
+  const auth = await authHeader();
+  if (!auth.Authorization) {
+    throw new ApiError(401, '上传图书需要站长登录');
+  }
+  if (file.size > DIRECT_UPLOAD_MAX) {
+    return uploadBookMultipart(file, { onProgress, auth });
+  }
+  return uploadBookDirect(file, { onProgress, auth });
+}
+
 export const api = {
   // 分类
   listCategories: (params = '') => request(`/api/categories${params}`),
@@ -194,11 +463,87 @@ export const api = {
   deleteAsset: (id) => request(`/api/assets/${id}`, { method: 'DELETE' }),
   assetUrl: (id) => `${API_BASE_URL}/api/assets/${id}`,
 
+  // 文档附件（R2）：碎念用（PDF / Word / Excel / PPT / 文本）
+  listFiles: (params = '') => request(`/api/files${params}`),
+  deleteFile: (id) => request(`/api/files/${id}`, { method: 'DELETE' }),
+  fileUrl: (id) => `${API_BASE_URL}/api/files/${id}`,
+
+  // 图书（R2）：电子书书架 + 站内阅读
+  listBooks: (params = '') => request(`/api/books${params}`),
+  getBook: (id) => request(`/api/books/${id}`),
+  updateBook: (id, body) => request(`/api/books/${id}`, { method: 'PATCH', body }),
+  deleteBook: (id) => request(`/api/books/${id}`, { method: 'DELETE' }),
+
+  // 分片上传（大文件走它；小文件由 uploadBook 直接一次性直传）
+  // 创建：后端返回 { upload_id, ticket, part_size, parts, ... }，ticket 里签了 object key，
+  //       客户端拿不到明文 key，后续请求只带 ?ticket=。
+  createBookMultipart: (body) => request('/api/books/multipart', { method: 'POST', body }),
+  // 单片上传：body 就是这一片的原始字节。用 XHR 是为了拿 upload.onprogress。
+  uploadBookPart: (uploadId, partNumber, blob, { ticket, totalParts, auth, onProgress } = {}) => {
+    return new Promise((resolve, reject) => {
+      const qs = new URLSearchParams({ ticket: ticket || '' });
+      if (totalParts) qs.set('parts', String(totalParts));
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', `${API_BASE_URL}/api/books/multipart/${uploadId}/parts/${partNumber}?${qs}`);
+      // 单片 8MiB，5 分钟足够；慢网络也有富余
+      xhr.timeout = 300000;
+      if (auth?.Authorization) xhr.setRequestHeader('Authorization', auth.Authorization);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable) onProgress(e.loaded);
+      };
+      xhr.onload = () => {
+        let payload = null;
+        if (xhr.responseText) {
+          try { payload = JSON.parse(xhr.responseText); }
+          catch {
+            reject(new ApiError(xhr.status, `服务返回了无法识别的响应 (${xhr.status})`, 'invalid_response'));
+            return;
+          }
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(payload?.data);
+        else reject(new ApiError(xhr.status, payload?.error || `第 ${partNumber} 片上传失败 (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error'));
+      xhr.ontimeout = () => reject(new ApiError(0, `第 ${partNumber} 片上传超时`, 'timeout'));
+      xhr.onabort = () => reject(new ApiError(0, '上传已取消', 'aborted'));
+
+      xhr.send(blob);
+    });
+  },
+  // 合并 + 入库：返回上传后的书对象（与一次性直传结构一致）
+  completeBookMultipart: (uploadId, body, { ticket, totalParts } = {}) => {
+    const qs = new URLSearchParams({ ticket: ticket || '' });
+    if (totalParts) qs.set('parts', String(totalParts));
+    return request(`/api/books/multipart/${uploadId}/complete?${qs}`, { method: 'POST', body, timeout: 120000 });
+  },
+  // 放弃上传：清掉 R2 上的临时分片（best-effort，调用方自己吞错）
+  abortBookMultipart: (uploadId, { ticket } = {}) => {
+    const qs = new URLSearchParams({ ticket: ticket || '' });
+    return request(`/api/books/multipart/${uploadId}?${qs}`, { method: 'DELETE', timeout: 30000 });
+  },
+
+  // 正文 / 封面是公开 GET（私人书需登录本人），直接给 <img src> / <iframe src> / fetch 用
+  bookFileUrl: (id) => `${API_BASE_URL}/api/books/${id}/file`,
+  bookCoverUrl: (id) => `${API_BASE_URL}/api/books/${id}/cover`,
+  // 下载链接：?download=1 让后端发 Content-Disposition: attachment。
+  // 跨域时 <a download> 会被浏览器忽略，下载必须靠后端这个参数。
+  bookDownloadUrl: (id) => `${API_BASE_URL}/api/books/${id}/file?download=1`,
+  // 取正文字节（EPUB 阅读器用）：带 Authorization，私人书也能在登录后读
+  fetchBookFile: (id) => requestBinary(`/api/books/${id}/file`, { timeout: 120000 }),
+
   // 图片展览（策展元数据）
   listGallery: (params = '') => request(`/api/gallery${params}`),
   createGalleryItem: (body) => request('/api/gallery', { method: 'POST', body }),
   updateGalleryItem: (id, body) => request(`/api/gallery/${id}`, { method: 'PATCH', body }),
   deleteGalleryItem: (id) => request(`/api/gallery/${id}`, { method: 'DELETE' }),
+
+  // 碎念（朋友圈式短动态）
+  listMoments: (params = '') => request(`/api/moments${params}`),
+  createMoment: (body) => request('/api/moments', { method: 'POST', body }),
+  updateMoment: (id, body) => request(`/api/moments/${id}`, { method: 'PATCH', body }),
+  deleteMoment: (id) => request(`/api/moments/${id}`, { method: 'DELETE' }),
 
   // 音乐库
   listMusic: (params = '') => request(`/api/music${params}`),
@@ -248,9 +593,16 @@ export const api = {
   // 关联图谱
   getGraph: (params = '') => request(`/api/graph${params}`),
   getGraphConsole: () => request('/api/graph/console'),
+  // 两个公开星图（更多 → 图谱）：博客图谱 / 开源项目图谱，访客可读
+  // 超时放宽到 45 秒：图谱接口要一次读完全部文章 / 全部收藏再在 Worker 里算星区，
+  // 后端到 Supabase 的往返本来就慢（实测冷启动 20~45s），默认 20s 会把正常请求判成超时。
+  getBlogGraph: () => request('/api/graph/blog', { timeout: 45000 }),
+  getRepoGraph: () => request('/api/graph/repos', { timeout: 45000 }),
 
   // 收藏夹
   listFavorites: (params = '') => request(`/api/favorites${params}`),
+  // 站长收藏（公开只读）：站长收藏的音乐 / 影视，所有访客都能看到并播放
+  listAdminFavorites: () => request('/api/favorites/public'),
   createFavorite: (body) => request('/api/favorites', { method: 'POST', body }),
   deleteFavorite: (id) => request(`/api/favorites/${id}`, { method: 'DELETE' }),
   deleteFavoriteByTarget: (query) => request(`/api/favorites/target?${query}`, { method: 'DELETE' }),
@@ -273,6 +625,10 @@ export const api = {
   getPreferences: () => request('/api/preferences'),
   updatePreferences: (theme) => request('/api/preferences', { method: 'PUT', body: { theme } }),
   resetPreferences: () => request('/api/preferences', { method: 'DELETE' }),
+
+  // 当前账号
+  getMe: () => request('/api/me'),
+  updateMe: (body) => request('/api/me', { method: 'PATCH', body }),
 
   // 管理员用户管理
   adminListUsers: (params = '') => request(`/api/admin/users${params}`),

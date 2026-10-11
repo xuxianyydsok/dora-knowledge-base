@@ -20,13 +20,17 @@ import { usePlayer } from '../lib/player.jsx';
 import { toastError, toastSuccess, toastInfo } from '../lib/toast.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { MusicHome } from '../components/MusicHome.jsx';
+import { SearchHistory } from '../components/SearchHistory.jsx';
+import { pushHistory } from '../lib/searchHistory.js';
 import { hdCover, candidateToTrack } from '../lib/cover.js';
+import '../styles/now-settings.css';
 
 // 推荐搜索：给没有明确目标的场景一个起点
 const RECOMMEND = ['周杰伦', '林俊杰', '陈奕迅', '五月天', 'Beyond', '邓紫棋', 'Taylor Swift', 'Coldplay'];
 
 const PLATFORM_LABEL = {
-  gdstudio: 'GD音乐台', meting: 'Meting', audius: 'Audius', itunes: 'iTunes', deezer: 'Deezer'
+  gdstudio: 'GD音乐台', meting: 'Meting', audius: 'Audius', itunes: 'iTunes', deezer: 'Deezer',
+  netease: '网易云', kugou: '酷狗'
 };
 
 // 上游平台的中文名：后端会把来源写成 `meting@<实例>:<平台>` / `gdstudio@<平台>`，
@@ -192,6 +196,7 @@ export function Music() {
   const [group, setGroup] = useState('recent');
   const [quality, setQuality] = useState('all');
   const [pf, setPf] = useState('all');               // 搜索结果的音源筛选
+  const [histKey, setHistKey] = useState(0);          // 搜索历史刷新信号
   const { playQueue, queue, index, goTo, stop, playing, toggle } = usePlayer();
 
   async function load() {
@@ -219,6 +224,9 @@ export function Music() {
       setSearchSources(res?.sources || []);
       setSearchedFor(q);
       setPf('all');
+      // 记一条搜索历史（去重、最近优先），并让下面的历史条重读
+      pushHistory('music', q);
+      setHistKey((k) => k + 1);
     } catch (e) {
       toastError(`搜索失败：${e.message}`);
       setCandidates([]); setSearchNote(''); setSearchSources([]);
@@ -407,6 +415,9 @@ export function Music() {
             {searching ? '搜索中…' : '搜索'}
           </button>
         </form>
+
+        {/* 搜索历史：每条右侧 × 单独删，另有「一键清空」（用户要求） */}
+        <SearchHistory scope="music" refreshKey={histKey} onPick={runSearch} hidden={mode === 'queue'} />
 
         {mode === 'library' && (
           <>

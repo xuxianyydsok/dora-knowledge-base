@@ -7,7 +7,8 @@
 //    访客只看到公开展览，看不到任何管理入口。
 // 4) 样式集中在 styles/gallery-timeline.css（.gl-*），不动 global.css。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { api } from '../lib/api.js';
+import { createPortal } from 'preact/compat';
+import { api, uploadAsset } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -33,7 +34,7 @@ function ratioStyle(image) {
 
 // ---------------- 灯箱 ----------------
 function Lightbox({ items, index, onClose, onIndex }) {
-  const closeRef = useRef(null);
+  const boxRef = useRef(null);
   const item = items[index];
   // 用 ref 保存最新的 index / 回调：这样「锁滚动 + 键盘」的副作用只在挂载时执行一次，
   // 不会因为每次切图重跑副作用而反复抢焦点。
@@ -42,8 +43,16 @@ function Lightbox({ items, index, onClose, onIndex }) {
 
   useEffect(() => {
     const trigger = document.activeElement;   // 关闭后把焦点还给触发的那张图
-    closeRef.current?.focus();
+    // 关键：不要 focus 关闭按钮。按钮在 fixed 遮罩里，focus() 会触发浏览器
+    // scrollIntoView，把整页滚到底部（「点图先滑到最低再显示」的根因之一）。
+    // 改为 focus 灯箱容器（本身不产生滚动），键盘 Esc / 方向键仍然可用。
+    boxRef.current?.focus({ preventScroll: true });
     const prevOverflow = document.body.style.overflow;
+    const prevScrollY = window.scrollY;
+    // global.css 有 `html { scroll-behavior: smooth }`，会让关闭时的 scrollTo 变成
+    // 一段缓慢的滚动动画（用户看到的「还在滑动」）。这里临时切回 auto，保证瞬时归位。
+    const prevScrollBehavior = document.documentElement.style.scrollBehavior;
+    document.documentElement.style.scrollBehavior = 'auto';
     document.body.style.overflow = 'hidden';
 
     const onKey = (e) => {
@@ -56,15 +65,34 @@ function Lightbox({ items, index, onClose, onIndex }) {
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
-      if (trigger && typeof trigger.focus === 'function') trigger.focus();
+      window.scrollTo(0, prevScrollY);        // 关闭后瞬时回到原位置，不再被滚走
+      document.documentElement.style.scrollBehavior = prevScrollBehavior;
+      if (trigger && typeof trigger.focus === 'function') trigger.focus({ preventScroll: true });
     };
   }, []);
 
+  // 预加载前后相邻图片：翻页时直接从缓存出图，避免「点了下一页要等它加载」的延迟。
+  // 只预取紧邻的 ±2 张，不做全量预取，避免浪费带宽。
+  useEffect(() => {
+    const neighbors = [index - 2, index - 1, index + 1, index + 2];
+    for (const i of neighbors) {
+      const target = items[(i + items.length) % items.length];
+      if (!target?.image?.url) continue;
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = target.image.url;
+    }
+  }, [index, items]);
+
   if (!item) return null;
-  return (
-    <div class="gl-lightbox" role="dialog" aria-modal="true" aria-label={item.title || '图片查看'} onClick={onClose}>
+  // 关键：用 portal 挂到 document.body。灯箱是 position:fixed，而祖先 .gl-page 因为
+  // global.css 的 `.app-main > * { animation: fade-up … both }` 残留了 transform，
+  // 会让 fixed 相对整页而非视口定位（表现为点图后画面先滚到底再显示）。
+  // 挂到 body 后 fixed 恢复相对视口，配合上面的 preventScroll，点图即可原地弹出。
+  return createPortal((
+    <div ref={boxRef} tabIndex={-1} class="gl-lightbox" role="dialog" aria-modal="true" aria-label={item.title || '图片查看'} onClick={onClose}>
       <div class="gl-lightbox-inner" onClick={(e) => e.stopPropagation()}>
-        <button ref={closeRef} type="button" class="gl-lb-close" onClick={onClose} aria-label="关闭">
+        <button type="button" class="gl-lb-close" onClick={onClose} aria-label="关闭">
           <Icon name="close" size={20} />
         </button>
         {items.length > 1 && (
@@ -88,7 +116,7 @@ function Lightbox({ items, index, onClose, onIndex }) {
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
 
 // ---------------- 管理抽屉 ----------------
@@ -96,6 +124,11 @@ function CuratorDrawer({ items, onClose, onReload }) {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [drafts, setDrafts] = useState({});
+  // 直接上传（2026-10-11 用户要求）：站长在策展抽屉里就能把本地图片传到 R2 并直接参展，
+  // 不用再去博客编辑页上传一遍。上传成功即加入展览且默认公开。
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
@@ -107,6 +140,40 @@ function CuratorDrawer({ items, onClose, onReload }) {
     document.addEventListener('keydown', onKey);
     return () => { alive = false; document.removeEventListener('keydown', onKey); };
   }, []);
+
+  const reloadAssets = async () => {
+    try {
+      const res = await api.listAssets('?limit=60');
+      setAssets(res?.items || []);
+    } catch { /* 忽略刷新失败，不影响已上传的展览项 */ }
+  };
+
+  // 上传本地图片 → 落 R2 → 直接加入展览（默认公开）
+  async function uploadFiles(files) {
+    const list = Array.from(files || []).filter((f) => f.type.startsWith('image/'));
+    if (!list.length) return;
+    setUploading(true);
+    let ok = 0;
+    try {
+      for (const file of list) {
+        setProgress(0);
+        const asset = await uploadAsset(file, { onProgress: setProgress });
+        // 标题用去掉扩展名的文件名，站长之后可在下方逐条改
+        const title = String(file.name || '').replace(/\.[^.]+$/, '').slice(0, 200);
+        await api.createGalleryItem({ asset_id: asset.id, title: title || null, is_public: true });
+        ok += 1;
+      }
+      toastSuccess(ok > 1 ? `已上传并展出 ${ok} 张` : '已上传并展出');
+      await reloadAssets();
+      await onReload();
+    } catch (err) {
+      toastError(err.message);
+      if (ok) { await reloadAssets(); await onReload(); }   // 部分成功也要把已成功的显示出来
+    } finally {
+      setUploading(false);
+      setProgress(0);
+    }
+  }
 
   const existing = useMemo(() => new Set(items.map((i) => i.image?.url)), [items]);
 
@@ -154,7 +221,7 @@ function CuratorDrawer({ items, onClose, onReload }) {
     } catch (err) { toastError(err.message); }
   }
 
-  return (
+  return createPortal((
     <div class="gl-drawer-mask" onClick={onClose}>
       <aside class="gl-drawer" role="dialog" aria-modal="true" aria-label="策展" onClick={(e) => e.stopPropagation()}>
         <header class="gl-drawer-head">
@@ -163,9 +230,32 @@ function CuratorDrawer({ items, onClose, onReload }) {
         </header>
 
         <section class="gl-drawer-sec">
-          <h4>从素材加入展览</h4>
+          <h4>上传新图片</h4>
+          <div class="gl-upload">
+            <button
+              type="button"
+              class="primary"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              <Icon name="plus" size={15} /> {uploading ? `上传中 ${progress}%` : '选择图片上传'}
+            </button>
+            <span class="muted">上传后自动同步到 R2，并直接加入展览（默认公开）。</span>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => { uploadFiles(e.currentTarget.files); e.currentTarget.value = ''; }}
+            />
+          </div>
+        </section>
+
+        <section class="gl-drawer-sec">
+          <h4>从已有素材加入展览</h4>
           {loading ? <span class="muted">正在载入素材…</span> : assets.length === 0 ? (
-            <span class="muted">还没有素材，先去博客编辑页上传图片。</span>
+            <span class="muted">还没有素材，用上面的按钮上传第一张。</span>
           ) : (
             <div class="gl-asset-grid">
               {assets.map((a) => (
@@ -214,7 +304,7 @@ function CuratorDrawer({ items, onClose, onReload }) {
         </section>
       </aside>
     </div>
-  );
+  ), document.body);
 }
 
 export function Gallery() {
@@ -268,7 +358,7 @@ export function Gallery() {
         <div class="gl-masonry">
           {items.map((item, idx) => (
             <figure key={item.id} class="gl-item" style={`--gl-i:${idx}`}>
-              <button type="button" class="gl-figure" onClick={() => setOpenIndex(idx)}>
+              <button type="button" class="gl-figure" data-tilt="3" onClick={() => setOpenIndex(idx)}>
                 <img
                   src={item.image.url}
                   alt={item.image.alt || item.title || ''}

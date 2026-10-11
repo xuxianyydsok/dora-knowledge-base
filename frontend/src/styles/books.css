@@ -1,0 +1,414 @@
+/* =============================================================
+   图书（/books）专用样式
+   约定：本文件只放 .bk-* 类，避免与 global.css 撞名；
+        颜色一律用 global.css 的主题变量（跟随素雅 / 白天两套主题），不写死色值。
+   设计取向：书架感 —— 竖版 2:3 封面 + 书脊高光；封面缺失时用「纸纹 + 书名」占位，
+        而不是灰色空块（电子书封面抽不到是常态，占位也得好看）。
+   ============================================================= */
+
+.bk-page { display: block; }
+
+/* ---------------- 工具条：搜索 + 格式筛选 ---------------- */
+.bk-toolbar {
+  display: flex; align-items: center; gap: var(--sp-3, 8px); flex-wrap: wrap;
+  margin-top: var(--sp-5, 16px);
+}
+.bk-search {
+  position: relative; flex: 1 1 260px; min-width: 200px; max-width: 420px;
+}
+.bk-search .icon {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); pointer-events: none;
+}
+.bk-search input {
+  width: 100%; box-sizing: border-box;
+  padding: 9px 12px 9px 36px;
+  border: 1px solid var(--border); border-radius: var(--radius-pill, 999px);
+  background: var(--bg-elevated, var(--surface));
+  color: var(--text); font-family: inherit; font-size: var(--fs-sm, 13.5px);
+  transition: border-color var(--dur-fast, .18s) ease, box-shadow var(--dur-fast, .18s) ease;
+}
+.bk-search input:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.bk-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bk-chip {
+  padding: 6px 13px; border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-muted); font-size: var(--fs-caption, 12.5px); font-family: inherit;
+  cursor: pointer; transition: all var(--dur-fast, .18s) ease;
+}
+.bk-chip:hover { color: var(--text); border-color: var(--primary); }
+.bk-chip.on {
+  background: var(--primary); border-color: var(--primary); color: var(--on-primary, #fff);
+  font-weight: 600;
+}
+.bk-count {
+  margin-left: auto; font-family: var(--font-mono, monospace);
+  font-size: 11.5px; color: var(--text-muted); letter-spacing: .06em;
+}
+
+/* ---------------- 上传区（管理员） ---------------- */
+.bk-drop {
+  margin-top: var(--sp-5, 16px);
+  padding: var(--sp-6, 20px);
+  border: 1.5px dashed var(--border); border-radius: var(--radius, 16px);
+  background: var(--glass-bg, var(--bg-elevated));
+  display: flex; align-items: center; gap: var(--sp-4, 12px); flex-wrap: wrap;
+  transition: border-color var(--dur-fast, .18s) ease, background var(--dur-fast, .18s) ease;
+}
+.bk-drop.dragging { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.bk-drop-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bk-drop-text strong { font-size: var(--fs-lead, 15px); }
+.bk-drop-text span { font-size: var(--fs-caption, 12.5px); color: var(--text-muted); }
+.bk-drop-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-3, 8px); }
+
+/* 上传进度条 */
+.bk-progress {
+  margin-top: var(--sp-4, 12px);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.bk-progress-bar {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--border);
+}
+.bk-progress-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 55%, #ffffff));
+  transition: width .25s var(--ease-out, ease);
+}
+.bk-progress-label {
+  font-size: var(--fs-caption, 12px); color: var(--text-muted);
+  font-family: var(--font-mono, monospace); letter-spacing: .04em;
+}
+
+/* ---------------- 书架网格 ---------------- */
+.bk-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: var(--sp-6, 20px);
+  margin-top: var(--sp-6, 20px);
+}
+
+.bk-card {
+  display: flex; flex-direction: column; gap: 10px;
+  border: none; background: transparent; padding: 0;
+  font-family: inherit; text-align: left; cursor: pointer;
+  animation: bk-rise var(--dur-slow, .55s) var(--ease-out, ease) both;
+}
+@keyframes bk-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 封面：2:3 竖版；书脊高光 + 悬停轻微抬起 */
+.bk-cover {
+  position: relative; aspect-ratio: 2 / 3; width: 100%;
+  border-radius: 4px 10px 10px 4px;
+  overflow: hidden;
+  background: var(--bg-elevated, var(--surface));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 0 8px 22px -12px rgba(0, 0, 0, .35);
+  transition: transform var(--dur-med, .28s) var(--ease-out, ease), box-shadow var(--dur-med, .28s) ease;
+}
+.bk-card:hover .bk-cover {
+  transform: translateY(-5px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .14), 0 18px 36px -14px rgba(0, 0, 0, .45);
+}
+.bk-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 书脊：左侧一条深色渐变，让封面看起来像一本书而不是一张图 */
+.bk-cover::after {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 9px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .34), rgba(0, 0, 0, .04) 70%, transparent);
+  pointer-events: none;
+}
+
+/* 无封面占位：纸纹渐变 + 竖排书名 */
+.bk-cover-blank {
+  width: 100%; height: 100%; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  padding: 22px 16px 22px 24px;
+  background:
+    repeating-linear-gradient(135deg, rgba(0, 0, 0, .028) 0 2px, transparent 2px 7px),
+    linear-gradient(150deg, color-mix(in srgb, var(--primary) 22%, var(--bg-elevated)),
+                              color-mix(in srgb, var(--primary) 6%, var(--bg-elevated)));
+}
+.bk-cover-blank span {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: clamp(15px, 2.4vw, 21px); font-weight: 600;
+  line-height: 1.35; color: var(--text);
+  text-align: center;
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* 格式角标 */
+.bk-fmt {
+  position: absolute; right: 8px; bottom: 8px; z-index: 2;
+  padding: 3px 8px; border-radius: 6px;
+  font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase;
+  background: rgba(0, 0, 0, .62); color: #fff;
+  backdrop-filter: blur(6px);
+}
+.bk-fmt.readable { background: color-mix(in srgb, var(--primary) 88%, #000); }
+
+/* 卡片文字 */
+.bk-title {
+  font-size: var(--fs-sm, 13.5px); font-weight: 620; line-height: 1.4;
+  margin: 0; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.bk-author {
+  font-size: var(--fs-caption, 12px); color: var(--text-muted);
+  margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bk-meta {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono, monospace); font-size: 10.5px;
+  color: var(--text-muted); letter-spacing: .04em;
+}
+
+/* 卡片右下角的管理按钮（仅站长可见，悬停出现） */
+.bk-card-wrap { position: relative; }
+.bk-admin {
+  position: absolute; top: 8px; right: 8px; z-index: 3;
+  display: flex; gap: 4px; opacity: 0;
+  transition: opacity var(--dur-fast, .18s) ease;
+}
+.bk-card-wrap:hover .bk-admin,
+.bk-admin:focus-within { opacity: 1; }
+.bk-admin button {
+  width: 28px; height: 28px; border-radius: 8px; border: none;
+  display: grid; place-items: center; cursor: pointer;
+  background: rgba(0, 0, 0, .58); color: #fff;
+  backdrop-filter: blur(8px);
+  transition: background var(--dur-fast, .18s) ease;
+}
+.bk-admin button:hover { background: rgba(0, 0, 0, .8); }
+.bk-admin button.danger:hover { background: var(--danger, #d9534f); }
+
+/* 私人角标 */
+.bk-private {
+  position: absolute; left: 14px; top: 8px; z-index: 2;
+  padding: 2px 7px; border-radius: 6px;
+  font-size: 10.5px; letter-spacing: .04em;
+  background: rgba(0, 0, 0, .58); color: #fff; backdrop-filter: blur(6px);
+}
+
+/* ---------------- 阅读器遮罩 ---------------- */
+.bk-reader {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  animation: bk-fade var(--dur-med, .3s) ease both;
+}
+@keyframes bk-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.bk-reader-bar {
+  display: flex; align-items: center; gap: var(--sp-3, 8px);
+  padding: 10px var(--sp-5, 16px);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated, var(--surface));
+  flex-wrap: wrap;
+}
+.bk-reader-title {
+  display: flex; flex-direction: column; gap: 1px; min-width: 0; margin-right: auto;
+}
+.bk-reader-title strong {
+  font-size: var(--fs-sm, 14px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bk-reader-title span {
+  font-size: 11.5px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bk-reader-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bk-reader-tools button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px; border-radius: var(--radius-sm, 10px);
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text); font-family: inherit; font-size: var(--fs-caption, 12.5px);
+  cursor: pointer; transition: all var(--dur-fast, .18s) ease;
+}
+.bk-reader-tools button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.bk-reader-tools button:disabled { opacity: .4; cursor: not-allowed; }
+/* 下载是 <a download>，视觉上要和旁边的按钮完全一致 */
+.bk-tool-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px; border-radius: var(--radius-sm, 10px);
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text); font-size: var(--fs-caption, 12.5px);
+  text-decoration: none; cursor: pointer;
+  transition: all var(--dur-fast, .18s) ease;
+}
+.bk-tool-link:hover { border-color: var(--primary); color: var(--primary); }
+
+/* 编辑弹层里的字段 */
+.field { display: flex; flex-direction: column; font-size: var(--fs-sm, 13px); color: var(--text-muted); }
+.field > input, .field > textarea { margin-top: 6px; }
+
+.bk-reader-body {
+  flex: 1; min-height: 0; position: relative; background: var(--bg);
+  display: flex; flex-direction: column;
+}
+.bk-reader-body iframe {
+  width: 100%; flex: 1 1 auto; min-height: 0; border: none; display: block; background: transparent;
+}
+
+/* 阅读器内的状态层（加载中 / 出错 / 只能下载） */
+.bk-reader-state {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-4, 12px); padding: var(--sp-8, 34px); text-align: center;
+}
+.bk-reader-state .icon { color: var(--text-muted); }
+.bk-reader-state h3 { margin: 0; font-size: var(--fs-lead, 17px); }
+.bk-reader-state p { margin: 0; max-width: 46ch; color: var(--text-muted); font-size: var(--fs-sm, 13.5px); line-height: 1.65; }
+
+/* 章节目录抽屉 */
+.bk-toc {
+  position: absolute; top: 0; bottom: 0; left: 0; z-index: 5;
+  width: min(320px, 82vw);
+  background: var(--bg-elevated, var(--surface));
+  border-right: 1px solid var(--border);
+  box-shadow: 0 0 40px -10px rgba(0, 0, 0, .3);
+  display: flex; flex-direction: column;
+  animation: bk-slide var(--dur-med, .28s) var(--ease-out, ease) both;
+}
+@keyframes bk-slide { from { transform: translateX(-16px); opacity: 0; } to { transform: none; opacity: 1; } }
+.bk-toc-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-4, 12px) var(--sp-5, 16px); border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm, 13.5px); font-weight: 620;
+}
+.bk-toc-close {
+  width: 26px; height: 26px; border-radius: 8px; border: none;
+  display: grid; place-items: center; cursor: pointer;
+  background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text);
+  transition: background var(--dur-fast, .18s) ease;
+}
+.bk-toc-close:hover { background: color-mix(in srgb, var(--text) 16%, transparent); }
+.bk-toc-list { flex: 1; overflow-y: auto; padding: var(--sp-2, 6px); }
+.bk-toc-item {
+  display: block; width: 100%; box-sizing: border-box; text-align: left;
+  padding: 9px 12px; border: none; border-radius: var(--radius-sm, 10px);
+  background: transparent; color: var(--text-muted);
+  font-family: inherit; font-size: var(--fs-sm, 13px); line-height: 1.45;
+  cursor: pointer;
+}
+.bk-toc-item:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); color: var(--text); }
+.bk-toc-item.on { background: color-mix(in srgb, var(--primary) 16%, transparent); color: var(--primary); font-weight: 600; }
+
+/* ---------------- 阅读设置浮层 ---------------- */
+.bk-set-wrap { position: relative; display: inline-flex; }
+.bk-reader-tools .bk-set-wrap > button.on { border-color: var(--primary); color: var(--primary); }
+.bk-set {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30;
+  width: min(316px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: var(--sp-5, 16px);
+  display: flex; flex-direction: column; gap: var(--sp-5, 14px);
+  background: var(--bg-elevated, var(--surface));
+  border: 1px solid var(--border); border-radius: var(--radius, 14px);
+  box-shadow: 0 18px 48px -18px rgba(0, 0, 0, .45);
+  animation: bk-set-in var(--dur-fast, .18s) var(--ease-out, ease) both;
+}
+@keyframes bk-set-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .bk-set { animation: none; } }
+.bk-set-group { display: flex; flex-direction: column; gap: 8px; }
+.bk-set-label {
+  font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.bk-set-label em { font-style: normal; color: var(--text); font-family: var(--font-mono, monospace); }
+.bk-set-row { display: flex; align-items: center; gap: 8px; }
+.bk-set-btn {
+  flex: 0 0 auto; min-width: 40px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm, 10px);
+  background: transparent; color: var(--text); font-family: inherit; font-size: 13px;
+  cursor: pointer; transition: all var(--dur-fast, .18s) ease;
+}
+.bk-set-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.bk-set-btn:disabled { opacity: .4; cursor: not-allowed; }
+.bk-set-range { flex: 1 1 auto; accent-color: var(--primary); }
+.bk-set-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.bk-set-chip {
+  padding: 5px 11px; border: 1px solid var(--border); border-radius: var(--radius-pill, 999px);
+  background: transparent; color: var(--text-muted); font-size: 12.5px; font-family: inherit;
+  cursor: pointer; transition: all var(--dur-fast, .18s) ease;
+}
+.bk-set-chip:hover:not(:disabled) { border-color: var(--primary); color: var(--text); }
+.bk-set-chip.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary, #fff); font-weight: 600; }
+.bk-set-chip:disabled { opacity: .42; cursor: not-allowed; }
+.bk-set-swatches { display: flex; gap: 8px; }
+.bk-swatch {
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--border); background: transparent; cursor: pointer;
+  display: grid; place-items: center; transition: border-color var(--dur-fast, .18s) ease;
+}
+.bk-swatch span {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--sw, #fff); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12);
+}
+.bk-swatch.on { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 32%, transparent); }
+.bk-set-hint { margin: 0; font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+.bk-set-tip {
+  margin: 0; padding-top: 10px; border-top: 1px dashed var(--border);
+  font-size: 11.5px; color: var(--text-muted); line-height: 1.55;
+}
+
+/* ---------------- 底部阅读进度条 ---------------- */
+.bk-progressbar {
+  position: relative; flex: 0 0 auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px var(--sp-5, 16px) 10px;
+  background: var(--bg-elevated, var(--surface));
+  border-top: 1px solid var(--border);
+}
+.bk-progress-arrow {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text);
+  transition: all var(--dur-fast, .18s) ease;
+}
+.bk-progress-arrow:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.bk-progress-arrow:disabled { opacity: .4; cursor: not-allowed; }
+.bk-progress-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.bk-progress-head { display: flex; align-items: baseline; gap: 10px; }
+.bk-progress-ch {
+  flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bk-progress-num {
+  flex: 0 0 auto; font-family: var(--font-mono, monospace);
+  font-size: 11px; color: var(--text-muted); letter-spacing: .04em;
+}
+.bk-progress-range {
+  width: 100%; height: 4px; appearance: none; -webkit-appearance: none;
+  border-radius: 999px; cursor: pointer; accent-color: var(--primary);
+  background: linear-gradient(to right,
+    var(--primary) 0 var(--pct, 0%),
+    color-mix(in srgb, var(--text) 16%, transparent) var(--pct, 0%) 100%);
+}
+.bk-progress-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--primary); border: 2px solid var(--bg-elevated, var(--surface));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+}
+.bk-progress-range::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg-elevated, var(--surface));
+  background: var(--primary);
+}
+
+/* 双页模式：正文两栏并排，加一点书页间距 */
+.bk-reader-body.two-up iframe { padding: 0; }
+
+/* 窄屏：书架两列、阅读器工具条换行 */
+@media (max-width: 640px) {
+  .bk-shelf { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--sp-5, 16px); }
+  .bk-reader-bar { padding: 8px 12px; }
+  .bk-reader-tools button span { display: none; }
+  .bk-reader-tools button { padding: 7px 9px; }
+  .bk-tool-link span { display: none; }
+  .bk-tool-link { padding: 7px 9px; }
+}

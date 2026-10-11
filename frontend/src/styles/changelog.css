@@ -1,0 +1,198 @@
+/* =============================================================
+   更新日志（/changelog）专用样式
+   约定：本文件只放 .cl-* 类，避免与 global.css 撞名；
+        颜色一律用 global.css 的主题变量（--text / --border / --glass-bg …），
+        不写死主题色。四种变更类型的强调色是**局部**变量 --cl-c，
+        取自 lib/changelog.js 的 CHANGE_TYPES（中等饱和度的 hex），
+        在纯净（白底）与素雅（米底）两套主题下都看得清。
+   ============================================================= */
+
+.cl-page { display: block; }
+
+/* ---------------- 工具条：搜索 + 计数 ---------------- */
+.cl-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4, 12px);
+  flex-wrap: wrap;
+  margin-top: var(--sp-5, 16px);
+}
+.cl-search {
+  position: relative; flex: 1 1 260px; min-width: 200px; max-width: 420px;
+}
+.cl-search .icon {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); pointer-events: none;
+}
+.cl-search input {
+  width: 100%; box-sizing: border-box;
+  padding: 9px 12px 9px 36px;
+  border: 1px solid var(--border); border-radius: var(--radius-pill, 999px);
+  background: var(--bg-elevated);
+  color: var(--text); font-family: inherit; font-size: var(--fs-sm, 13.5px);
+  transition: border-color var(--dur-fast, .18s) ease, box-shadow var(--dur-fast, .18s) ease;
+}
+.cl-search input:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.cl-count {
+  margin-left: auto; font-family: var(--font-mono, monospace);
+  font-size: 11.5px; color: var(--text-muted); letter-spacing: .06em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- 版本锚点 chips ---------------- */
+.cl-anchors {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: var(--sp-4, 12px);
+  padding-bottom: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.cl-anchor {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius-pill, 999px);
+  background: var(--glass-bg, var(--bg-elevated));
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: border-color var(--dur-fast, .18s) ease,
+              color var(--dur-fast, .18s) ease,
+              background-color var(--dur-fast, .18s) ease;
+}
+.cl-anchor:hover {
+  color: var(--text);
+  border-color: var(--primary);
+  background: var(--bg-elevated);
+}
+.cl-anchor-ver {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px; font-weight: 600; letter-spacing: .02em;
+}
+.cl-anchor-date {
+  font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8;
+}
+
+/* ---------------- 卡片列表 ---------------- */
+.cl-list-wrap {
+  display: flex; flex-direction: column; gap: var(--sp-5, 16px);
+  margin-top: var(--sp-5, 16px);
+}
+
+.cl-card {
+  position: relative;
+  padding: var(--sp-6, 20px) var(--sp-6, 20px) var(--sp-5, 16px);
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg, var(--bg-elevated));
+  box-shadow: var(--shadow-md);
+  scroll-margin-top: calc(var(--header-height, 64px) + var(--sp-5, 16px));
+  animation: cl-rise var(--dur-slow, .6s) var(--ease-out, ease) both;
+  animation-delay: calc(var(--cl-i, 0) * 50ms);
+}
+/* 卡片左侧一条细竖线，作为「版本线」的视觉锚点 */
+.cl-card::before {
+  content: '';
+  position: absolute; left: 0; top: var(--sp-6, 20px); bottom: var(--sp-6, 20px);
+  width: 2px; border-radius: 2px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--primary) 70%, transparent),
+    color-mix(in srgb, var(--primary) 10%, transparent)
+  );
+}
+
+/* ---------------- 卡片头 ---------------- */
+.cl-card-head { padding-left: var(--sp-4, 12px); }
+.cl-ver-line {
+  display: flex; align-items: baseline; gap: var(--sp-3, 8px);
+  flex-wrap: wrap;
+}
+.cl-ver {
+  font-family: var(--font-mono, monospace);
+  font-size: 15px; font-weight: 700; letter-spacing: .01em;
+  color: var(--primary);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.cl-date {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums; letter-spacing: .04em;
+}
+.cl-title {
+  margin: var(--sp-3, 8px) 0 0;
+  font-family: var(--font-display, inherit);
+  font-size: 20px; font-weight: 500; line-height: 1.35;
+  color: var(--text); letter-spacing: var(--track-display, -0.012em);
+}
+.cl-summary {
+  margin: var(--sp-2, 6px) 0 0;
+  font-size: var(--fs-sm, 13.5px); line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* ---------------- 变更分组 ---------------- */
+.cl-groups {
+  display: flex; flex-direction: column; gap: var(--sp-5, 16px);
+  margin-top: var(--sp-5, 16px);
+  padding-left: var(--sp-4, 12px);
+}
+.cl-group-head {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 0 var(--sp-3, 8px);
+  font-size: 12.5px; font-weight: 600;
+  color: var(--cl-c, var(--text));
+  letter-spacing: .02em;
+}
+.cl-group-head .icon { flex: 0 0 auto; }
+.cl-group-count {
+  margin-left: 2px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px; font-weight: 600;
+  padding: 1px 7px; border-radius: var(--radius-pill, 999px);
+  color: var(--cl-c, var(--text-muted));
+  background: color-mix(in srgb, var(--cl-c, var(--text-muted)) 14%, transparent);
+}
+
+.cl-list { list-style: none; margin: 0; padding: 0; }
+.cl-row {
+  display: flex; align-items: flex-start; gap: var(--sp-3, 8px);
+  padding: 5px 0;
+  font-size: var(--fs-sm, 13.5px); line-height: 1.7;
+  color: var(--text);
+}
+.cl-dot {
+  flex: 0 0 auto;
+  width: 6px; height: 6px; margin-top: 8px;
+  border-radius: 50%;
+  background: var(--cl-c, var(--primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cl-c, var(--primary)) 16%, transparent);
+}
+.cl-text { min-width: 0; }
+
+/* ---------------- 入场动画 ---------------- */
+@keyframes cl-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------------- 响应式 ---------------- */
+@media (max-width: 720px) {
+  .cl-card { padding: var(--sp-5, 16px) var(--sp-5, 16px) var(--sp-4, 12px); }
+  .cl-card::before { top: var(--sp-5, 16px); bottom: var(--sp-5, 16px); }
+  .cl-card-head, .cl-groups { padding-left: var(--sp-3, 8px); }
+  .cl-title { font-size: 18px; }
+  .cl-count { margin-left: 0; }
+  .cl-anchors { margin-left: calc(-1 * var(--sp-4, 12px)); margin-right: calc(-1 * var(--sp-4, 12px)); padding-left: var(--sp-4, 12px); padding-right: var(--sp-4, 12px); }
+}
+
+/* ---------------- 降低动效 ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  .cl-card { animation: none; }
+}

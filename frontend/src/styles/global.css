@@ -51,7 +51,14 @@
   --font-ui: 'Satoshi', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI',
     'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
   --font-display: 'Newsreader', Georgia, 'Songti SC', 'Source Han Serif SC', 'Noto Serif SC', serif;
-  --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  /* Mono：等宽体，用于 kicker / 计数 / 时间戳 / 规格读数等「元信息」角色。
+     ⚠ 必须带**中文字形兜底**：等宽字体栈（ui-monospace / JetBrains Mono / Consolas）
+     都没有汉字，浏览器会回退到 Windows 的 NSimSun（新宋体）——那是**点阵宋体**，
+     在 11–13px 下锯齿明显，全站凡是「中文 + mono」的地方都会显得很脏
+     （图谱页标题/副标题、首页规格条、时间轴 kicker 都中过招）。
+     补上系统中文字体后，中文走无衬线、拉丁数字仍走等宽，两边都干净。 */
+  --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Source Han Sans SC', system-ui, monospace;
   --track-display: -0.012em;
   --track-ui: -0.02em;
   --track-mono: 0.06em;
@@ -90,6 +97,27 @@
 }
 
 /* 素雅主题（2026-10-09，替代已移除的暗色主题）：米灰底 + 暖白卡片 + 深炭灰强调色，参考 GithubStarsManager（MIT） */
+/* 天青（celadon）：2026-10-11 新增的第三套主题，青绿主色 + 冷白底 */
+[data-theme='celadon'] {
+  --bg: #eef6f5;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #e2efed;
+  --text: #0f1f1e;
+  --text-muted: #55716e;
+  --border: #cfe3e0;
+  --primary: #0f9b8e;
+  --primary-contrast: #ffffff;
+  --danger: #d0453f;
+  --glass-highlight: rgba(255, 255, 255, 0.72);
+  --glow-1: rgba(15, 155, 142, 0.22);
+  --glow-2: rgba(15, 155, 142, 0.12);
+  --shadow-sm: 0 1px 2px rgba(12, 46, 44, 0.06), 0 2px 8px rgba(12, 46, 44, 0.04);
+  --shadow-md: 0 4px 16px rgba(12, 46, 44, 0.08), 0 12px 32px rgba(12, 46, 44, 0.06);
+  --shadow-lg: 0 12px 40px rgba(12, 46, 44, 0.14), 0 32px 64px rgba(12, 46, 44, 0.10);
+  --elev-hover: 0 14px 38px rgba(12, 46, 44, 0.12), 0 32px 72px rgba(12, 46, 44, 0.08);
+}
+[data-theme='celadon'] .cs, [data-theme='celadon'] .gh { --cs: #0f9b8e; --cs-soft: rgba(15, 155, 142, 0.10); }
+
 [data-theme='sepia'] {
   --bg: #f2f0eb;
   --bg-elevated: #fbfaf7;
@@ -111,7 +139,12 @@
 [data-theme='sepia'] .cs, [data-theme='sepia'] .gh { --cs: #4a463f; --cs-soft: rgba(74, 70, 63, 0.09); }
 
 /* 右上角主题切换（白天 / 素雅） */
-.theme-toggle { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
+.theme-toggle {
+  /* 尺寸基准：登录按钮 .login-link 与本规则逐项对齐（36 / 12 / 13 / 图标 16） */
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 36px; min-height: 36px; padding: 0 12px;
+  border-radius: 999px; font-size: 13px; line-height: 1; white-space: nowrap;
+}
 
 * { box-sizing: border-box; }
 
@@ -133,11 +166,18 @@ html, body {
 
 body {
   background-color: var(--bg);
-  /* 极光渐变背景：SaaS 氛围感来源 */
+  /* 全站背景：图谱页那套「网格 + 光晕」——两层网格（30px 细格 / 150px 主格）
+     叠两团主题色光晕，比原来的纯极光渐变更有「知识图谱」的结构感。
+     网格线用 color-mix 从 --text 派生，因此三套主题（纯净 / 素雅 / 天青）自动跟随。 */
   background-image:
     radial-gradient(1200px 700px at 12% -10%, var(--glow-2), transparent 62%),
     radial-gradient(1000px 620px at 92% 4%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 58%),
-    radial-gradient(900px 900px at 50% 110%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 60%);
+    radial-gradient(900px 900px at 50% 110%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 60%),
+    linear-gradient(color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--text) 4.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 4.5%, transparent) 1px, transparent 1px);
+  background-size: auto, auto, auto, 150px 150px, 150px 150px, 30px 30px, 30px 30px;
   background-attachment: fixed;
 }
 
@@ -276,6 +316,26 @@ button.danger:hover, .btn.danger:hover {
 button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 button:disabled::after { display: none; }
 
+/* ---------------- 「图标 + 文字」按钮同行对齐（2026-10-11 修复） ----------------
+   根因：图标 <svg> 是 display:block，而按钮此前是默认的 inline-block —— 于是
+   「图标 + 文字」的按钮会把图标挤到单独一行，整体变成两行高，和旁边单行按钮
+   并排时一高一矮。影视详情页的「立即播放 / 收藏此片」、图书上传区的
+   「+ 选择文件」、音乐页的「手动录入 / 全部播放」都是这个毛病。
+
+   修复范围刻意收得很窄，只命中「**直接子元素**就是图标」的按钮：
+     · 用 :has(> svg.icon) 精确限定 —— 卡片式按钮（.bk-card / .am-chart /
+       .gl-figure / .watch-card 等）的子元素是 div / img / ol，天然不命中；
+     · 用 :where() 把优先级压到 0 —— 任何自己声明了 display / gap / align-items
+       的按钮（.cs-dock button、.gh-cats button、.pv-viewer-bar button …）照常生效；
+     · 只设 display / align-items / gap，**不设 justify-content** ——
+       否则会污染那些没声明 justify-content 的纵向卡片按钮（会把内容垂直居中）。
+   注意：不要把这几条并进上面的 button 基础规则，那会连卡片式按钮一起改掉。 */
+:where(button:has(> svg.icon), .btn:has(> svg.icon)) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* ---------------- 表单控件 ---------------- */
 input, select, textarea {
   font: inherit;
@@ -324,7 +384,16 @@ label { display: block; font-size: 13px; color: var(--text-muted); }
 label > input, label > select, label > textarea { margin-top: 6px; color: var(--text); }
 
 /* ---------------- 应用外壳 ---------------- */
-.app-shell { min-height: 100vh; display: flex; flex-direction: column; position: relative; z-index: 1; }
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 1;
+  /* 首页 Hero 用 100vw 全幅铺满，会比内容区多出滚动条宽度那几像素；
+     这里裁掉横向溢出，避免多出一条横向滚动条（不影响 sticky 页头）。 */
+  overflow-x: clip;
+}
 
 .app-header {
   min-height: var(--header-height);
@@ -337,10 +406,27 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   top: 0;
   z-index: 30;
   border: none;
-  border-bottom: 1px solid var(--glass-border);
+  /* 与全站网格背景无缝衔接（2026-10-11 用户要求）：
+     顶栏默认**完全透明**，网格从它背后一直铺到内容区，中间不出现浅色横条；
+     去掉底部分隔线与投影，避免画出一道「缝隙」。
+     一旦页面滚动（.is-scrolled），再补上玻璃底 + 模糊，保证导航文字压在内容上仍清晰。 */
+  border-bottom: none;
   border-radius: 0;
-  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
-  box-shadow: 0 1px 0 var(--glass-highlight) inset, 0 8px 32px rgba(16, 19, 26, 0.06);
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  transition: background-color var(--dur) var(--ease-out),
+    backdrop-filter var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
+}
+
+.app-header.is-scrolled {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-sm);
 }
 
 /* —— 品牌标识：渐变流光 + 悬浮质感 —— */
@@ -419,6 +505,17 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 }
 .app-header .brand:hover span { background-position: 100% center; }
 
+/* 品牌名里的 Studio（2026-10-11 用户要求）：
+   与前面的 Dora **同字体、同字号、同字重**，不做弱化处理，
+   只留一点字距把两个词分开，整体读作「Dora Studio」。
+   注意：父级 .brand span 是 background-clip:text + transparent 的渐变流光字，
+   这里**不覆盖** background/color，Studio 因此跟着一起走同一套渐变。 */
+.app-header .brand .brand-studio {
+  margin-left: 6px;
+  font-style: normal;
+  letter-spacing: 0.01em;
+}
+
 .brand-mark {
   width: 30px;
   height: 30px;
@@ -475,7 +572,11 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 
 .app-header .spacer { flex: 1; }
 .app-header > .row { gap: 8px; }
-.app-header > a[title] {
+/* 顶栏里的圆形图标按钮（全局搜索 / 通知等，宽高固定 38 圆形）。
+   ⚠ 必须排除 .login-link：它也是 <a title=…>，但要求是**胶囊**（36 高、随文字宽度），
+   不排除的话这条规则的 width/height/border-radius 会盖掉 .login-link，
+   导致登录按钮变成 38×38 的圆点、和主题按钮不齐（2026-10-11 用户反馈）。 */
+.app-header > a[title]:not(.login-link) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -488,7 +589,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   box-shadow: var(--shadow-sm), inset 0 1px 0 var(--glass-highlight);
   transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur) var(--ease-out);
 }
-.app-header > a[title]:hover {
+.app-header > a[title]:not(.login-link):hover {
   transform: translateY(-2px) scale(1.04);
   box-shadow: var(--shadow-md);
   opacity: 1;
@@ -604,7 +705,28 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 .avatar-trigger:hover .avatar,
 .avatar-trigger.open .avatar { transform: scale(1.06); box-shadow: 0 6px 20px var(--glow-1); }
 
-.login-link { display: inline-flex; }
+.login-link {
+  /* 与主题切换按钮同款胶囊（2026-10-11 用户要求：图标 + 「登录」二字，样式一致） */
+  /* 尺寸必须与 .theme-toggle 逐项一致（高度 36 / 左右 12 / 字 13 / 图标 16），
+     否则并排时一高一矮、一宽一窄，看起来不齐。改这里务必同步改 .theme-toggle。 */
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 36px; min-height: 36px; padding: 0 12px;
+  border-radius: 999px; font-size: 13px; line-height: 1; white-space: nowrap;
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid var(--glass-border);
+  color: var(--text); text-decoration: none;
+  box-shadow: var(--shadow-sm), inset 0 1px 0 var(--glass-highlight);
+  transition: transform var(--dur-fast) var(--ease-spring),
+              box-shadow var(--dur) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.login-link:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), inset 0 1px 0 var(--glass-highlight);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
 
 .app-main {
   flex: 1;
@@ -2372,23 +2494,28 @@ body.watch-mode .app-header { display: none; }
 
 .watch-seek {
   width: 100%;
-  height: 4px;
+  height: 6px;
   margin: 0 0 8px;
   padding: 0;
   appearance: none;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  /* 2026-10-11 用户反馈「进度条不明显」：加粗到 6px，并用已播放部分的高亮色
+     （--watch-p 由播放器按当前进度写入）替代原先一整条半透明白，进度一眼可见。 */
+  background: linear-gradient(to right,
+    #4cc9ff 0, #4cc9ff var(--watch-p, 0%),
+    rgba(255, 255, 255, 0.26) var(--watch-p, 0%), rgba(255, 255, 255, 0.26) 100%);
   cursor: pointer;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 .watch-seek::-webkit-slider-thumb {
   appearance: none;
-  width: 12px; height: 12px;
+  width: 15px; height: 15px;
   border-radius: 50%;
   background: #fff;
-  border: none;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  border: 2px solid #4cc9ff;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }
-.watch-seek::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: #fff; }
+.watch-seek::-moz-range-thumb { width: 15px; height: 15px; border: 2px solid #4cc9ff; border-radius: 50%; background: #fff; }
 
 .watch-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .watch-time { color: rgba(255, 255, 255, 0.72); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: 4px; }
@@ -3953,6 +4080,12 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 
 @media (max-width: 520px) {
   .app-header .brand span { display: none; }   /* 极窄屏只留图标 */
+  /* 窄屏下顶栏按钮很挤：主题按钮只留图标（文字收起），登录按钮同理 */
+  .theme-toggle span { display: none; }
+  .theme-toggle { padding: 0 10px; }
+  .login-link span { display: none; }
+  /* 只收横向内边距，高度仍与主题按钮一致（都是 36px，垂直内边距改了会被 height 覆盖） */
+  .login-link { padding: 0 10px; }
 }
 
 
@@ -4162,6 +4295,19 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   outline: none;
 }
 .toolbar-field input::placeholder { color: var(--text-muted); }
+
+/* 紧凑搜索框（.toolbar-field / .inline-form）里的按钮必须收在框高以内。
+   此前「搜索」按钮用全局的 padding: 8px 14px，盒子高度顶到甚至超过 36px 的搜索框，
+   看起来就是「搜索按钮的方框高出了搜索框」。这里统一压到 28px 并去掉多余纵向内边距。 */
+.toolbar-field > button:not(.field-clear),
+.inline-form > button:not(.field-clear) {
+  flex: 0 0 auto;
+  height: 28px;
+  min-height: 0;
+  padding: 0 13px;
+  font-size: 12.5px;
+  border-radius: 999px;
+}
 
 /* ---------------- 排版角色贯通 ----------------
    此前只有 .page-head 与落地页 Hero 用了衬线展示体，影视 / 音乐 / 详情页的页头
@@ -5110,6 +5256,7 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .pv-toc { position: sticky; top: 84px; max-height: calc(100vh - 110px); overflow-y: auto; }
 .pv-toc-list { display: flex; flex-direction: column; gap: 2px; border-left: 2px solid var(--border); }
 .pv-toc-list button { border: none; background: none; text-align: left; cursor: pointer; padding: 5px 10px; margin-left: -2px; border-left: 2px solid transparent; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.pv-toc-list button { display: block; width: 100%; }
 .pv-toc-list button.lv2 { padding-left: 24px; font-size: 12.5px; }
 .pv-toc-list button:hover { color: var(--cs); }
 .pv-toc-list button.on { color: var(--cs); border-left-color: var(--cs); font-weight: 650; background: var(--cs-soft); }
@@ -5276,9 +5423,13 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .gh-badge.warn { color: #b7791f; background: rgba(214, 158, 46, 0.14); }
 .gh-open { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--bg-subtle); color: var(--text-muted); }
 .gh-open:hover { color: var(--cs); }
-.gh-oneline { margin: 12px 0 0; font-size: 14px; font-weight: 600; color: var(--text); }
-.gh-text { margin: 6px 0 0; font-size: 14px; line-height: 1.75; color: var(--text-muted); }
-.gh-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 12px; font-size: 12.5px; color: var(--text-muted); }
+/* 2026-10-11 用户反馈：开源项目卡片的文字「发虚 / 模糊」。
+   根因是 AI 解读正文用了 --text-muted（浅灰）叠在浅色玻璃卡上，对比不足。
+   这里把正文提到接近正文色（用 color-mix 保留一点层级），并开启字体抗锯齿、
+   略微加大字号与字重，让整段解读一眼看清。 */
+.gh-oneline { margin: 12px 0 0; font-size: 14.5px; font-weight: 650; color: var(--text); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+.gh-text { margin: 6px 0 0; font-size: 14.5px; line-height: 1.8; color: color-mix(in srgb, var(--text) 84%, var(--text-muted)); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+.gh-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 12px; font-size: 12.5px; color: color-mix(in srgb, var(--text) 62%, var(--text-muted)); }
 .gh-meta > span { display: inline-flex; align-items: center; gap: 5px; }
 .gh-chip { border: none; cursor: pointer; padding: 2px 9px; border-radius: 6px; font-size: 12px; background: var(--bg-subtle); color: var(--text); margin-right: -8px; }
 .gh-chip:hover { color: var(--cs); }
@@ -5297,4 +5448,228 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   .gh-topics button { flex: none; white-space: nowrap; }
   .gh-sync-btn { margin-left: 0; }
   .gh-card { padding: 14px 16px; }
+}
+
+/* =============================================================
+   全站排版 / 间距 / 组件质感增强（2026-10-11 追加）
+   说明：本段只在文件末尾追加，不改动上方任何既有规则。
+   全部使用 :where() 保持 0 优先级（不参与特异性竞争），
+   因此只提供「兜底默认值」，各页面/组件自己的样式仍可覆盖。
+   颜色一律取自既有 token，不写死新色值。
+   ============================================================= */
+
+/* 标题排版统一：展示标题走衬线体并收紧字距，营造编辑式博客质感。
+   只覆盖 h1/h2/h3，不动 h4-h6，也不动 font-size（各页自行定义）。 */
+:where(h1, h2, h3) {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+/* 数值 / 计数角色：日期、计数、指标用斜体拉丁 + 等宽数字，
+   让数字成列时纵向对齐，观感更像印刷排版。
+   只新增 .num-latin 工具类，不修改任何既有类。 */
+.num-latin,
+:where(.stat-value, .count, .metric) {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 卡片质感：统一大圆角 + 极淡描边，悬停时只让描边变亮，
+   不加 box-shadow（避免与各页面已有的阴影规则打架）。 */
+:where(.panel, .card) {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-border);
+  transition: border-color var(--dur) var(--ease-out);
+}
+
+:where(.panel, .card):hover {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+}
+
+/* 发丝分隔线：用于章节之间，比默认边框更轻，观感更克制。 */
+.hairline {
+  height: 1px;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+  border: 0;
+}
+
+/* 焦点可见：键盘导航时给出统一、清晰的焦点环。
+   用 :where() 包裹选择器，让各组件自己的 outline 仍可优先覆盖。 */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* 滚动条美化（仅 WebKit）：颜色跟随主题 token，滑块更纤细。
+   包在 @media (pointer: fine) 内，避免影响触屏设备。 */
+@media (pointer: fine) {
+  :where(*)::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  :where(*)::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text) 18%, transparent);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  :where(*)::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--text) 30%, transparent);
+    background-clip: padding-box;
+  }
+
+  :where(*)::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* 减少动态效果：尊重系统「减弱动态效果」偏好，尽量取消动画与过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  :where(*) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* =============================================================
+   全站指针特效层（2026-10-11 新增）
+   -------------------------------------------------------------
+   由 components/ClickFx.jsx 渲染：一个全屏 canvas（粒子 / 描边圈）+ 一个自绘光标。
+   参考站长给的《blog-home-v2》模板，把它的三层指针特效搬到线上运行。
+
+   约束：
+   - canvas 固定全屏、pointer-events: none，绝不能挡住点击。
+   - 光标是**增强**而非替代：不改任何元素的 cursor 样式。
+   - 组件在触屏 / prefers-reduced-motion 下根本不创建 canvas，
+     所以这里的样式不需要再做媒体查询兜底（多一层保险也无害）。
+   ============================================================= */
+
+.fx-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 88;               /* 在内容之上、Toast(90) 之下 */
+  pointer-events: none;
+}
+
+.fx-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 89;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s var(--ease-out);
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .fx-cursor { display: block; }
+}
+.fx-cursor.on { opacity: 1; }
+
+.fx-cur-b {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  display: grid;
+  place-items: center;
+  font-size: 13.5px;
+  letter-spacing: 0.1em;
+  border: 1px solid transparent;
+  /* 状态切换用 width/height/margin 一起动，比 transform 更适合「圆变圆」这种形变 */
+  transition:
+    width 0.55s var(--ease-out), height 0.55s var(--ease-out),
+    margin 0.55s var(--ease-out), background-color 0.4s, border-color 0.4s,
+    opacity 0.3s;
+}
+.fx-cur-text { opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
+
+/* 普通可点元素：变成空心环 */
+.fx-cursor.link .fx-cur-b {
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  background: transparent;
+  border-color: var(--primary);
+}
+/* 带 data-cursor 的元素：变成实心大圆并显示文字 */
+.fx-cursor.view .fx-cur-b {
+  width: 88px;
+  height: 88px;
+  margin: -44px 0 0 -44px;
+  background: color-mix(in srgb, var(--primary) 92%, transparent);
+}
+.fx-cursor.view .fx-cur-text { opacity: 1; }
+/* 按下时缩一下，给一点「按到了」的反馈 */
+.fx-cursor.down .fx-cur-b { transform: scale(0.86); }
+
+/* 倾斜卡片的高光：跟随指针位置的一团柔光 */
+.fx-glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.5s var(--ease-out);
+  background: radial-gradient(
+    circle at var(--fx-gx, 50%) var(--fx-gy, 50%),
+    rgba(255, 255, 255, 0.38),
+    transparent 52%
+  );
+  mix-blend-mode: soft-light;
+}
+[data-tilt]:hover > .fx-glare { opacity: 1; }
+
+/* 磁吸元素要有一点点回弹感（位移本身由 JS 直接写 transform） */
+[data-magnetic] {
+  transition: transform 0.6s var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-canvas,
+  .fx-cursor { display: none !important; }
+  [data-magnetic] { transition: none; }
+}
+
+/* =============================================================
+   页面切换过渡（2026-10-11 新增）
+   -------------------------------------------------------------
+   Layout 里给 <main class="app-main"> 挂了 key={path}，路由一变整块重挂，
+   于是这条规则会重新跑一遍 —— 效果是「新页面从下方淡入 + 轻微放大」。
+   比原来只做 translateY(14px) 更有「翻页」的仪式感，且完全走 GPU 合成。
+   query 不参与 key，所以同页换筛选条件不会闪。
+   ============================================================= */
+.app-main > * {
+  animation: page-enter var(--dur-slow, 0.6s) var(--ease-out) both;
+}
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(22px) scale(0.994); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 顶栏在路由切换时也轻微提示一下：品牌名从左侧滑入 */
+.app-header .brand-name {
+  animation: brand-in 0.7s var(--ease-out) both;
+}
+@keyframes brand-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-main > * { animation: none; }
+  .app-header .brand-name { animation: none; }
 }

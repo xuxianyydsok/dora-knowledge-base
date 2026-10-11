@@ -14,6 +14,7 @@ const PostEdit = lazy(() => import('./PostEdit.jsx').then((m) => ({ default: m.P
 const PostView = lazy(() => import('./PostView.jsx').then((m) => ({ default: m.PostView })));
 const Search = lazy(() => import('./Search.jsx').then((m) => ({ default: m.Search })));
 const Graph = lazy(() => import('./Graph.jsx').then((m) => ({ default: m.Graph })));
+const GraphHub = lazy(() => import('./GraphHub.jsx').then((m) => ({ default: m.GraphHub })));
 const Favorites = lazy(() => import('./Favorites.jsx').then((m) => ({ default: m.Favorites })));
 const Backup = lazy(() => import('./Backup.jsx').then((m) => ({ default: m.Backup })));
 const Settings = lazy(() => import('./Settings.jsx').then((m) => ({ default: m.Settings })));
@@ -30,12 +31,15 @@ const AdminUsers = lazy(() => import('./AdminUsers.jsx').then((m) => ({ default:
 const SourceHealth = lazy(() => import('./SourceHealth.jsx').then((m) => ({ default: m.SourceHealth })));
 const Gallery = lazy(() => import('./Gallery.jsx').then((m) => ({ default: m.Gallery })));
 const Timeline = lazy(() => import('./Timeline.jsx').then((m) => ({ default: m.Timeline })));
+const Moments = lazy(() => import('./Moments.jsx').then((m) => ({ default: m.Moments })));
+const Books = lazy(() => import('./Books.jsx').then((m) => ({ default: m.Books })));
+const Changelog = lazy(() => import('./Changelog.jsx').then((m) => ({ default: m.Changelog })));
 
 export {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
-  Search, Graph, Favorites, Backup, Settings,
+  Search, Graph, GraphHub, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline
+  Gallery, Timeline, Moments, Books, Changelog
 };

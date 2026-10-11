@@ -77,18 +77,36 @@
 .gl-lb-close, .gl-lb-nav {
   position: absolute;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px;
-  border: none; border-radius: 50%;
-  background: rgba(255, 255, 255, .16);
+  width: 42px; height: 42px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .22); border-radius: 50%;
+  background: rgba(18, 20, 26, .55);
   color: #fff; cursor: pointer;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  transition: background var(--dur, .18s) ease, transform var(--dur, .18s) var(--ease-out, ease),
+              border-color var(--dur, .18s) ease;
 }
-.gl-lb-close:hover, .gl-lb-nav:hover { background: rgba(255, 255, 255, .3); }
-.gl-lb-close { top: -6px; right: -6px; }
+.gl-lb-close:hover, .gl-lb-nav:hover {
+  background: rgba(255, 255, 255, .26);
+  border-color: rgba(255, 255, 255, .5);
+}
+/* 点击立刻有反馈：按下就缩一下，不等抬手 */
+.gl-lb-close:active, .gl-lb-nav:active { transform: scale(.92); }
+.gl-lb-close:focus-visible, .gl-lb-nav:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, .9);
+  outline-offset: 2px;
+}
+.gl-lb-close { top: -8px; right: -8px; }
 .gl-lb-nav { top: 50%; transform: translateY(-50%); }
+.gl-lb-nav:active { transform: translateY(-50%) scale(.92); }
 .gl-lb-nav.prev { left: 10px; }
 .gl-lb-nav.next { right: 10px; }
+/* 触屏没有 hover：按钮加大到易点尺寸，并弱化依赖 hover 的视觉提示 */
+@media (hover: none) {
+  .gl-lb-close, .gl-lb-nav { width: 46px; height: 46px; background: rgba(18, 20, 26, .68); }
+}
 
 /* 策展抽屉 */
 .gl-drawer-mask {
@@ -174,6 +192,21 @@
 .tl-month-label { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--text-muted); letter-spacing: .06em; }
 .tl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .tl-node { position: relative; }
+
+/* 时间轴卡片的模糊揭幕（2026-10-11 用户要求，与首页开场白同一套语言）：
+   进入视口时从「虚 + 下沉」揭到「实 + 归位」，只播一次。
+   ⚠ 模糊只在入场那 0.8s 内存在，终态是 filter:none —— 用户要求
+     「动效可以模糊，但一定要显示清楚」，所以不做跟随滚动的半模糊中间态。 */
+.tl-reveal {
+  filter: blur(7px);
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    filter 0.8s var(--ease-out) var(--tl-d, 0s),
+    opacity 0.8s var(--ease-out) var(--tl-d, 0s),
+    transform 0.8s var(--ease-out) var(--tl-d, 0s);
+}
+.tl-reveal.on { filter: none; opacity: 1; transform: none; }
 .tl-dot {
   position: absolute;
   left: -25px; top: 16px;
@@ -187,9 +220,14 @@
 .tl-node.tl-music .tl-dot { background: #16a34a; }
 .tl-node.tl-movie .tl-dot { background: #d97706; }
 .tl-node.tl-gallery .tl-dot { background: #db2777; }
+/* 图书（2026-10-11 加入时间轴）：与图书页封面的墨绿调保持一致 */
+.tl-node.tl-book .tl-dot { background: #0f766e; }
 .tl-card {
+  /* 四个子元素（时间 / 角标 / 正文 / 封面）必须配四列。
+     旧版只写了 52px auto 1fr 三列却放了四个元素，正文被挤到第二行只剩 52px 宽，
+     封面反而占满剩余空间 —— 就是「左边文字竖成一列、右边图孤零零」的根因。 */
   display: grid;
-  grid-template-columns: 52px auto 1fr;
+  grid-template-columns: 46px auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -207,9 +245,18 @@
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text-muted); white-space: nowrap;
 }
-.tl-cover { width: 56px; height: 40px; object-fit: cover; border-radius: 8px; }
+/* 封面统一尺寸，且与卡片内容垂直居中 —— 不再随文字高度拉伸 */
+.tl-cover {
+  width: 52px; height: 52px; flex: none;
+  object-fit: cover; border-radius: 10px;
+  align-self: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .14);
+}
 .tl-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.tl-body strong { font-size: 14.5px; font-weight: 600; }
+.tl-body strong {
+  font-size: 14.5px; font-weight: 600; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .tl-sum {
   font-size: 12.5px; color: var(--text-muted); line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -239,3 +286,7 @@
   .gl-lightbox, .gl-drawer-mask, .gl-drawer { animation: none; }
   .gl-figure, .tl-card { transition: none; }
 }
+
+/* 策展抽屉里的「上传新图片」区块（2026-10-11 新增） */
+.gl-upload { display: flex; align-items: center; gap: var(--sp-3, 8px); flex-wrap: wrap; }
+.gl-upload .muted { font-size: 12px; line-height: 1.5; }

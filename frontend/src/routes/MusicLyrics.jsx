@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
+import { FavoriteButton } from '../components/FavoriteButton.jsx';
 import { usePlayer } from '../lib/player.jsx';
 
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
@@ -34,7 +35,10 @@ export function MusicLyrics({ id }) {
   const [autoScroll, setAutoScroll] = useState(true);
   const lineRefs = useRef([]);
   const boxRef = useRef(null);
-  const { music: current, position, playing, toggle, seek, playOne } = usePlayer();
+  const {
+    music: current, position, duration, playing, toggle, seek, playOne,
+    hasPrev, hasNext, prev, next
+  } = usePlayer();
 
   useEffect(() => {
     (async () => {
@@ -97,6 +101,15 @@ export function MusicLyrics({ id }) {
   const cover = t.artwork_url || music.cover_path;
   const plain = lyrics?.plain ? String(lyrics.plain).split('\n') : [];
   const hasSynced = lines.length > 0;
+  // 播放进度：进度条 + 两侧时间。duration 优先用播放器实测值（第三方元信息常缺时长）
+  const total = duration || t.duration || 0;
+  const pct = total > 0 ? Math.min(100, (position / total) * 100) : 0;
+  function fmt(sec) {
+    if (!Number.isFinite(sec) || sec <= 0) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
 
   return (
     <section class="lyric-page">
@@ -121,20 +134,60 @@ export function MusicLyrics({ id }) {
       </div>
 
       <div class="lyric-stage">
-        {/* 左：封面 + 控制 */}
+        {/* 左：会转的黑胶封面 + 完整播放控制（用户要求：点击头像进来后这里要有收藏等按钮） */}
         <aside class="lyric-side">
-          <div class={`song-art sm${playing ? ' playing' : ''}`}>
-            {cover
-              ? <img src={cover} alt={music.title} />
-              : <span class="np-art-empty"><Icon name="music" size={32} /></span>}
+          {/* 黑胶：转盘 + 中心封面。playing 时转动，暂停即停（保留角度，不闪回） */}
+          <div class={`vinyl lp${playing ? ' spinning' : ''}`}>
+            <div class="vinyl-disc">
+              <span class="vinyl-grooves" />
+              <div class="vinyl-cover">
+                {cover
+                  ? <img src={cover} alt={music.title} referrerpolicy="no-referrer" />
+                  : <span class="np-art-empty"><Icon name="music" size={32} /></span>}
+              </div>
+              <span class="vinyl-hole" />
+            </div>
           </div>
           <div class="lyric-side-text">
             <strong>{music.title}</strong>
             <span>{t.artist}{t.album ? ` · ${t.album}` : ''}</span>
           </div>
-          <button class="np-play sm" onClick={toggle} title={playing ? '暂停' : '播放'}>
-            <Icon name={playing ? 'pause' : 'play'} size={20} />
-          </button>
+
+          {/* 进度条：点击任意位置跳转 */}
+          <div class="lp-seek">
+            <span class="lp-time">{fmt(position)}</span>
+            <input
+              type="range" min={0} max={total || 0} step={1} value={position}
+              onInput={(e) => seek(Number(e.currentTarget.value))}
+              style={`--pct:${pct}%`}
+              aria-label="播放进度"
+            />
+            <span class="lp-time">{fmt(total)}</span>
+          </div>
+
+          {/* 控制：上一首 / 播放暂停 / 下一首 */}
+          <div class="lp-controls">
+            <button class="np-icon" onClick={prev} disabled={!hasPrev} title="上一首">
+              <Icon name="skipBack" size={18} />
+            </button>
+            <button class="np-play sm" onClick={toggle} title={playing ? '暂停' : '播放'}>
+              <Icon name={playing ? 'pause' : 'play'} size={20} />
+            </button>
+            <button class="np-icon" onClick={next} disabled={!hasNext} title="下一首">
+              <Icon name="skipForward" size={18} />
+            </button>
+          </div>
+
+          {/* 收藏 + 详情 + 编辑：与详情页操作区一致 */}
+          <div class="lp-actions">
+            <FavoriteButton resourceId={music.id} />
+            <button type="button" class="lp-btn" onClick={() => route(`/music/${music.id}`)}>
+              <Icon name="info" size={14} /> 歌曲详情
+            </button>
+            <button type="button" class="lp-btn" onClick={() => route(`/music/${music.id}/edit`)}>
+              <Icon name="settings" size={14} /> 编辑
+            </button>
+          </div>
         </aside>
 
         {/* 右：歌词 */}

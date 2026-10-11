@@ -1,6 +1,6 @@
-// 暗色/浅色主题自定义配色面板
+// 主题自定义配色面板（纯净 / 素雅 / 天青 三套各自独立保存）
 import { useState } from 'preact/hooks';
-import { useTheme, THEME_VARS, DEFAULT_COLORS } from '../lib/theme.jsx';
+import { useTheme, THEME_VARS, DEFAULT_COLORS, modeLabel } from '../lib/theme.jsx';
 
 export function ThemeCustomizer() {
   const { theme, colors, setColor, saveColors, resetColors, currentColors } = useTheme();
@@ -27,7 +27,7 @@ export function ThemeCustomizer() {
   return (
     <div class="stack">
       <p class="muted" style="font-size:13px">
-        当前编辑：<strong>{theme === 'sepia' ? '素雅' : '白天'}</strong>主题配色（切换主题可分别配置）
+        当前编辑：<strong>{modeLabel(theme)}</strong> 配色（三套主题各自独立，切换后分别配置）
       </p>
 
       <div class="gallery-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">

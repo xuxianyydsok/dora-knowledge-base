@@ -4,7 +4,9 @@
   --gc-line: rgba(255, 255, 255, 0.07);
   --gc-text: #e9e4dc;
   --gc-mute: #8a847b;
-  --gc-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  /* 等宽栈要带中文字形兜底，否则中文回退到 NSimSun（新宋体）点阵字发虚（同 global.css 说明） */
+  --gc-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Source Han Sans SC', system-ui, monospace;
   position: relative;
   left: 50%;
   width: min(1600px, calc(100vw - 32px));
@@ -150,21 +152,58 @@
   .gc-clock { margin-left: 0; }
 }
 
-/* 图谱页整页深色：顶栏也跟着变暗，避免右上角一片白 */
-.app-shell.page-dark { background: #0b0a0c; color-scheme: dark; }
-.app-shell.page-dark .app-header {
-  background: rgba(11, 10, 12, 0.82);
-  border-bottom-color: rgba(255, 255, 255, 0.08);
-  box-shadow: none;
-  --text: #e9e4dc; --text-muted: #8a847b; --muted: #8a847b;
-  color: #e9e4dc;
+/* 图谱页整页深色背景。
+   2026-10-11 起**不再覆盖顶栏**：用户明确要求暗色只作用于图谱区域，导航栏配色必须保持站点主题。
+   （旧版这里有一整段 .app-shell.page-dark .app-header / .menu-panel 覆盖，已删除；
+     想要顶栏跟着变暗的话，把那段从 git 历史 7692924 取回即可。） */
+.app-shell.page-dark { background: #0b0a0c; }
+
+/* =============================================================
+   统计图（StatCharts.jsx）的动效与交互质感 —— 2026-10-11
+
+   为什么这里也要有一份：`graph-console.css` 只被 `/graph` 控制台页（Graph.jsx）加载，
+   而 `/graph/blog`、`/graph/repos`（GraphHub.jsx）**不加载**这个文件。
+   所以 StatCharts.jsx 内部还自注入了一份**完全相同**的规则（`<style id="stat-charts-css">`），
+   保证两个页面都有动效。改动时请两边同步，不要只改一边。
+
+   约定：
+   - 图形元素带 .sc-anim（柱/块/气泡/点，从 0 长出）或 .sc-line（折线，从 0 画出）；
+     用 --i 算错峰延迟；动画用 backwards 填充，结束后属性交还内联样式 / :hover，
+     否则会锁死 transform，悬停放大失效。
+   - 悬停：轻微放大 + 提亮 + cursor:pointer；数值提示用组件自带 tooltip，
+     没有的用 <title> 原生提示兜底。
+   - 颜色只用主题变量 / 组件色板，不写死新颜色，三套主题才协调。
+   ============================================================= */
+.sc-grid { stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sc-anim {
+  transform-box: fill-box; transform-origin: bottom;
+  animation: sc-grow-y 0.62s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 60ms);
 }
-.app-shell.page-dark .app-header a,
-.app-shell.page-dark .app-header .brand span { color: #cfc8bd; }
-.app-shell.page-dark .app-header a[aria-current='page'] { color: #0b0a0c; }
-.app-shell.page-dark .app-header button {
-  background: rgba(255, 255, 255, 0.06); color: #e9e4dc; border-color: rgba(255, 255, 255, 0.12); box-shadow: none;
+.sc-anim.sc-bar { transform-origin: left center; animation-name: sc-grow-x; }
+.sc-anim.sc-arc, .sc-anim.sc-bub, .sc-anim.sc-pt, .sc-anim.sc-cell { transform-origin: center; animation-name: sc-grow-c; }
+.sc-line { stroke-dasharray: 1; animation: sc-draw 0.95s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 60ms); }
+@keyframes sc-grow-y { from { opacity: 0; transform: scaleY(0.02); } to { opacity: 1; transform: scaleY(1); } }
+@keyframes sc-grow-x { from { opacity: 0; transform: scaleX(0.02); } to { opacity: 1; transform: scaleX(1); } }
+@keyframes sc-grow-c { from { opacity: 0; transform: scale(0.2); } to { opacity: 1; transform: scale(1); } }
+@keyframes sc-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.sc-arc, .sc-bar, .sc-cell, .sc-bub, .sc-pt, .sc-gauge, .sc-row {
+  transition: transform 0.25s var(--ease-out), filter 0.25s var(--ease-out), opacity 0.25s var(--ease-out);
 }
-.app-shell.page-dark .app-header button::after { display: none; }
-.app-shell.page-dark .menu-panel { background: #17141a; color: #e9e4dc; border-color: rgba(255, 255, 255, 0.1); }
-.app-shell.page-dark .menu-panel a, .app-shell.page-dark .menu-panel button { color: #e9e4dc; background: transparent; }
+.sc-arc, .sc-cell, .sc-bub, .sc-pt, .sc-gauge, .sc-row { cursor: pointer; }
+.sc-arc:hover, .sc-cell:hover, .sc-bub:hover, .sc-pt:hover { transform: scale(1.05); filter: brightness(1.14); }
+.sc-bar:hover { transform: scale(1.015); filter: brightness(1.12); }
+.sc-gauge:hover, .sc-row:hover { transform: scale(1.03); }
+.sc-cell, .sc-row, .sc-gauge { transform-box: fill-box; }
+.sc-cell { transform-origin: center; }
+.sc-row { transform-origin: left center; }
+.sc-gauge { transform-origin: center; }
+.sc-card-body {
+  border-radius: var(--radius-sm, 10px);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-subtle) 60%, transparent), transparent 70%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent);
+}
+.sc-axis-t, .sc-tip b, .sc-tip i { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .sc-arc, .sc-bar-fill, .sc-reveal, .sc-bar, .sc-cell, .sc-bub, .sc-pt, .sc-gauge, .sc-row { transition: none !important; }
+  .sc-anim, .sc-line { animation: none !important; }
+}

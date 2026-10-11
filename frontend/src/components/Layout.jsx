@@ -1,8 +1,10 @@
-// 全局基础布局：单行顶栏（品牌 · 一级导航 · 更多菜单 · 搜索/主题/通知 · 头像菜单） + 主内容区
+// 全局基础布局：单行顶栏（品牌 · 一级导航 · 搜索/主题/通知 · 头像菜单） + 主内容区
 //
-// 设计取舍：顶栏只平铺**内容模块**入口；工具类入口（收藏/分类/标签）收进「更多」；图谱 2026-10-09 起常显在影视后面，
-// 图片展/时间轴 2026-10-10 起也升为一级（用户要求不藏在「更多」里）；账号相关（设置/备份/用户管理/退出）收进头像菜单。
-// 之前是 12 项平铺 + 邮箱/退出挤在同一行，窄一点就折成两行、层级混乱。
+// 设计取舍：顶栏只平铺**内容模块**入口；账号相关（设置/备份/用户管理/源状态/退出）收进头像菜单。
+// 2026-10-11（第一轮）：去掉「更多」下拉——它当时只剩「碎念」一项；碎念升为一级导航。
+// 2026-10-11（第二轮，本文件）：一级导航已到 9 项，「图谱」从单入口改成**「更多」下拉**，
+//   内含「博客图谱」/「开源项目图谱」两个子项（原先的站长控制台仍在 /graph，只是不再出现在顶栏）。
+//   用户已确认：日后功能再多，就把放不下的项继续收进这个「更多」下拉。
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useRouter } from 'preact-router';
 import { ThemeToggle } from './ThemeToggle.jsx';
@@ -13,14 +15,17 @@ import { useAuth } from '../lib/auth.jsx';
 
 const PRIMARY = [
   ['/news', 'NewsNow'], ['/github', 'GitHub'], ['/posts', '博客'],
-  ['/music', '音乐'], ['/movies', '影视'], ['/graph', '图谱'],
-  ['/gallery', '图片展'], ['/timeline', '时间轴']
+  ['/music', '音乐'], ['/movies', '影视'],
+  ['/books', '图书'],
+  ['/gallery', '图展'], ['/timeline', '时间轴'], ['/moments', '碎念'],
+  ['/graph/blog', '图谱'], ['/favorites', '收藏'], ['/changelog', '更新']
 ];
 
-const TOOLS = [
-  ['/favorites', '收藏', 'heart'],
-  ['/categories', '分类', 'list'], ['/tags', '标签', 'tag']
-];
+// 「图谱」是一级导航（指向 /graph/blog）；两种图谱在页面内用标签切换（博客图谱 / 开源项目图谱）。
+// 旧入口 /graph 是站长个人控制台（AI 解读进度等私有数据），仍可直接访问，但不出现在顶栏。
+
+// 分类 / 标签已从导航移除（2026-10-11）：博客页已自带分类与标签视图，独立入口冗余。
+// 路由本身保留（/categories、/tags 仍可直接访问），只是不再出现在菜单里。
 
 // 通用下拉：点击展开；点击外部 / Esc / 选中任意项后关闭
 function Dropdown({ trigger, triggerClass = 'menu-trigger', children, align = 'right', label }) {
@@ -74,40 +79,47 @@ export function Layout({ children }) {
   const [router] = useRouter();
   const path = router?.path || '/';
 
+  // 图谱是一级入口，两个子路径（博客图谱 / 开源项目图谱）都算「图谱」这一项激活
+  const isActive = (href) => (href === '/graph/blog' ? path.startsWith('/graph/') : path === href);
   const link = (href, label) => (
     <a
       href={href}
-      class={path === href ? 'active' : ''}
-      aria-current={path === href ? 'page' : undefined}
+      class={isActive(href) ? 'active' : ''}
+      aria-current={isActive(href) ? 'page' : undefined}
     >{label}</a>
   );
   const initial = String(user?.email || 'D').trim().charAt(0).toUpperCase();
 
+  // page-dark 只给站长控制台 /graph 用；公开星图（/graph/blog、/graph/repos）跟随站点主题色
+  const shellClass = `app-shell${(router?.url || '').split('?')[0] === '/graph' ? ' page-dark' : ''}`;
+
+  // 顶栏默认全透明，让全站网格背景从它背后铺过去（与内容区无缝衔接）；
+  // 页面往下滚动后补一层玻璃底 + 模糊，保证导航文字压在内容上仍然清楚。
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // 路由切换后回到顶部（2026-10-11）：之前从长页面（如图谱）点进新页面，
+  // 会保留原滚动位置，看起来像「点了一下就滑到最底下」。这里在路径变化时复位。
+  const routePath = (router?.url || '/').split('?')[0];
+  useEffect(() => { window.scrollTo(0, 0); }, [routePath]);
+
   return (
-    <div class={`app-shell${(router?.url || '').startsWith('/graph') ? ' page-dark' : ''}`}>
-      <header class="app-header">
-        <a href="/" class="brand" aria-label="Dora 首页">
+    <div class={shellClass}>
+      <header class={`app-header${scrolled ? ' is-scrolled' : ''}`}>
+        <a href="/" class="brand" aria-label="Dora Studio 首页">
           <Logo size={30} />
-          <span>Dora</span>
+          {/* 品牌名（2026-10-11 用户要求）：Dora 后面加 Studio，Studio 用弱化的小字排开 */}
+          <span class="brand-name">Dora<em class="brand-studio">Studio</em></span>
         </a>
 
         {/* 窄屏（≤1080px）不再用三横线抽屉，一级导航直接横向滚动（2026-10-09，阈值 2026-10-10 由 920px 上调，见 docs/removed-features.md） */}
         <nav class="app-nav">
           {PRIMARY.map(([href, label]) => link(href, label))}
-          {(
-            <Dropdown
-              label="更多"
-              align="left"
-              triggerClass="menu-trigger nav-more"
-              trigger={<><span>更多</span><Icon name="chevronDown" size={14} /></>}
-            >
-              {TOOLS.map(([href, label, icon]) => (
-                <MenuLink key={href} href={href} icon={icon}>{label}</MenuLink>
-              ))}
-              {/* 源健康中心：仅管理员可见（普通访客 / 用户看不到入口） */}
-              {isAdmin && <MenuLink href="/sources" icon="wave">源状态</MenuLink>}
-            </Dropdown>
-          )}
         </nav>
 
         <span class="spacer" />
@@ -118,6 +130,16 @@ export function Layout({ children }) {
           </a>
         )}
         <ThemeToggle />
+        {/* 登录入口（2026-10-11 用户要求）：
+            齿轮「设置」按钮已移除；未登录时在主题按钮右侧放一枚**与主题按钮同款**的胶囊按钮
+            （图标 + 「登录」两字），点击进 /login 完成站长登录 / 新用户注册。
+            已登录后不再显示这枚按钮，账号相关入口统一收进右侧头像菜单。 */}
+        {!isAuthenticated && (
+          <a href="/login" class="login-link" title="站长登录 / 注册" aria-label="登录">
+            <Icon name="login" size={16} />
+            <span>登录</span>
+          </a>
+        )}
         {isAuthenticated && <NotificationBell />}
 
         {isAuthenticated ? (
@@ -138,16 +160,20 @@ export function Layout({ children }) {
             <MenuLink href="/settings" icon="settings">设置</MenuLink>
             <MenuLink href="/backup" icon="backup">备份</MenuLink>
             {isAdmin && <MenuLink href="/admin/users" icon="crown">用户管理</MenuLink>}
+            {/* 源健康中心：仅管理员可见（原先挂在已删除的「更多」下拉里） */}
+            {isAdmin && <MenuLink href="/sources" icon="wave">源状态</MenuLink>}
             <div class="menu-sep" />
             <button type="button" class="menu-item danger" onClick={signOut}>
               <Icon name="logout" size={16} />
               <span>退出登录</span>
             </button>
           </Dropdown>
-        ) : null /* 访客模式：暂不展示登录入口，站长可直接访问 /login */}
+        ) : null}
       </header>
 
-      <main class="app-main">{children}</main>
+      {/* key 随路径变化 → 路由切换时整块重挂，触发一次淡入上浮（见 global.css 的 .app-main > *）。
+          query 不参与 key：同一页面换筛选条件不应该整页闪一下。 */}
+      <main class="app-main" key={routePath}>{children}</main>
     </div>
   );
 }

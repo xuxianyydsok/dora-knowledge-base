@@ -1,0 +1,439 @@
+/* 图谱页（博客图谱 / 开源项目图谱）
+   2026-10-11：**跟随站点主题色**（浅色 / 素雅两套），不再固定暗色；顶栏当然也不受影响。
+   画布是半透明的主题背景 + 彩色节点，明暗两种主题下都能看清。 */
+.sm {
+  --sm-text: var(--text);
+  --sm-mute: var(--text-muted);
+  /* 图谱页的等宽字体栈：必须带中文字形兜底（同 global.css 的 --font-mono 说明）。
+     否则中文会回退到 NSimSun（新宋体）点阵字，页头标题 / 副标题 / 分类标签全发虚。 */
+  --sm-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Source Han Sans SC', system-ui, monospace;
+  position: relative;
+  left: 50%;
+  width: min(1600px, calc(100vw - 32px));
+  margin-left: calc(-1 * min(800px, calc(50vw - 16px)));
+  margin-top: -14px;
+  padding: 14px 16px 20px;
+  border-radius: 18px;
+  color: var(--text);
+  /* 主题色背景 + 一层极淡的网格，不喧宾夺主 */
+  background:
+    radial-gradient(ellipse 55% 45% at 20% 15%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 80% 78%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 70%),
+    linear-gradient(color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px) 0 0 / 30px 30px,
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px) 0 0 / 30px 30px,
+    var(--bg-subtle);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md, 0 10px 30px -18px rgba(16, 19, 26, 0.25));
+  /* 页面正文默认走 UI 无衬线（Satoshi）：此前整个 .sm 都用等宽体，
+     中文因此回退到 NSimSun（新宋体），标题 / 副标题 / 分类标签都很难看
+     （2026-10-11 用户反馈）。等宽只保留给 kicker 与读数这类「拉丁 + 数字」角色。 */
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+
+/* 页头：标题 + 两个图谱的切换标签 */
+.sm-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 12px; margin: 2px 4px 12px;
+}
+.sm-kicker { font-size: 10.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--primary); }
+/* 标题与其它列表页保持一致：Newsreader 衬线 + 500 字重（同 .page-head h1） */
+.sm-head-text h1 { margin: 4px 0 6px; font-family: var(--font-display); font-size: 30px; font-weight: 500; letter-spacing: var(--track-display); color: var(--text); }
+.sm-head-text p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--sm-mute); max-width: 62ch; }
+.sm-tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated); }
+.sm-tab {
+  font: inherit; font-size: 12.5px; padding: 6px 14px; min-height: 0;
+  color: var(--sm-mute); background: transparent; border: none; border-radius: 7px; box-shadow: none;
+  transition: color 0.2s, background-color 0.2s;
+}
+.sm-tab::after { display: none; }
+.sm-tab:hover { transform: none; color: var(--text); background: color-mix(in srgb, var(--text) 7%, transparent); }
+.sm-tab.on { color: var(--primary-contrast, #fff); background: var(--primary); font-weight: 700; }
+
+/* 状态条 */
+.sm-hud {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px;
+  padding: 8px 12px; margin-bottom: 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated);
+  font-family: var(--sm-mono); font-size: 11.5px; letter-spacing: 0.04em;
+}
+.sm-brand { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; color: var(--text); }
+.sm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 10px color-mix(in srgb, var(--primary) 70%, transparent); animation: sm-blink 1.6s infinite; }
+@keyframes sm-blink { 50% { opacity: 0.25; } }
+.sm-stat i { font-style: normal; color: var(--sm-mute); margin-right: 5px; }
+.sm-stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+.sm-spacer { flex: 1; }
+
+.sm-search {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle);
+  color: var(--sm-mute);
+}
+/* 侧栏顶部的搜索框：整行铺满，正对下方分类 / 列表（2026-10-11 用户要求） */
+.sm-search-panel { width: 100%; padding: 8px 12px; border-radius: 10px; background: var(--bg-elevated); box-sizing: border-box; }
+.sm-search-panel input { width: 100%; font-size: 13px; }
+.sm-search input {
+  margin: 0; width: 190px; padding: 0; border: none; background: none; box-shadow: none;
+  color: var(--text); font: inherit; font-size: 13px; outline: none;
+}
+.sm-search input::placeholder { color: var(--sm-mute); }
+
+.sm-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 0;
+  padding: 5px 11px; font: inherit; font-size: 12.5px;
+  color: var(--text); background: var(--bg-subtle);
+  border: 1px solid var(--border); border-radius: 999px; box-shadow: none;
+}
+.sm-chip::after { display: none; }
+.sm-chip:hover { transform: none; color: var(--text); border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+.sm-chip.on { color: var(--primary-contrast, #fff); background: var(--primary); border-color: var(--primary); font-weight: 700; }
+.sm-chip b { font-weight: 400; opacity: 0.8; font-variant-numeric: tabular-nums; }
+
+.sm-err { margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-size: 12px; }
+
+/* 主体：左画布 + 右侧栏 */
+.sm-body { display: grid; grid-template-columns: minmax(0, 1fr) 288px; gap: 12px; align-items: stretch; }
+.sm-canvas-box {
+  position: relative; height: clamp(430px, 62vh, 660px);
+  border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+  /* 画布底色：主题背景 + 中心一点主色光晕（浅色下是淡蓝，素雅下是淡米） */
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 62%),
+    var(--bg-elevated);
+}
+
+/* 星图画布 */
+.sm-wrap { position: absolute; inset: 0; touch-action: none; user-select: none; }
+.sm-canvas { position: absolute; inset: 0; display: block; }
+.sm-tip {
+  position: absolute; z-index: 3; pointer-events: none;
+  transform: translate(14px, -50%);
+  max-width: 240px; padding: 8px 10px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg, 0 16px 40px -16px rgba(16, 19, 26, 0.45));
+  display: flex; flex-direction: column; gap: 3px; font-size: 11px;
+}
+.sm-tip.flip { transform: translate(calc(-100% - 14px), -50%); }
+.sm-tip b { color: var(--text); font-size: 12px; }
+.sm-tip span { color: var(--sm-mute); }
+.sm-tip em { color: var(--text); font-style: normal; line-height: 1.5; opacity: 0.85; }
+.sm-tip i { color: var(--primary); font-style: normal; font-size: 10px; letter-spacing: 0.06em; }
+.sm-hint {
+  position: absolute; left: 10px; bottom: 8px; z-index: 2; pointer-events: none;
+  display: flex; gap: 14px; font-size: 10.5px; color: var(--sm-mute);
+}
+.sm-hint b { font-weight: 600; }
+.sm-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--sm-mute); font-size: 12px; }
+.sm-loading span { width: 52%; height: 2px; background: linear-gradient(90deg, transparent, var(--primary), transparent); animation: sm-scan 1.4s infinite; }
+.sm-loading span:nth-child(2) { animation-delay: 0.2s; width: 40%; }
+.sm-loading span:nth-child(3) { animation-delay: 0.4s; width: 28%; }
+@keyframes sm-scan { 0% { opacity: 0.1; } 50% { opacity: 1; } 100% { opacity: 0.1; } }
+
+/* 右侧栏 */
+.sm-side {
+  display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  /* 与左侧画布等高（2026-10-11 用户要求）：stretch 拉满行高。
+     2026-10-11 第二轮修正：面板必须**撑满**这个高度，不能按内容自然分配 ——
+     否则两个面板下面会留一段空白，和左边画布对不齐。 */
+  height: clamp(430px, 62vh, 660px);
+}
+.sm-side .sm-list-panel { flex: 1; min-height: 0; }
+.sm-panel {
+  /* 两个面板等分剩余高度，各自撑满，中间不留空档 */
+  flex: 1 1 0; min-height: 0;
+  display: flex; flex-direction: column;
+  min-width: 0; padding: 10px 12px; border-radius: 10px;
+  background: var(--bg-elevated); border: 1px solid var(--border); font-size: 12px;
+}
+.sm-search-panel { flex: 0 0 auto; }
+.sm-panel header { display: flex; justify-content: space-between; margin-bottom: 9px; color: var(--text); font-weight: 700; letter-spacing: 0.04em; font-size: 12.5px; }
+.sm-panel header i { font-style: normal; font-weight: 400; color: var(--sm-mute); }
+.sm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 2026-10-11 用户要求：分类 / 标签 / 语言 / 应用分类必须**全部平铺展示**，
+   不许出现内部滚动条，也不许把下面的面板顶出画布高度。
+   做法：面板撑满画布高度（flex: 1），chips 区不滚动；
+   内容超长时由 JS 逐步缩小字号（--sm-chip-scale，见 GraphHub.jsx 的 fitChips）。 */
+.sm-panel .sm-chips {
+  flex: 1 1 auto; min-height: 0;
+  overflow: hidden;
+  align-content: flex-start;
+  gap: calc(6px * var(--sm-chip-scale, 1));
+}
+.sm-panel .sm-chips .sm-chip {
+  max-width: 100%;
+  /* 内容超长时由 JS 调小 --sm-chip-scale（见 GraphHub.jsx 的 useFitScale），
+     字号 / 内边距 / 间距一起等比缩小，保证「全部平铺 + 不出滚动条 + 不顶出画布高度」。 */
+  font-size: calc(12.5px * var(--sm-chip-scale, 1));
+  padding: calc(5px * var(--sm-chip-scale, 1)) calc(11px * var(--sm-chip-scale, 1));
+}
+.sm-swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 7px currentColor; }
+
+.sm-list-panel { display: flex; flex-direction: column; }
+.sm-list { list-style: none; margin: 0; padding: 0; max-height: 264px; overflow: auto; scrollbar-width: thin; }
+.sm-list li + li { border-top: 1px dashed color-mix(in srgb, var(--text) 8%, transparent); }
+.sm-list a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 2px; color: var(--text); }
+.sm-list a:hover { color: var(--primary); opacity: 1; }
+.sm-list a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-list a b { font-weight: 600; }
+.sm-list a em { font-style: normal; color: var(--sm-mute); flex: none; display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
+.sm-mute { color: var(--sm-mute); margin: 4px 0; }
+.sm-pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.sm-pager button {
+  font: inherit; font-size: 11px; min-height: 0; padding: 3px 10px;
+  color: var(--sm-mute); background: transparent; border: 1px solid var(--border); border-radius: 6px; box-shadow: none;
+}
+.sm-pager button::after { display: none; }
+.sm-pager button:hover:not(:disabled) { transform: none; color: var(--primary); }
+.sm-pager button:disabled { opacity: 0.35; }
+.sm-pager span { color: var(--sm-mute); font-variant-numeric: tabular-nums; }
+
+/* ---------------- 画布下方的可视化区（2026-10-11 用户要求） ----------------
+   与上方 .sm-body 的左右两栏严格对齐：同一套 1fr + 288px 网格，
+   可视化图横跨两栏（grid-column: 1 / -1），宽度与上面的画布 + 侧栏之和一致。 */
+.sm-viz {
+  margin-top: 12px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+}
+
+.sm-viz-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.sm-viz-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(18px, 1.8vw, 24px);
+  font-weight: 500;
+  letter-spacing: var(--track-display);
+  color: var(--text);
+}
+
+.sm-viz-sub {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--sm-mute);
+  max-width: 78ch;
+}
+.sm-viz-sub strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.sm-viz-sub b { color: var(--primary); font-weight: 600; }
+
+.sm-viz-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  max-width: 460px;
+  font-size: 11.5px;
+  color: var(--sm-mute);
+}
+.sm-viz-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.sm-viz-legend i { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 7px currentColor; }
+.sm-viz-more { opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+/* ---------------- 流动网络画布（FlowNetwork） ---------------- */
+.fv-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  /* 深色玻璃底：彩色光点与流动光线在深底上最跳（浅色底会显得发灰） */
+  background:
+    radial-gradient(ellipse 60% 70% at 22% 18%, rgba(47, 107, 255, 0.20), transparent 68%),
+    radial-gradient(ellipse 55% 65% at 82% 80%, rgba(232, 57, 122, 0.16), transparent 68%),
+    radial-gradient(ellipse 50% 60% at 62% 30%, rgba(0, 184, 148, 0.13), transparent 70%),
+    #0b0d16;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.fv-canvas { display: block; width: 100%; height: 100%; }
+
+.fv-empty {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12.5px;
+}
+
+.fv-tip {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  transform: translate(14px, -50%);
+  max-width: 280px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(16, 19, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  font-size: 11.5px;
+  color: #fff;
+  backdrop-filter: blur(8px);
+}
+.fv-tip i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.fv-tip span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fv-tip em {
+  flex: none;
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.66);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1100px) {
+  .sm-body { grid-template-columns: minmax(0, 1fr) 246px; }
+  .sm-search input { width: 140px; }
+}
+
+/* ---------------- 流向图（FlowSankey）：画布下方「从左往右的交叉带状图」 ----------------
+   与上方星图的区别：星图是「绕圈 + 随机连线」，这里是**分类明确、从左往右流动**的带状图，
+   带宽 = 数量，颜色从起点渐变到终点；带子上的流动感由 JS 生成的真实光点负责（见 FlowSankey.jsx），
+   CSS 这边只管外观：渐变、高光、内描边、圆角、悬停变暗与入场错峰。 */
+.fs-box {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--primary) 6%, transparent), transparent 60%),
+    var(--bg-elevated);
+}
+.fs-svg { display: block; }
+.fs-empty {
+  position: absolute; inset: 0; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--sm-mute, var(--text-muted)); font-size: 12.5px;
+}
+
+/* 跟随鼠标的数值 tooltip：位置由 JS 写 transform，这里只负责长相 */
+.fs-tip {
+  position: absolute; left: 0; top: 0;
+  z-index: 5;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg-elevated);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition: opacity var(--dur-fast, 0.18s) var(--ease-out, ease);
+}
+.fs-tip.on { opacity: 1; }
+
+/* 带子：入场错峰浮现 + 悬停高亮 / 其余变暗 */
+.fs-band { transition: opacity var(--dur, .32s) var(--ease-out, ease); }
+.fs-band-fill,
+.fs-band-sheen,
+.fs-band-edge {
+  animation: fs-band-in var(--dur-slow, .6s) var(--ease-out, ease) both;
+  animation-delay: calc(var(--fs-i, 0) * 18ms);
+}
+@keyframes fs-band-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* 变暗程度取参考模板 06 的量级：还看得见形状，但注意力全在亮的那几条上 */
+.fs-band.dim { opacity: 0.1; }
+.fs-band.hot .fs-band-fill { opacity: 0.95; }
+
+/* 高光层：上缘亮、中间透、下缘收，让带子像「有厚度的光带」而不是纯色块 */
+.fs-band-sheen { pointer-events: none; }
+
+/* 内描边：把带子轮廓勾一圈，交叉处不至于糊成一片 */
+.fs-band-edge {
+  stroke-width: 1;
+  opacity: 0.32;
+  pointer-events: none;
+}
+.fs-band.hot .fs-band-edge { opacity: 0.85; }
+
+/* 中轴：不可见，只当光点的轨道用（getPointAtLength 需要真实 path） */
+.fs-band-spine {
+  fill: none;
+  stroke: none;
+  pointer-events: none;
+}
+
+/* 流动光点：位置 / 透明度全由 JS 每帧写属性，这里只管颜色与不挡事件 */
+.fs-pt {
+  fill: var(--text);
+  pointer-events: none;
+}
+
+/* 节点：竖条 + 标签 */
+.fs-node-bar {
+  transition: filter var(--dur, .32s) var(--ease-out, ease);
+  animation: fs-node-in var(--dur-slow, .6s) var(--ease-out, ease) both;
+}
+@keyframes fs-node-in {
+  from { opacity: 0; transform: scaleY(0.55); }
+  to { opacity: 1; transform: none; }
+}
+.fs-node { cursor: pointer; }
+/* currentColor 来自节点自己的分类色（JS 写在 <g> 上），三套主题都能协调 */
+.fs-node.hot .fs-node-bar { filter: brightness(1.12) drop-shadow(0 0 7px currentColor); }
+.fs-node-label {
+  font-family: var(--font-ui, sans-serif);
+  font-size: 11.5px;
+  fill: var(--text);
+}
+.fs-node-value {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  fill: var(--sm-mute, var(--text-muted));
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.fs-node.hot .fs-node-label { font-weight: 600; }
+.fs-col-title {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  fill: var(--sm-mute, var(--text-muted));
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-band-fill, .fs-node-bar { animation: none; }
+  /* 光点由 JS 决定「不动」，这里只需保证它们仍然可见 */
+  .fs-band-sheen, .fs-band-edge { animation: none; }
+}
+
+@media (max-width: 860px) {
+  .sm { border-radius: 12px; padding: 10px; }
+  .sm-body { grid-template-columns: 1fr; }
+  /* 窄屏单列：侧栏不再需要与画布等高，恢复按内容自适应 */
+  .sm-side { height: auto; }
+  .sm-panel .sm-chips { max-height: none; }
+  .sm-canvas-box { height: clamp(340px, 52vh, 480px); }
+  .sm-list { max-height: 210px; }
+  .sm-head-text h1 { font-size: 20px; }
+  .sm-search input { width: 120px; }
+  .sm-hint span { display: none; }
+  .sm-viz { padding: 12px; }
+  .fv-wrap { height: 300px !important; }
+}

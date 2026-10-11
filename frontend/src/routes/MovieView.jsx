@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { MoviePlayer } from '../components/MoviePlayer.jsx';
 import { TagChip } from '../components/TagChip.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { FavoriteButton } from '../components/FavoriteButton.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { toastSuccess, toastError } from '../lib/toast.jsx';
 import { cleanRoutes, hasOnlyWebRoutes, resolvePlayUrl } from '../lib/mediaUrl.js';
@@ -269,6 +270,7 @@ export function MovieView({ id, source, vid }) {
                   <Icon name="refresh" size={15} /> {rematching ? '正在重新匹配…' : '重新匹配片源'}
                 </button>
               )}
+              <FavoriteButton resourceId={movie.id} label="收藏此片" />
               {movie.tags?.map((tag) => <TagChip key={tag.id} name={tag.name} color={tag.color} />)}
             </div>
           </div>

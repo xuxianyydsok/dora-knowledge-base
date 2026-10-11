@@ -26,6 +26,9 @@ import { Icon } from '../components/Icon.jsx';
 import { toastError, toastSuccess } from '../lib/toast.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { WATCH_KEY } from './MovieView.jsx';
+import { SearchHistory } from '../components/SearchHistory.jsx';
+import { pushHistory } from '../lib/searchHistory.js';
+import '../styles/now-settings.css';
 
 // 推荐片单：按国家/地区分组，点击即按片名聚合搜索。
 // 仅作为检索入口，不代表只能搜这些——搜索框仍可自由检索全部采集源。
@@ -94,6 +97,7 @@ export function Movies() {
 
   // localStorage 记住上次停留的 Tab 之外，不做额外持久化：候选数据每次都要重新拉
   const lastQuery = useRef('');
+  const [histKey, setHistKey] = useState(0);   // 搜索历史刷新信号
 
   // 收藏列表数据只在一个地方用：点海报入库后找回刚创建的那条并跳详情。
   // 「我的收藏」Tab 已下线（2026-10-07，用户要求），本页不再整表渲染收藏。
@@ -154,6 +158,8 @@ export function Movies() {
     const q = query.trim();
     if (!q) return;
     lastQuery.current = q;
+    pushHistory('movies', q);
+    setHistKey((k) => k + 1);
     setMedia('all'); setYear('all');
     switchMode('search', q);
   }
@@ -275,6 +281,9 @@ export function Movies() {
             </button>
           )}
         </form>
+
+        {/* 搜索历史：每条右侧 × 单独删，另有「一键清空」（用户要求） */}
+        <SearchHistory scope="movies" refreshKey={histKey} onPick={(kw) => { setQuery(kw); lastQuery.current = kw; switchMode('search', kw); }} />
 
         {!isChannel && <>
           <div class="seg">

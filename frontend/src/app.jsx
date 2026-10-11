@@ -14,14 +14,16 @@ import { Toaster } from './components/Toaster.jsx';
 import { EmptyState } from './components/StateView.jsx';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { PointerGlow } from './components/PointerGlow.jsx';
+import { ClickFx } from './components/ClickFx.jsx';
+import { LiquidMetal } from './components/LiquidMetal.jsx';
 import { Home } from './routes/Home.jsx';
 import {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
-  Search, Graph, Favorites, Backup, Settings,
+  Search, Graph, GraphHub, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline
+  Gallery, Timeline, Moments, Books, Changelog
 } from './routes/routes.js';
 
 // 真正的 404：未匹配任何路由时显示，而不是静默回落到首页
@@ -55,9 +57,14 @@ function RouterView() {
       <ProtectedRoute path="/posts/:id/edit"><PostEdit /></ProtectedRoute>
       <ProtectedRoute guest path="/posts/:id"><PostView /></ProtectedRoute>
       <ProtectedRoute guest path="/search"><Search /></ProtectedRoute>
+      {/* 公开星图（顶栏「更多 → 图谱」）：博客图谱 / 开源项目图谱 */}
+      <ProtectedRoute guest path="/graph/blog"><GraphHub mode="blog" /></ProtectedRoute>
+      <ProtectedRoute guest path="/graph/repos"><GraphHub mode="repos" /></ProtectedRoute>
+      {/* 站长个人控制台（聚合 AI 解读进度等私有数据），不再出现在顶栏 */}
       <ProtectedRoute guest path="/graph"><Graph /></ProtectedRoute>
       <ProtectedRoute guest path="/gallery"><Gallery /></ProtectedRoute>
       <ProtectedRoute guest path="/timeline"><Timeline /></ProtectedRoute>
+      <ProtectedRoute guest path="/moments"><Moments /></ProtectedRoute>
       <ProtectedRoute guest path="/music"><Music /></ProtectedRoute>
       <ProtectedRoute path="/music/new"><MusicEdit /></ProtectedRoute>
       <ProtectedRoute path="/music/:id/edit"><MusicEdit /></ProtectedRoute>
@@ -69,10 +76,14 @@ function RouterView() {
       <ProtectedRoute path="/movies/:id/edit"><MovieEdit /></ProtectedRoute>
       <ProtectedRoute guest path="/movies/watch/:source/:vid"><MovieView /></ProtectedRoute>
       <ProtectedRoute guest path="/movies/:id"><MovieView /></ProtectedRoute>
+      <ProtectedRoute guest path="/books"><Books /></ProtectedRoute>
       <ProtectedRoute path="/admin/users"><AdminUsers /></ProtectedRoute>
       <ProtectedRoute path="/sources"><SourceHealth /></ProtectedRoute>
-      {/* 收藏夹属个人数据，不再对访客开放（后端 /api/favorites 也已移出访客白名单） */}
-      <ProtectedRoute path="/favorites"><Favorites /></ProtectedRoute>
+      {/* 收藏页对访客开放（2026-10-11 用户要求）：未登录时页面显示友好空态，
+          而不是被重定向到登录页（顶栏「收藏」曾因此看起来像「站长登录」）。 */}
+      <ProtectedRoute guest path="/favorites"><Favorites /></ProtectedRoute>
+      {/* 更新日志（2026-10-11 用户要求）：公开只读，记录每一轮加了什么功能 */}
+      <ProtectedRoute guest path="/changelog"><Changelog /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>
       <NotFound default />
@@ -97,6 +108,8 @@ export function App() {
         <ViewModeProvider>
           <PlayerProvider>
             <PointerGlow />
+            <ClickFx />
+            <LiquidMetal />
             <Layout>
               <Shell />
             </Layout>

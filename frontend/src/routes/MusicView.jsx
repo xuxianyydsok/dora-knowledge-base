@@ -6,6 +6,7 @@ import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { TagChip } from '../components/TagChip.jsx';
+import { FavoriteButton } from '../components/FavoriteButton.jsx';
 import { usePlayer } from '../lib/player.jsx';
 
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
@@ -123,6 +124,7 @@ export function MusicView({ id }) {
               <button onClick={() => route(`/music/${music.id}/lyrics`)}>
                 <Icon name="lyrics" size={15} /> 同步歌词
               </button>
+              <FavoriteButton resourceId={music.id} />
               <button onClick={() => route(`/music/${music.id}/edit`)}>
                 <Icon name="settings" size={15} /> 编辑
               </button>

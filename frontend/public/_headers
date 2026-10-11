@@ -10,8 +10,16 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; connect-src 'self' https: wss:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.bilibili.com
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; connect-src 'self' https: wss:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; frame-src 'self' https: blob:
+
+# frame-src 说明（2026-10-11）：图书页的 PDF 阅读器用 <iframe> 内嵌自建 API 的
+# /api/books/<id>/file（域名随环境变化，不写死），EPUB 阅读器用 srcDoc 的 sandbox iframe。
+# 与 connect-src 同样的理由，这里对 frame-src 放开 https:（不再逐个列 YouTube / B 站域名）。
 
 # 带内容哈希的构建产物可长期强缓存
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# 首页大图：文件名不带哈希，但内容已定稿，给一周缓存 + 允许跨天复用
+/hero/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400

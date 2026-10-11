@@ -29,10 +29,13 @@ export function AuthProvider({ children }) {
       setLoading(false);
       return;
     }
-    supabase.auth.getSession().then(async ({ data }) => {
+    // 启动提速（2026-10-11）：本地 getSession 一回来就解除 loading，让首屏立刻可渲染；
+    // 角色资料 /api/me 改为后台补拉，不再阻塞首屏（否则每次整页刷新都要等一次网络往返，
+    // 后端冷启动时尤其明显）。isAdmin 会在 profile 回来后自动就位。
+    supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-      await loadProfile(data.session?.access_token);
       setLoading(false);
+      loadProfile(data.session?.access_token);
     });
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, s) => {
       setSession(s);

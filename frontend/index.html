@@ -4,9 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#eef1f8" media="(prefers-color-scheme: light)" />
-    <meta name="description" content="Dora：个人知识管理平台，统一管理 HTML 博客、学习视频、GitHub 收藏、音乐、影视与 RSS 订阅，支持全文检索、关联图谱与 AI 自动化。" />
+    <meta name="description" content="Dora：个人知识管理平台，统一管理博客、GitHub 收藏、图展、图书、音乐与影视，支持全文检索、时间轴、碎念、关联图谱、AI 解读与 JSON 备份。" />
     <title>Dora · 个人知识管理平台</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 启动提速：提前与 API / Supabase 建立连接，省掉首个请求的 DNS + TLS 握手 -->
+    <link rel="preconnect" href="https://api.xuguochen.de5.net" crossorigin />
+    <link rel="dns-prefetch" href="https://api.xuguochen.de5.net" />
   </head>
   <body>
     <div id="app"></div>
