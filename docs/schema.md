@@ -11,6 +11,8 @@
 | `20261006000002_categories_tags.sql` | `categories`、`tags`（支持自定义颜色） |
 | `20261006000003_resources.sql` | `resources`、`resource_tags`、`resource_links`、`user_progress` |
 | `20261006000004_blog_rss_notifications.sql` | `posts`、`rss_feeds`、`rss_articles`、`notifications`、`favorites` |
+| `20261009000014_drop_rss.sql` | 删除 `rss_feeds` / `rss_articles`（2026-10-09 用户决定移除 RSS） |
+| `20261012000023_rss.sql` | **重建** `rss_feeds` / `rss_articles`（2026-10-12 RSS 恢复，形态改为「站长订阅、访客只读」） |
 
 ## 表清单
 
@@ -30,8 +32,11 @@
 
 ### 博客 / RSS / 通知
 - **posts**：HTML 博客，`content` 原生 HTML（支持 katex/three/mermaid/chart 标签）、`status`、`slug`、`cover_path`
-- **rss_feeds**：订阅源，`feed_url`、`fetch_interval`、`last_fetched_at`、`is_active`
-- **rss_articles**：文章元信息+摘要，`guid` 去重、`is_read`
+- **rss_feeds**（2026-10-12 恢复重建）：订阅源，`feed_url`、`description`（源简介）、
+  `fetch_interval`（默认 14400 秒）、`last_fetched_at`、`is_active`、`is_public`（访客可见）、
+  `last_error` / `error_count`（抓取健康度）、`etag` / `last_modified`（条件请求）
+- **rss_articles**：条目元信息 + 纯文本摘要 + 源站自带正文 HTML（`content_html`，
+  ≥200 字才存、截 200KB），`guid` 去重、`is_read`
 - **notifications**：通知中心，`type` ∈ rss_new/link_broken/system
 - **favorites**：跨类型收藏夹
 

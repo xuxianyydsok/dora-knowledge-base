@@ -18,6 +18,8 @@ const PRIMARY = [
   ['/music', '音乐'], ['/movies', '影视'],
   ['/books', '图书'],
   ['/gallery', '图展'], ['/timeline', '时间轴'], ['/moments', '碎念'],
+  // RSS 阅读器（2026-10-12 恢复）：站长订阅一次，所有人来读，不用各自订阅
+  ['/rss', 'RSS'],
   ['/graph/blog', '图谱'], ['/favorites', '收藏'], ['/changelog', '更新'], ['/coop', '共创']
 ];
 

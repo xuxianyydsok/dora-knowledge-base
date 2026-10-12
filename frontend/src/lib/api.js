@@ -678,6 +678,35 @@ export const api = {
   listNewsSources: () => request('/api/news/sources'),
   getNews: (id) => request(`/api/news/${encodeURIComponent(id)}`),
 
+  // RSS 订阅（方案 A：站长订阅一次，访客只读）
+  // 读接口访客可用；写接口（增删改 / 抓取 / 标记已读 / 导入）只有站长能用。
+  listRssFeeds: (params = '') => request(`/api/rss/feeds${params}`),
+  getRssFeed: (id) => request(`/api/rss/feeds/${id}`),
+  createRssFeed: (body) => request('/api/rss/feeds', { method: 'POST', body }),
+  updateRssFeed: (id, body) => request(`/api/rss/feeds/${id}`, { method: 'PATCH', body }),
+  deleteRssFeed: (id) => request(`/api/rss/feeds/${id}`, { method: 'DELETE' }),
+  fetchRssFeed: (id) => request(`/api/rss/feeds/${id}/fetch`, { method: 'POST' }),
+  // 批量抓取：多个源逐个抓，后端上限 45s，这里把客户端超时放宽到 60s
+  fetchAllRssFeeds: (batchSize = 10) =>
+    request('/api/rss/fetch-all', { method: 'POST', body: { batch_size: batchSize }, timeout: 60000 }),
+  listRssArticles: (params = '') => request(`/api/rss/articles${params}`),
+  getRssArticle: (id) => request(`/api/rss/articles/${id}`),
+  markRssArticle: (id, isRead) => request(`/api/rss/articles/${id}`, { method: 'PATCH', body: { is_read: isRead } }),
+  markAllRssRead: (feedId) =>
+    request('/api/rss/articles/read-all', { method: 'POST', body: feedId ? { feed_id: feedId } : {} }),
+  // 精选源清单（「懒得一个一个订阅」：一键导入）
+  listRssPresets: (group = 'all') => request(`/api/rss/presets?group=${encodeURIComponent(group)}`),
+  // 自动发现：粘一个站点首页，后端去找它的 feed 地址（不落库，只返回候选）
+  discoverRssFeed: (url) => request('/api/rss/discover', { method: 'POST', body: { url }, timeout: 30000 }),
+  importRssOpml: (opml) => request('/api/rss/opml', { method: 'POST', body: { opml }, timeout: 60000 }),
+  importRssFeeds: (feeds) => request('/api/rss/opml', { method: 'POST', body: { feeds }, timeout: 60000 }),
+  // OPML 导出返回 text/xml（不是 JSON），单独处理
+  exportRssOpml: async () => {
+    const res = await fetch(`${API_BASE_URL}/api/rss/opml`, { headers: await authHeader() });
+    if (!res.ok) throw new ApiError(res.status, `导出失败 (${res.status})`);
+    return res.text();
+  },
+
   // 全文检索
   search: (q, params = '') => request(`/api/search?q=${encodeURIComponent(q)}${params}`),
 

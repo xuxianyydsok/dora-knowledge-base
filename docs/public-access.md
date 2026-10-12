@@ -64,6 +64,12 @@ export function guestPostFilters() { return { status: 'eq.published', is_public:
 export function guestResourceFilters() { return { is_public: 'eq.true' }; }
 ```
 
+> **2026-10-12 更新**：白名单又加了 `rss`（RSS 阅读器恢复，形态为「站长订阅一次、
+> 访客只读」）。访客的 `GET /api/rss/*` 放行，但查询层必须叠加
+> `guestRssFeedFilters()` 返回的 `is_public=eq.true`（见 `docs/rss.md` 第 2 节）。
+> RSS 的写操作（加源 / 抓取 / 标已读 / 导入 OPML）全部走 `requireAdmin`，且不在
+> `PUBLIC_POST_PATHS` 里，访客天然被挡。
+
 > 注意白名单里**已移除** `favorites`（收藏夹属个人数据）与 `/api/github/analyze`
 > （消耗 AI 额度，仅管理员）。
 > 2026-10-10 新增 `gallery`（图片展览）与 `timeline`（公开时间轴）两个只读入口；
@@ -147,6 +153,25 @@ export function guestResourceFilters() { return { is_public: 'eq.true' }; }
 > 条目默认 `is_public=false`（私人），只有站长显式公开才对外可见。详见 `docs/now-settings.md`。
 
 ### 4.7 明确不在本次范围（保持原样）
+
+### 4.8 RSS 订阅（2026-10-12 恢复，方案 A：站长订阅、访客只读）
+
+| 方法 | 路径 | 公开访客 | 登录用户 | 管理员 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/rss/feeds`、`/api/rss/feeds/:id` | ✅ 仅站长的 `is_public=true` 源 | 同访客（本版只有站长有源） | 自己全部 |
+| GET | `/api/rss/articles`、`/api/rss/articles/:id` | ✅ 仅公开源下的条目；单条命中后校验所属源公开，否则 **404** | 同上 | 自己全部 |
+| GET | `/api/rss/opml`、`/api/rss/presets` | ✅ 只读 | ✅ | ✅ |
+| POST/PATCH/DELETE | `/api/rss/feeds*`、`/api/rss/fetch-all`、`/api/rss/opml`（导入）、`/api/rss/discover` | ❌ 401/403 | ❌ 403（写操作仅站长） | ✅ |
+
+两个与其它模块不同的点：
+
+1. **写操作只给站长**（`requireAdmin`），不是「本人可写」—— 因为这是「站长订阅一次、
+   所有人来读」的共享内容，不能让每个登录用户各建一套源。
+2. **访客的 `is_read` 恒为 `null`**：已读状态对访客只存本机（`localStorage`），
+   不写数据库。站长本人的已读才写 `rss_articles.is_read`，多设备同步。
+
+访客的查询过滤在 `backend/src/routes/rss.js` 的 `feedReadFilter()` 与 `listArticles()`
+里显式叠加，**不能**依赖 RLS（Worker 是 `service_role`，绕过 RLS）。
 
 - `GET /api/assets/:id`：按设计**完全公开**（图片素材按 id 读取），不动。
 - `GET /api/news/*`：NewsNow 热榜，无 owner 数据，不动。

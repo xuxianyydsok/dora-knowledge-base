@@ -27,6 +27,7 @@ const Movies = lazy(() => import('./Movies.jsx').then((m) => ({ default: m.Movie
 const MovieView = lazy(() => import('./MovieView.jsx').then((m) => ({ default: m.MovieView })));
 const MovieEdit = lazy(() => import('./MovieEdit.jsx').then((m) => ({ default: m.MovieEdit })));
 const News = lazy(() => import('./News.jsx').then((m) => ({ default: m.News })));
+const Rss = lazy(() => import('./Rss.jsx').then((m) => ({ default: m.Rss })));
 const AdminUsers = lazy(() => import('./AdminUsers.jsx').then((m) => ({ default: m.AdminUsers })));
 const SourceHealth = lazy(() => import('./SourceHealth.jsx').then((m) => ({ default: m.SourceHealth })));
 const Gallery = lazy(() => import('./Gallery.jsx').then((m) => ({ default: m.Gallery })));
@@ -43,5 +44,5 @@ export {
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback
+  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback, Rss
 };

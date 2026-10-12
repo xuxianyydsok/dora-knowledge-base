@@ -7,6 +7,8 @@ import { scheduledSync } from './lib/githubStars.js';
 import { analyzePending } from './lib/githubAi.js';
 import { refreshDynamicSources } from './lib/dynamicSources.js';
 import { resetVodSourceCache } from './lib/maccms.js';
+import { SupabaseClient } from './lib/supabase.js';
+import { syncAllFeeds } from './lib/rssSync.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -30,6 +32,16 @@ export default {
         .then(() => analyzePending(env))
         .then((r) => console.log('github ai', JSON.stringify(r)))
         .catch((e) => console.error('github star sync', e.message)));
+
+      // ③ RSS 抓取（2026-10-12 恢复）：**搭同一个 cron 的车**，不新增触发器。
+      //    每轮最多抓 6 个「到期的源」（按 last_fetched_at 最旧的先抓），
+      //    每天触发 24 次 → 每天约 144 次抓取机会，够覆盖几十个源滚动更新。
+      //    站点默认抓取间隔是 4 小时，所以一个源一天大约被真正抓 4~6 次。
+      ctx.waitUntil((async () => {
+        const db = new SupabaseClient(env);
+        const summary = await syncAllFeeds(db, { deadlineMs: 20000, batchSize: 6, timeoutMs: 8000 });
+        console.log('rss sync', JSON.stringify(summary));
+      })().catch((e) => console.error('rss sync 失败:', e?.message || e)));
     }
 
     // ② 动态影视源探测：**任何 cron 触发都顺带跑一小批**。

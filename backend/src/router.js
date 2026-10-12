@@ -19,6 +19,7 @@ import * as music from './routes/music.js';
 import * as movies from './routes/movies.js';
 import * as admin from './routes/admin.js';
 import * as news from './routes/news.js';
+import * as rss from './routes/rss.js';
 import * as douban from './routes/douban.js';
 import * as musicCharts from './routes/musicCharts.js';
 import * as assets from './routes/assets.js';
@@ -189,6 +190,27 @@ const routes = [
   // NewsNow 热榜（代理自部署的 newsnow-api）
   ['GET', '/api/news/sources', news.listNewsSources],
   ['GET', '/api/news/:id', news.getNews],
+
+  // RSS 订阅（2026-10-12 恢复，方案 A：站长订阅、访客只读）
+  // 读（feeds / articles / opml 导出）对访客开放，路由层只返回站长公开的源；
+  // 写（新增 / 改 / 删 / 抓取 / 标已读 / OPML 导入）在路由内走 requireAdmin。
+  // ⚠ 顺序：/api/rss/feeds/:id/fetch 与 /api/rss/articles/read-all 都是 3 段路径，
+  //   必须排在 2 段的 /api/rss/feeds/:id、/api/rss/articles/:id 之前，否则会被当成 id 吞掉。
+  ['GET', '/api/rss/feeds', rss.listFeeds],
+  ['POST', '/api/rss/feeds', rss.createFeed],
+  ['POST', '/api/rss/discover', rss.discoverFeed],
+  ['GET', '/api/rss/presets', rss.getPresets],
+  ['GET', '/api/rss/feeds/:id', rss.getFeed],
+  ['PATCH', '/api/rss/feeds/:id', rss.updateFeed],
+  ['DELETE', '/api/rss/feeds/:id', rss.deleteFeed],
+  ['POST', '/api/rss/feeds/:id/fetch', rss.fetchFeedNow],
+  ['POST', '/api/rss/fetch-all', rss.fetchAllFeeds],
+  ['GET', '/api/rss/articles', rss.listArticles],
+  ['POST', '/api/rss/articles/read-all', rss.markArticlesRead],
+  ['GET', '/api/rss/articles/:id', rss.getArticle],
+  ['PATCH', '/api/rss/articles/:id', rss.updateArticle],
+  ['GET', '/api/rss/opml', rss.exportOpml],
+  ['POST', '/api/rss/opml', rss.importOpml],
 
 
   // 全文检索

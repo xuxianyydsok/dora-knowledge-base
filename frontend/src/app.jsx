@@ -24,7 +24,7 @@ import {
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback
+  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback, Rss
 } from './routes/routes.js';
 
 // 真正的 404：未匹配任何路由时显示，而不是静默回落到首页
@@ -66,6 +66,8 @@ function RouterView() {
       <ProtectedRoute guest path="/gallery"><Gallery /></ProtectedRoute>
       <ProtectedRoute guest path="/timeline"><Timeline /></ProtectedRoute>
       <ProtectedRoute guest path="/moments"><Moments /></ProtectedRoute>
+      {/* RSS 阅读器（2026-10-12 恢复，方案 A）：访客可读站长的订阅，写操作仅站长 */}
+      <ProtectedRoute guest path="/rss"><Rss /></ProtectedRoute>
       <ProtectedRoute guest path="/music"><Music /></ProtectedRoute>
       <ProtectedRoute path="/music/new"><MusicEdit /></ProtectedRoute>
       <ProtectedRoute path="/music/:id/edit"><MusicEdit /></ProtectedRoute>

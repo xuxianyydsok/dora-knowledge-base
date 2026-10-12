@@ -2836,3 +2836,82 @@ This account has reached the Workers Free limit of 5 cron triggers per account
 
 - 观察几天线上探测通过率，必要时调 `DYNAMIC_SOURCE_BATCH` 或超时。
 - 管理员接口目前只有后端，前端「源状态」页可考虑加一个入口（待用户决定）。
+
+---
+
+## 2026-10-12（第十一轮）· RSS 阅读器恢复（站长订阅、访客只读，分支 feat/now-settings）
+
+**用户需求**：恢复 RSS（2026-10-09 曾整个删掉），但**不想自己一个个订阅**；
+界面要做成开源阅读器 **Folo** 那种样子；**精选源只涉及国内的**。
+
+**结论 / 方案**：走**方案 A —— 站长订阅一次、访客只读**。
+站长在 `/rss` 里维护订阅源，所有访客打开 `/rss` 直接读，不用登录、不用订阅；
+额度最低（只有站长的源被抓一次，访客读数据库里已有的条目）。
+
+### 本轮完成内容
+
+**后端**
+
+| 文件 | 变化 |
+| --- | --- |
+| `backend/src/lib/rss.js` | 从删除提交取回 + 加 `description`（源简介）与 `contentHtml`（正文 HTML，≥200 字才存，截 200KB） |
+| `backend/src/lib/rssSync.js` | 取回 + 失败记账（`last_error` / `error_count`，成功归零）+ 补全源简介 |
+| `backend/src/lib/rssPresets.js` | **新增**：14 个**国内**精选源，分 AI / 科技媒体 / 开发者博客三组 |
+| `backend/src/routes/rss.js` | 取回后**按方案 A 重写权限**：读走 `requireAuth`（访客可进）、写走 `requireAdmin`；字段白名单（不回传 `user_id`）；新增 `GET /presets` 与 `POST /discover`（自动发现 feed） |
+| `backend/src/router.js` | 接回 14 条 `/api/rss/*` 路由（顺序：3 段路径排在 2 段之前） |
+| `backend/src/index.js` | 抓取**搭现有 cron 的车**（`*/5 2-3 * * *` 里抓 6 个到期源），**不新增触发器** |
+| `backend/src/lib/publicScope.js` | `PUBLIC_READ_RE` 加 `rss`；新增 `guestRssFeedFilters()`（访客只看 `is_public=true`） |
+| `backend/src/routes/notifications.js`、`lib/notify.js` | `rss_new` 通知类型加回 |
+
+**前端**
+
+| 文件 | 变化 |
+| --- | --- |
+| `frontend/src/routes/Rss.jsx` | **新增**：Folo 式三栏阅读器（订阅源 / 文章列表 / 正文就地阅读），站长多一个管理抽屉（添加 / 精选源 / 批量） |
+| `frontend/src/styles/rss.css` | **新增**：三栏布局样式，窄屏逐级折叠成单栏 |
+| `frontend/src/lib/rssRead.js` | **新增**：访客的「已读」存本机（站长存数据库） |
+| `frontend/src/lib/api.js` | 加 14 个 RSS 方法 |
+| `frontend/src/routes/routes.js`、`app.jsx`、`components/Layout.jsx` | 接回 `/rss` 路由与顶栏入口 |
+| 旧的 `RssFeeds.jsx` / `RssArticles.jsx` | **删除**（被新的单页三栏阅读器取代） |
+
+**数据库**：新增迁移 `supabase/migrations/20261012000023_rss.sql`
+（重建 `rss_feeds` / `rss_articles`，比旧版多 `is_public` / `last_error` / `error_count` / `content_html` 四列）。
+**需要手动在 Supabase SQL Editor 跑一次**（见下面「坑」）。
+
+**文档**：新增 `docs/rss.md`（权限矩阵 / 抓取机制 / 接口表 / 坑）；
+`docs/removed-features.md` 的 RSS 一节标注为「已恢复，形态已变」。
+
+### 精选源（国内，实测能抓）
+
+AI 与前沿科技：量子位、雷锋网、InfoQ 中文站
+科技媒体：36氪、IT之家、爱范儿、极客公园、钛媒体、少数派、开源中国、中国新闻网
+开发者博客：阮一峰的网络日志、云风的 BLOG、Solidot 奇客资讯
+
+实测**抓不到、已剔除**：机器之心（`/rss` 302 跳 data-service）、虎嗅（连接超时）、
+品玩（返回 HTML 非 feed）、知乎日报（404）、澎湃（302）。这些站已不再对外提供 RSS，
+放进来只会变成一堆红叉。
+
+### 验证结果
+
+- 后端单元 + 契约测试：**129 项全过**（新增 9 项 RSS 用例：RSS/Atom 解析、OPML 往返、
+  访客白名单、`is_public` 过滤、路由读写权限、精选源纯国内、cron 未新增）。
+- 前端生产构建：✅ 通过。
+- 线上核对（部署前）：`/api/rss/feeds` → 404（RSS 尚未上线，符合预期）。
+
+### 坑与注意
+
+1. **数据库迁移要手动跑**：`.github/workflows/db-migrate.yml` 需要
+   `SUPABASE_ACCESS_TOKEN` / `SUPABASE_DB_PASSWORD` 两个仓库密钥，目前**缺失**，
+   自动迁移不会执行。必须在 Supabase SQL Editor 手动运行
+   `supabase/migrations/20261012000023_rss.sql` 的内容，否则 RSS 接口会报
+   「relation rss_feeds does not exist」。
+2. **不能加 cron**：账号 5 个触发器已满，抓取只能搭 `*/5 2-3 * * *` 的车。
+3. **访客过滤必须在查询层**：Worker 是 `service_role`，绕过 RLS。
+4. **列表接口不带正文**：`content_html` 只在 `GET /api/rss/articles/:id` 返回。
+5. **旧数据不可恢复**：2026-10-09 删除时数据一并删掉了，恢复后是空库。
+
+### 下一步
+
+- 用户验收 `/rss`：三栏阅读器、站长管理抽屉、精选源一键导入。
+- 待办（用户已提，未做）：音乐 / 影视搜索结果里把「来自哪个源」显示得更醒目
+  —— 用户反馈「搜出来看着和以前没区别」，其实是页面没把新增的音源 / 片源标出来。

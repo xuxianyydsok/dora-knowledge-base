@@ -396,58 +396,83 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/api/search?q=Rick&resource_type=mu
 
 # Phase5 新增接口：RSS 订阅 + 影视库
 
-## RSS 订阅
+## RSS 订阅（2026-10-12 恢复，形态：站长订阅、访客只读）
 
-订阅源存于 `rss_feeds`，条目存于 `rss_articles`（仅元信息 + 文本摘要，不下载媒体文件）。
-新条目写入通知中心（`type=rss_new`）。Worker Cron 每小时分批抓取一次，规避 30s 超时。
+订阅源存于 `rss_feeds`，条目存于 `rss_articles`（元信息 + 纯文本摘要 +
+源站自带的正文 HTML，**不下载媒体文件**）。新条目写入通知中心（`type=rss_new`）。
+抓取**搭现有 cron 的车**（`*/5 2-3 * * *`，每轮抓 6 个到期源），**不新增定时触发器**。
+
+> ⚠️ 权限与旧版（2026-10-09 删除前）**完全不同**：
+> 旧版是「每个用户各订阅各的」，新版是**站长订阅一次、访客只读**。
+> 读接口（GET）对访客开放，读的是站长的订阅；写接口（POST/PATCH/DELETE）**仅站长**。
+> 详见 `docs/rss.md`。
 
 ### 订阅源
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/rss/feeds` | 列表（含 `unread_count`；管理员可 `?all=true`；可 `?category_id=`） |
-| POST | `/api/rss/feeds` | 新增，body: `{ feed_url, title?, site_url?, category_id?, fetch_interval?, fetch_now? }`，默认立即抓取一次 |
-| GET | `/api/rss/feeds/:id` | 详情 |
-| PATCH | `/api/rss/feeds/:id` | 更新（title/site_url/fetch_interval/is_active/category_id/feed_url） |
-| DELETE | `/api/rss/feeds/:id` | 删除（级联删除条目） |
-| POST | `/api/rss/feeds/:id/fetch` | 手动抓取单个订阅源，返回 `{ notModified, newCount }` |
-| POST | `/api/rss/fetch-all` | 抓取本人全部活跃订阅源（分批，body: `{ batch_size? }`，≤30） |
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/rss/feeds` | 读（含访客） | 列表，含 `total_count` / `unread_count`（访客的 `unread_count` 为 `null`）；可 `?category_id=` |
+| GET | `/api/rss/feeds/:id` | 读（含访客） | 详情 |
+| POST | `/api/rss/feeds` | 站长 | 新增，body: `{ feed_url, title?, site_url?, category_id?, fetch_interval?, is_public?, fetch_now? }`，默认立即抓取一次 |
+| PATCH | `/api/rss/feeds/:id` | 站长 | 更新（title/site_url/description/fetch_interval/is_active/is_public/category_id/feed_url） |
+| DELETE | `/api/rss/feeds/:id` | 站长 | 删除（级联删除条目） |
+| POST | `/api/rss/feeds/:id/fetch` | 站长 | 手动抓取单个订阅源，返回 `{ notModified, newCount }` |
+| POST | `/api/rss/fetch-all` | 站长 | 抓取本人全部活跃订阅源（分批，body: `{ batch_size? }`，≤30，45s 截止） |
+| POST | `/api/rss/discover` | 站长 | 自动发现：body `{ url }`（可传站点首页），返回 `{ candidates: [{ feed_url, title }] }`，**不落库** |
+| GET | `/api/rss/presets` | 读 | 精选源清单，`?group=ai|media|dev|all`（默认 all） |
 
-- `fetch_interval` 单位秒，范围 300–86400，默认 3600。
+- `fetch_interval` 单位秒，范围 300–86400，**默认 14400（4 小时）**。
+- `is_public` 默认 `true`：站长可把单个源设为私人，访客读接口会按它过滤。
 - 抓取使用 ETag / Last-Modified 条件请求，未更新时返回 `notModified=true`。
+- 抓取失败写 `last_error` / `error_count`（成功归零），前端据此标红。
 - 同一 `(feed_id, guid)` 幂等，重复抓取不会产生重复条目。
+- 访客请求**非公开**的源一律返回 404，不泄露「存在但没权限」。
 
 ### 条目
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/rss/articles` | 列表（`?feed_id=&unread=true&limit=&offset=`；管理员可 `?all=true`），返回含 `feed_title` |
-| PATCH | `/api/rss/articles/:id` | 标记已读/未读，body: `{ is_read }` |
-| POST | `/api/rss/articles/read-all` | 全部已读（可 `{ feed_id }` 限定单个源） |
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/rss/articles` | 读（含访客） | 列表（`?feed_id=&unread=true&limit=&offset=`），含 `feed_title`；**不含 `content_html`** |
+| GET | `/api/rss/articles/:id` | 读（含访客） | 单条详情，**含 `content_html`**（阅读器点开时才取，避免列表变重） |
+| PATCH | `/api/rss/articles/:id` | 站长 | 标记已读/未读，body: `{ is_read }` |
+| POST | `/api/rss/articles/read-all` | 站长 | 全部已读（可 `{ feed_id }` 限定单个源） |
+
+- 访客的 `is_read` 恒为 `null`：已读状态只存本机（`frontend/src/lib/rssRead.js`），
+  因为访客没有写权限，硬写会让全站访客互相覆盖彼此的阅读进度。
 
 ### OPML 导入导出
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/rss/opml` | 导出 OPML（`text/xml`，需携带 JWT） |
-| POST | `/api/rss/opml` | 导入，body: `{ opml: "<xml>" }` 或 `{ feeds: [{ feed_url, title? }] }`；已存在链接自动跳过 |
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/rss/opml` | 读（含访客） | 导出 OPML（`text/xml`，前端需单独处理，不走 JSON 解析） |
+| POST | `/api/rss/opml` | 站长 | 导入，body: `{ opml: "<xml>" }` 或 `{ feeds: [{ feed_url, title? }] }`；已存在的链接自动跳过 |
 
-### 调用示例
+### 示例
 ```bash
-TOKEN=<access token>
-BASE=http://127.0.0.1:8787
+BASE=https://api.xuguochen.de5.net
+TOKEN=<JWT>
 
-# 添加订阅源并立即抓取
+# 访客直接读（无需令牌）
+curl "$BASE/api/rss/feeds"
+curl "$BASE/api/rss/articles?limit=20"
+
+# 站长：粘站点首页，让后端去找 RSS
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"feed_url":"https://hnrss.org/frontpage","title":"Hacker News"}' "$BASE/api/rss/feeds"
+  -d '{"url":"https://www.ruanyifeng.com/blog/"}' "$BASE/api/rss/discover"
 
-# 手动抓取单个源
+# 站长：一键导入国内精选源
+curl "$BASE/api/rss/presets?group=media"
+
+# 站长：新增并立即抓取
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"feed_url":"https://www.ithome.com/rss/","title":"IT之家"}' "$BASE/api/rss/feeds"
+
+# 站长：手动抓取 / 批量抓取
 curl -X POST -H "Authorization: Bearer $TOKEN" "$BASE/api/rss/feeds/<feed_id>/fetch"
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"batch_size":10}' "$BASE/api/rss/fetch-all"
 
-# 未读条目
-curl -H "Authorization: Bearer $TOKEN" "$BASE/api/rss/articles?unread=true&limit=20"
-
-# 导出 / 导入 OPML
+# 站长：导出 / 导入 OPML
 curl -H "Authorization: Bearer $TOKEN" "$BASE/api/rss/opml" -o rss.opml
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"feeds":[{"feed_url":"https://github.blog/feed/","title":"GitHub Blog"}]}' "$BASE/api/rss/opml"
+  -d '{"feeds":[{"feed_url":"https://www.qbitai.com/feed","title":"量子位"}]}' "$BASE/api/rss/opml"
 ```
 
 ## 影视库
