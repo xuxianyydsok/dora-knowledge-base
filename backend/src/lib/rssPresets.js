@@ -5,11 +5,17 @@
 //
 // 取舍（2026-10-12 用户要求：**只收国内的源**）：
 //  - 全部为中文站点；国外源（OpenAI / HN / TechCrunch 等）一律不收。
-//  - 每个地址都**实测过**能直接抓（返回 RSS/Atom 且有条目）；抓不到的已剔除：
-//    机器之心（/rss 302 跳 data-service）、虎嗅（连接超时）、品玩（返回 HTML 非 feed）、
-//    知乎日报（404）、澎湃（302）。这些源要么已停止提供 RSS，要么对爬虫不友好，
-//    放进来只会变成一堆红叉，不如不收。
-//  - 分三组，站长可以只挑其中一组导入。
+//  - 每个地址都**从 Cloudflare 出口实测过**（不是本机测的 —— 抓取发生在 Worker 里，
+//    本机能不能连通没有意义）。2026-10-12 全量复测，抓不到的已剔除：
+//    · 36氪（/feed、/feed-newsflash 均 403）、虎嗅（12s 超时）、品玩（返回 HTML 非 feed）、
+//      cnBeta（404）、机器之心（返回 HTML 非 feed）、IT之家 /rss/it/（500）；
+//    · 酷壳、Linux 中国、阿里技术（Cloudflare 1016 源站错误）；
+//    · 知乎（401 要登录态）、微博（403）、掘金 tag 页（404，但 /rss 可用）；
+//    · **B站全线被封**：api.bilibili.com 从 Cloudflare 出口一律返回
+//      `{"code":-412,"message":"request was banned"}`，试过 6 种 header 组合
+//      （完整浏览器头 / buvid cookie / Referer+Origin）全部无效 —— 是按 CF 的 IP 段封的。
+//      2026-10-12 用户明确：「b 站的话放弃」。
+//  - 分组按内容类型划分，站长可以只挑其中一组导入。
 //  - 这些只是**默认建议**，不是硬编码；站长导入后可以随时单独删除。
 //
 // 纯数据模块：无 IO、无依赖，可被单测直接 import。
@@ -22,25 +28,44 @@ const PRESETS = [
   ['https://www.infoq.cn/feed', 'InfoQ 中文站', 'ai'],
 
   // —— 科技媒体 ——
-  ['https://36kr.com/feed', '36氪', 'media'],
   ['https://www.ithome.com/rss/', 'IT之家', 'media'],
   ['https://www.ifanr.com/feed', '爱范儿', 'media'],
   ['https://www.geekpark.net/rss', '极客公园', 'media'],
   ['https://www.tmtpost.com/rss.xml', '钛媒体', 'media'],
   ['https://sspai.com/feed', '少数派', 'media'],
-  ['https://www.oschina.net/news/rss', '开源中国', 'media'],
-  ['https://www.chinanews.com.cn/rss/scroll-news.xml', '中国新闻网', 'media'],
+  ['https://www.landiannews.com/feed', '蓝点网', 'media'],
+  ['https://www.appinn.com/feed/', '小众软件', 'media'],
+  ['https://www.iplaysoft.com/feed', '异次元软件世界', 'media'],
+  ['https://www.gcores.com/rss', '机核 GCORES', 'media'],
+  ['https://post.smzdm.com/feed/', '什么值得买', 'media'],
+  ['https://rss.zol.com.cn/news.xml', '中关村在线', 'media'],
 
   // —— 开发者博客 / 社区 ——
   ['https://www.ruanyifeng.com/blog/atom.xml', '阮一峰的网络日志', 'dev'],
   ['https://blog.codingnow.com/atom.xml', '云风的 BLOG', 'dev'],
-  ['https://www.solidot.org/index.rss', 'Solidot 奇客资讯', 'dev']
+  ['https://www.solidot.org/index.rss', 'Solidot 奇客资讯', 'dev'],
+  ['https://www.oschina.net/news/rss', '开源中国', 'dev'],
+  ['https://www.v2ex.com/index.xml', 'V2EX · 最新主题', 'dev'],
+  ['https://www.v2ex.com/feed/tab/tech.xml', 'V2EX · 技术', 'dev'],
+  ['https://juejin.cn/rss', '掘金', 'dev'],
+  ['https://feed.cnblogs.com/blog/sitehome/rss', '博客园', 'dev'],
+  ['https://www.52pojie.cn/forum.php?mod=rss', '吾爱破解', 'dev'],
+  ['https://tech.meituan.com/feed/', '美团技术团队', 'dev'],
+  ['https://www.archlinuxcn.org/feed/', 'Arch Linux 中文社区', 'dev'],
+  ['https://ruby-china.org/topics/feed', 'Ruby China', 'dev'],
+
+  // —— 新闻与时事 ——
+  ['https://www.chinanews.com.cn/rss/scroll-news.xml', '中国新闻网', 'news'],
+  ['https://www.xinhuanet.com/politics/news_politics.xml', '新华网 · 时政', 'news'],
+  ['https://www.people.com.cn/rss/politics.xml', '人民网 · 时政', 'news'],
+  ['https://rss.sina.com.cn/tech/rollnews.xml', '新浪科技', 'news']
 ];
 
 export const PRESET_GROUPS = [
   { key: 'ai', label: 'AI 与前沿科技', desc: '人工智能与新技术动态' },
   { key: 'media', label: '科技媒体', desc: '综合科技新闻与产品报道' },
   { key: 'dev', label: '开发者博客', desc: '中文技术博客与社区' },
+  { key: 'news', label: '新闻与时事', desc: '主流媒体的 RSS 栏目' },
   { key: 'github', label: 'GitHub 趋势', desc: 'GitHub Trending 日榜 / 周榜 / 月榜' },
   { key: 'mine', label: '我从 Folo 导出的', desc: '站长自己在 Folo 里订的源（只保留国内站点，且实测能抓）' }
 ];

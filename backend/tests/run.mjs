@@ -580,12 +580,16 @@ async function unit() {
     // 用户要求「只涉及国内的」：不能出现已知的境外源。
     // 注意 YouTube 也在内 —— 用户后来明确「不要抓国外的」，中文频道同样不算国内站点
     //（曾经把两个中文 YouTube 频道放进来过，已移除）。
+    // 按**主机名后缀**比对，不能用 url.includes(host)：
+    // v2ex.com 里含子串 "x.com"，朴素 includes 会把国内站误判成境外站。
     const foreign = ['openai.com', 'anthropic.com', 'huggingface.co', 'ycombinator.com', 'techcrunch.com',
       'theverge.com', 'arstechnica.com', 'technologyreview.com', 'dev.to', 'lobste.rs', 'github.blog',
       'cloudflare.com', 'youtube.com', 'youtu.be', 'x.com', 'twitter.com', 'reddit.com', 'medium.com'];
+    const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ''; } };
     for (const f of all) {
-      for (const host of foreign) {
-        assert(!f.feed_url.includes(host), `精选源不应包含境外源 ${host}：${f.feed_url}`);
+      const host = hostOf(f.feed_url);
+      for (const bad of foreign) {
+        assert(host !== bad && !host.endsWith(`.${bad}`), `精选源不应包含境外源 ${bad}：${f.feed_url}`);
       }
       assert(/^https:\/\//.test(f.feed_url), `精选源必须是 https：${f.feed_url}`);
       assert(f.title && f.title.trim(), `精选源必须有标题：${f.feed_url}`);
@@ -595,7 +599,7 @@ async function unit() {
     assert(ai.length > 0 && ai.every((f) => f.group === 'ai'), 'group=ai 应只返回 AI 组');
     assert(ai.length < all.length, 'group 过滤应真的缩小范围');
     const keys = rssPresets.PRESET_GROUPS.map((g) => g.key).sort().join(',');
-    assert(keys === 'ai,dev,github,media,mine', `分组应为 ai/dev/github/media/mine，实际 ${keys}`);
+    assert(keys === 'ai,dev,github,media,mine,news', `分组应为 ai/dev/github/media/mine/news，实际 ${keys}`);
     // GitHub 趋势组：用户点名要的（唯一一处用户明确要求保留的境外平台，
     // 因为 GitHub Trending 本身就是 GitHub 的功能，没有国内替代品）。
     const gh = rssPresets.listPresets('github');
@@ -607,7 +611,7 @@ async function unit() {
     // 无重复地址
     const urls = all.map((f) => f.feed_url);
     assert(new Set(urls).size === urls.length, '精选源地址不应重复');
-    return `${all.length} 个国内源 / 3 组 / 无重复 / 无境外源`;
+    return `${all.length} 个国内源 / ${rssPresets.PRESET_GROUPS.length} 组 / 无重复 / 无境外源`;
   });
 
   await test('RSS 抓取搭车现有 cron：不新增触发器', async () => {
