@@ -16,6 +16,9 @@ GITHUB_STARS_USER = "xuxianyydsok"   # /github 页同步此账号的 GitHub Star
 
 [triggers]
 # GitHub Star 同步：每天 UTC 02:00–03:55（北京时间 10:00）每 5 分钟一页；AI 解读：每分钟 2 个
+# 动态影视源探测**复用这一个 cron**（不新增触发器）：
+#   Cloudflare 免费版每个账号上限 5 个 cron，本账号已被 mailflare(2) / moontv-plus(1) /
+#   rin-server(1) 占满，因此动态源探测挂在同一个 cron 里顺带跑，每次探一小批。
 crons = ["*/5 2-3 * * *"]
 
 # Workers AI（GitHub 收藏中文解读，免费额度）

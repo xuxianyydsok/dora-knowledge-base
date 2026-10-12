@@ -9,7 +9,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchMovieMeta, fetchMovieLatest, fetchMovieDetailBySource } from '../lib/fetchers.js';
 import { getSourceHealth, getVodSourceHealth as readVodSourceHealth } from '../lib/sourceHealth.js';
-import { getVodSources, titleRelevance } from '../lib/maccms.js';
+import { ensureVodSources, titleRelevance } from '../lib/maccms.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool,
   optionalNumber, optionalDateString, requireEnum
@@ -430,7 +430,7 @@ export async function refreshMovieSource(request, env, id) {
   const title = String(resource.title || '').trim();
   if (!title) throw new HttpError(422, '该记录没有标题，无法重新匹配片源');
 
-  const configured = getVodSources(env);
+  const configured = await ensureVodSources(env);
   const configuredKeys = new Set(configured.map((s) => s.key));
   const oldKey = ext.source_key || resource.source || null;
   const oldKeyUsable = !!(oldKey && configuredKeys.has(oldKey));

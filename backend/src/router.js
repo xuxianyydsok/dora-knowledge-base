@@ -25,8 +25,11 @@ import * as assets from './routes/assets.js';
 import * as files from './routes/files.js';
 import * as gallery from './routes/gallery.js';
 import * as moments from './routes/moments.js';
+import * as feedback from './routes/feedback.js';
 import * as timeline from './routes/timeline.js';
 import * as books from './routes/books.js';
+import * as wallpapers from './routes/wallpapers.js';
+import * as dynamicSources from './routes/dynamicSources.js';
 import { vodProxy } from './routes/vodProxy.js';
 
 // 路由表：[method, pattern, handler]
@@ -116,11 +119,28 @@ const routes = [
   ['PATCH', '/api/books/:id', books.updateBook],
   ['DELETE', '/api/books/:id', books.deleteBook],
 
+  // 动态壁纸（R2，图展的「动态壁纸」区）：上传/改/删需管理员；列出对访客只返回
+  // is_public=true；视频按 id 公开可读并支持 Range（供 <video> 流式播放）。
+  // R2 前缀 wallpapers/ 与图片素材的 assets/ 分开存（用户要求动静分开）。
+  ['POST', '/api/wallpapers', wallpapers.uploadWallpaper],
+  ['GET', '/api/wallpapers', wallpapers.listWallpapers],
+  ['GET', '/api/wallpapers/:id', wallpapers.getWallpaper],
+  ['GET', '/api/wallpapers/:id/file', wallpapers.getWallpaperFile],
+  ['PATCH', '/api/wallpapers/:id', wallpapers.updateWallpaper],
+  ['DELETE', '/api/wallpapers/:id', wallpapers.deleteWallpaper],
+
   // 碎念（朋友圈式短动态）：读写需管理员；访客经公开读边界只看公开条目
   ['GET', '/api/moments', moments.listMoments],
   ['POST', '/api/moments', moments.createMoment],
   ['PATCH', '/api/moments/:id', moments.updateMoment],
   ['DELETE', '/api/moments/:id', moments.deleteMoment],
+
+  // 共创反馈：**提交对所有人开放**（含访客，走 PUBLIC_POST_PATHS 白名单）；
+  // 查看 / 改状态 / 删除仅站长（requireAdmin）。
+  ['POST', '/api/feedback', feedback.createFeedback],
+  ['GET', '/api/feedback', feedback.listFeedback],
+  ['PATCH', '/api/feedback/:id', feedback.updateFeedback],
+  ['DELETE', '/api/feedback/:id', feedback.deleteFeedback],
 
   // 公开时间轴（聚合已发布博客 + 公开资源 + 公开展览）
   ['GET', '/api/timeline', timeline.listTimeline],
@@ -133,6 +153,8 @@ const routes = [
   ['GET', '/api/img/music', musicCharts.musicImage],
   ['POST', '/api/music/lyrics', music.getMusicLyrics],
   ['POST', '/api/music/stream', music.resolveMusicStream],
+  // 播放历史：3 段路径，必须排在 /api/music/:id 之前，否则会被当成 id='history'
+  ['GET', '/api/music/history', music.listMusicHistory],
   ['GET', '/api/music/:id', music.getMusic],
   ['PATCH', '/api/music/:id', music.updateMusic],
   ['DELETE', '/api/music/:id', music.deleteMusic],
@@ -158,6 +180,11 @@ const routes = [
 
   // 统一源健康中心（影视 + 音乐）；管理员可全量探测，访客只读缓存
   ['GET', '/api/sources/health', movies.getSourcesHealth],
+
+  // 动态影视源（LunaTV-config 订阅）：查看 / 手动重探 / 清空（仅管理员）
+  ['GET', '/api/admin/vod-sources/dynamic', dynamicSources.getDynamicVodSources],
+  ['POST', '/api/admin/vod-sources/dynamic/refresh', dynamicSources.refreshDynamicVodSources],
+  ['POST', '/api/admin/vod-sources/dynamic/reset', dynamicSources.resetDynamicVodSources],
 
   // NewsNow 热榜（代理自部署的 newsnow-api）
   ['GET', '/api/news/sources', news.listNewsSources],

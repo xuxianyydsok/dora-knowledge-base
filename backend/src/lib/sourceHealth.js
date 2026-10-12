@@ -12,10 +12,10 @@
 // 避免与 fetchers.js 形成循环依赖。
 
 import {
-  getVodSources, searchMaccms, detailMaccms, isPlayableUrl
+  ensureVodSources, searchMaccms, detailMaccms, isPlayableUrl
 } from './maccms.js';
 import { getMetingInstances, searchMetingMusic } from './meting.js';
-import { searchNeteaseMusic, searchKugouMusic } from './musicSources.js';
+import { searchNeteaseMusic, searchKugouMusic, searchKuwoMusic } from './musicSources.js';
 
 // —— 探测预算（毫秒）——
 // 影视：6 个源并发，单源 6s、整体 8s；音乐：多路并发，单源 8s、整体 10s。
@@ -315,7 +315,7 @@ async function probeOneMaccms(source) {
 }
 
 export async function probeMovieSources(env = {}) {
-  const entries = getVodSources(env).map((s) => ({
+  const entries = (await ensureVodSources(env)).map((s) => ({
     key: s.key,
     name: s.name,
     kind: 'movie',
@@ -407,12 +407,11 @@ async function probeTrial(kind) {
   return judgeMusicProbe({ trialOnly: true, resultCount: list.length });
 }
 
-// 官方接口两路（网易云 / 酷狗）：搜到了且条目自带可播地址 → ok。
+// 官方接口三路（网易云 / 酷狗 / 酷我）：搜到了且条目自带可播地址 → ok。
 // 只声明 search + play 两项能力（没有「详情」概念）。
 async function probeOfficialMusic(kind) {
-  const res = kind === 'kugou'
-    ? await searchKugouMusic(PROBE_KEYWORD_CN, 5)
-    : await searchNeteaseMusic(PROBE_KEYWORD_CN, 5);
+  const search = { kugou: searchKugouMusic, kuwo: searchKuwoMusic, netease: searchNeteaseMusic };
+  const res = await (search[kind] || searchNeteaseMusic)(PROBE_KEYWORD_CN, 5);
   const list = res?.candidates || [];
   return judgeMusicProbe({
     resultCount: list.length,
@@ -422,6 +421,7 @@ async function probeOfficialMusic(kind) {
 
 const probeNetease = () => probeOfficialMusic('netease');
 const probeKugou = () => probeOfficialMusic('kugou');
+const probeKuwo = () => probeOfficialMusic('kuwo');
 
 export async function probeMusicSources(env = {}) {
   const entries = [];
@@ -454,9 +454,10 @@ export async function probeMusicSources(env = {}) {
   entries.push({ key: 'itunes', name: 'iTunes（试听）', kind: 'music', probe: () => probeTrial('itunes') });
   entries.push({ key: 'deezer', name: 'Deezer（试听）', kind: 'music', probe: () => probeTrial('deezer') });
 
-  // 官方接口两路（2026-10-11 新增，见 lib/musicSources.js）
+  // 官方接口三路（2026-10-11 新增网易云 / 酷狗；2026-10-12 新增酷我）
   entries.push({ key: 'netease', name: '网易云（官方）', kind: 'music', probe: probeNetease });
   entries.push({ key: 'kugou', name: '酷狗（官方）', kind: 'music', probe: probeKugou });
+  entries.push({ key: 'kuwo', name: '酷我（官方）', kind: 'music', probe: probeKuwo });
 
   return probeEntries(entries, { budgetMs: MUSIC_BUDGET_MS, perSourceMs: MUSIC_SOURCE_TIMEOUT_MS });
 }

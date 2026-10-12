@@ -2026,3 +2026,813 @@ CDP 实测（`CSS.getPlatformFontsForNode`）修复前后：
 后端 `test:unit` 107 项全过；`check-secrets` 190 文件无泄漏；`git diff --check` 干净；
 生产构建通过。更新日志 `v0.11.0` 同步改写：删掉两条「转场时长/等渲染」条目，新增一条
 `remove` 说明移除原因。
+
+### 八、图书收敛为 EPUB/PDF + 站长收藏去重（2026-10-12 第五轮）
+
+**① 图书只保留 EPUB 与 PDF（`backend/src/lib/bookType.js`、`bookCover.js`、`routes/books.js`、`frontend/src/routes/Books.jsx`）**
+
+用户决定：本站只支持这两种能在浏览器里直接渲染、可站内阅读的格式；MOBI / AZW3 不再上传、
+前端也不再出现。改动覆盖三层：
+
+| 位置 | 改动 |
+| --- | --- |
+| `bookType.js` | `BOOK_FORMATS` 白名单只剩 `pdf` / `epub`；删除 `sniffPalmDb()`，`sniffBookFormat()` 遇到 PalmDB 容器返回 `null`（由路由转 415） |
+| `bookCover.js` | 删除 `extractMobi()` 与 `decodeMobiString()`，以及随之不再使用的 `asciiAt()` / `u16be()`；`sniffBookFormat()` 只认 EPUB / PDF |
+| `routes/books.js` | `shape()` 的 `caps` 与 `BOOK_READ_MODES` 去掉 mobi/azw3；两处 415 文案改为「仅支持 EPUB / PDF 电子书」 |
+| `frontend/src/routes/Books.jsx` | `FORMATS` 筛选去掉 MOBI / AZW3；`ACCEPT` 去掉这两个扩展名；上传前端校验改为只认 `\.(epub\|pdf)$`；删除阅读器里「暂不支持在线阅读」的整段兜底 UI；页面副标题与上传区提示同步改写 |
+
+**决策依据（写下来免得以后反复讨论）**：
+
+- MOBI / AZW3 浏览器无法直接渲染，本来就只能下载，与「在线阅读」的定位不符；
+- AZW3 的成本远高于 MOBI：本机 7 个样本里 5 个是 HUFF/CDIC 压缩（要自己实现按位哈夫曼解码），
+  正文还是 KF8「空壳 + 碎片」结构（`aid` 拼装、`kindle:pos:fid:` 跳转、`kindle:embed:` 图片），
+  另外可能带 DRM；MOBI 只是 PalmDOC 解压 + `mbp:pagebreak` 分章，工作量约为 AZW3 的三分之一；
+- 站长的书架上现在**一本 AZW3 都没有**，MOBI 也极少（线上 11 本全是 EPUB）；
+- 同一种书想在线阅读时，直接拿 EPUB 版体验最好，因此 MOBI / AZW3 的价值有限。
+
+**② 站长登录后收藏页不再重复（`frontend/src/routes/Favorites.jsx`）**
+
+**现象**：站长本人登录后打开收藏页，会看到「个人收藏」与「站长收藏」两份内容 ——
+而后者的数据源（`GET /api/favorites/public`）取的正是**站长自己的收藏**，等于同一批内容显示两遍。
+
+**修法**：用 `useAuth().isAdmin` 判断，站长本人不渲染「站长收藏」分区：
+
+```jsx
+const adminSection = !isAdmin && adminItems.length ? ( ... ) : null;
+```
+
+- 访客 / 普通用户 → 仍能看到「站长收藏」（他们的个人收藏通常是空的，这是内容来源）；
+- 站长本人 → 只看到自己那一份（可移除、可管理），不再重复。
+
+**验证**：后端 `test:unit` 107 项、`bookCover.probe`（真实 EPUB / PDF 封面提取 +
+MOBI / AZW3 必须被拒 + 76MB EPUB 堆增量 1.4MB）、前端 `changelog` 39 项、`ui-buttons` 18 项、
+`statCharts` 311 项、`graphStats` 42 项全过；`check-secrets` 无泄漏；`git diff --check` 干净。
+`v0.11.0` 更新日志补上这两条（`remove` + `fix`）。
+
+### 九、图展加「动态壁纸」区 + 图片分页展示（2026-10-12 第六轮）
+
+**用户要求**：图展里加一个动态壁纸区（视频形式，管理员可上传素材），
+R2 里动态壁纸与静态图片分开存；图展的图片**不要一股脑全展示**，
+默认只显示 3~6 行，有一个「查看更多」按钮点开看全部。
+
+#### ① 后端：动态壁纸独立成表 + 独立 R2 前缀
+
+| 文件 | 内容 |
+| --- | --- |
+| `backend/src/lib/videoType.js`（新增） | 纯函数：`sniffVideoFormat()` 只认 MP4（offset 4 = `ftyp`）与 WebM（EBML `1A45DFA3`）；`parseMp4Meta()` 从 moov → mvhd 取时长、tkhd 取宽高；`MAX_VIDEO_BYTES = 100MB`；`buildVideoKey()` → `wallpapers/<uid>/<年>/<uuid>.<ext>` |
+| `supabase/migrations/20261012000021_wallpapers.sql`（新增） | `wallpapers` 表 + RLS + 索引 + updated_at 触发器，风格与 assets / books 一致 |
+| `backend/src/routes/wallpapers.js`（新增） | 6 条路由：POST 上传（原始请求体直传 R2，文件名走 `X-Wallpaper-Name`）、GET 列表、GET 单条、GET 视频字节（**支持 Range + CORS**，供 `<video>` 流式播放）、PATCH、DELETE |
+| `backend/src/router.js` | 注册 6 条 wallpapers 路由 |
+| `backend/src/lib/publicScope.js` | `PUBLIC_READ_RE` 加入 `wallpapers`（列出与读字节对访客放行，路由层仍按 `is_public=true` 过滤） |
+| `backend/src/lib/response.js` | `Access-Control-Allow-Headers` 加入 `X-Wallpaper-Name` |
+
+**为什么不用 multipart/form-data**（与 books 同因）：视频可达 100MB，Worker 内存只有 128MB，
+`request.formData()` 会把整个文件读进内存。改为原始请求体直传 —— 路由把 `request.body`
+原样灌进 R2，只在开头缓冲 **64KB** 用于嗅探容器 + 解析 MP4 元数据。
+
+> **64KB 是实测出来的**：先用 4KB 探过，四个 4K 样本都解析不到时长与分辨率（moov box 不在前 4KB）；
+> 换到 64KB 后四个样本全部解析成功，因此常量定为 `HEAD_PROBE_BYTES = 64 * 1024`。
+
+**实测（四个真实样本，`/mnt/c/Users/x1078/Pictures/视频1/`）**：
+
+| 文件 | 容器 | 分辨率 | 时长 | 大小 |
+| --- | --- | --- | --- | --- |
+| 【哲风壁纸】低趴姿态-地狱猫.mp4 | mp4 | 3840×2160 | 15.00s | 20.9MB |
+| 【哲风壁纸】光之巨人-发光眼睛.mp4 | mp4 | 3927×2160 | 30.00s | 14.9MB |
+| 【哲风壁纸】反光-城市街道.mp4 | mp4 | 3840×2160 | 15.13s | 25.3MB |
+| 【哲风壁纸】夜景-性能车-汽车.mp4 | mp4 | 3840×2160 | 21.20s | 25.2MB |
+
+**默认私人**：`wallpapers.is_public` 默认 `false`（与 assets 默认 `true` 不同）——
+视频比图片更大更敏感，误公开代价高，站长要展出时在策展抽屉里显式打开「公开」。
+
+#### ② 前端：图展拆两区 + 折叠展示
+
+| 文件 | 改动 |
+| --- | --- |
+| `frontend/src/lib/api.js` | 新增 `uploadWallpaper()`（XHR 原始体直传，带进度、10 分钟超时、前端先拦 100MB）与 5 个 `api.*`（`listWallpapers` / `getWallpaper` / `updateWallpaper` / `deleteWallpaper` / `wallpaperFileUrl`） |
+| `frontend/src/routes/Gallery.jsx` | 拆成「静态图片」+「动态壁纸」两区；两区各自 `slice(0, limit)` 折叠 +「查看更多 / 收起」；新增 `WallpaperCard`（静音循环自动播放）与 `WallpaperLightbox`（原地放大 + 取消静音 + 进度条）；策展抽屉加「上传动态壁纸」与「动态壁纸管理」两个区块 |
+| `frontend/src/styles/gallery-timeline.css` | 新增 `.gl-section` / `.gl-sec-head` / `.gl-more-btn` / `.gl-wall-*` / `.gl-lb-video` / `.gl-lb-sound` |
+
+**为什么是 4 行**：桌面 3 列 → 12 张、平板 2 列 → 8 张、手机 1 列 → 4 张，
+首屏一屏半左右既有展厅的丰盛感，又不会长到要滚很久。列数由 `useColumns()` 读
+`matchMedia` 得到，与 CSS 断点（1024 / 640）保持一致，窗口缩放时会跟着重算。
+
+**壁纸区用网格不用 masonry**：视频都是 16:9 一类的规整画幅，错落反而让行高参差、看着不整齐。
+
+**两区各自拉数据**：用 `Promise.allSettled` —— 一边失败不会让整页变成错误页，
+只显示一条轻提示；只有两边都失败才走整页 `ErrorState`。
+
+#### ③ 验证
+
+- 后端 `test:unit` **111 项全过**（新增 `videoTypeUnit()` 4 项：魔数嗅探 / MP4 元数据解析 /
+  100MB 上限与 `wallpapers/` key 形态 / 文件名清洗；其中 key 用例显式断言**不得**落在 `assets/` 前缀下）
+- 前端 `gallery.probe.mjs`（新增，**15 项全过**）：真 preact 渲染 30 张图片 + 9 个视频，
+  断言两区都渲染、默认只出 12 张 `<img>`、第 13 张不出现在 HTML 里、壁纸渲染成 `<video>`
+  且带 `muted` / `loop`、点击「查看更多」后展开到 30 张且按钮变「收起」
+- 前端 `favorites` 5 项、`changelog` 39 项、`statCharts` 311 项、`graphStats` 42 项全过
+
+**已知未做（等用户确认后再动手）**：
+
+- 迁移 `20261012000021_wallpapers.sql` **尚未应用到线上 Supabase**，
+  因此 `wallpapers` 表在线上还不存在；需要先跑迁移才能上传。
+- 本机没有本地 Supabase，无法端到端验证上传 → R2 → 播放这条链路，
+  只能靠单元测试 + 探针 + 真实样本的元数据解析来保证。
+
+### 十、共创页 + 歌词页 + 无固定时长加载进度条（2026-10-12 第七轮）
+
+#### ① 影视卡按钮与点击延迟
+
+| 文件 | 改动 |
+| --- | --- |
+| `frontend/src/components/VodPoster.jsx` | 右上角从**纯 `+` 图标**改成带文字的胶囊按钮（默认「加入影视库」，访客态「播放」）；新增 `pending` prop，点击后卡片盖一层 `.vod-loading` 转圈遮罩 |
+| `frontend/src/routes/Movies.jsx` | 新增 `pendingKey` state（按条目追踪，不再用全局 `busy` 布尔）；**修掉延迟根因** |
+| `frontend/src/styles/global.css` | `.vod-collect` 改成带文字胶囊；新增 `.vod-loading` / `.vod-card.is-pending` / `@keyframes vod-loading-in` |
+
+**延迟的根因**：原来入库成功后要 `await load()` 把整个影视列表重拉一遍，
+再从列表里找刚建的那条来跳转，实测多花 3~4 秒。现在直接用 `createMovie`
+的响应结果跳转，延迟消失。
+
+**加载遮罩的 180ms 淡入延迟**：命中缓存、秒开的条目不会闪一下转圈。
+
+#### ② 全站页面加载进度条
+
+新增 `frontend/src/components/RouteProgress.jsx` + `frontend/src/styles/route-progress.css`，
+挂在 `frontend/src/app.jsx` 的 `<Layout>` 之前。三条规则：
+
+1. 出现加载态先等 **120ms** 才显示 —— 秒开的页面完全不显示进度条；
+2. 一旦显示**没有固定时长** —— 慢多久转多久；
+3. 加载态消失立刻收尾淡出（220ms）。
+
+**为什么用 `MutationObserver` 而不是 Router 事件**：Router 的 `loading` 只在懒加载
+chunk 期间为真，而真正让用户觉得「卡住」的是页面拿到 chunk 之后、数据回来之前
+那段空窗。判据改成 DOM 里有没有 `.app-main .sk-grid / .center-box / .loading-more`
+（骨架屏 / 居中 loading / 加载更多），观察 `document.body`，所以与 Router 上下文解耦。
+
+实测：153ms 出现、内容到位后 264ms 淡出，宽度 11% → 100%。
+
+#### ③ 共创页（子代理 Aristotle 交付）
+
+新增：
+
+| 文件 | 说明 |
+| --- | --- |
+| `supabase/migrations/20261012000022_feedback.sql` | `feedback` 表（公开可写、仅站长可读） |
+| `backend/src/routes/feedback.js` | 4 条路由：POST 公开，GET / PATCH / DELETE 仅管理员 |
+| `frontend/src/routes/Coop.jsx` | 共创页（介绍 + 迷你星体 + 反馈表单 + 感谢弹窗 + 结尾字标） |
+| `frontend/src/routes/AdminFeedback.jsx` | 站长端反馈收件箱 |
+| `frontend/src/styles/coop.css` | 共创页样式 |
+| `docs/coop.md` | 设计说明 |
+
+修改：`backend/src/router.js`（注册 4 条路由）、`backend/src/lib/publicScope.js`
+（POST 访客可写）、`backend/src/routes/notifications.js`（`TYPES` 加 `feedback`）、
+`frontend/src/lib/api.js`（`GUEST_POST` + 4 个方法）、`frontend/src/components/NotificationBell.jsx`、
+`frontend/src/components/Layout.jsx`（顶栏加「共创」、头像菜单加「共创反馈」）、
+`frontend/src/app.jsx`、`frontend/src/routes/routes.js`。
+
+**匿名不变量**：访客（`user.isGuest`）一律**强制匿名**，不接受实名；匿名条目
+**不落 `user_id`**、响应里也**绝不返回** `user_id` / 邮箱，`display_name` 统一回「匿名读者」。
+提交成功后给站长插一条 `type='feedback'` 的通知（`link=/admin/feedback`），
+通知写入失败只 `console.error`，不影响反馈本身的成功返回。
+
+#### ④ 共创页结尾字标 + 迷你星体
+
+- `frontend/src/routes/Coop.jsx` 新增 `FooterWordmark`（在 `RecentChanges` 之后）：
+  把 `Dora Studio` 拆成 10 个字母 + 1 个词间空格，每个字母带 `--i` 错峰延迟
+  （2s → 5.6s），复刻模板的 `@keyframes ech` RGB 错位呼吸 + 一条渐变细线。
+- 新增 `frontend/src/components/MiniUniverse.jsx`：复刻模板「A8 一个宇宙」——
+  360 粒子 Fibonacci 球面 + 邻近连线 + 色相青→紫→粉流转；从占满整屏缩成
+  300px（窄屏 200px）方形小件；`ctx.setTransform` 处理 DPR；离开视口 /
+  页面隐藏时停 rAF；`prefers-reduced-motion` 下不建 canvas。
+- 接在介绍与表单之间：`<div class="coop-orb"><MiniUniverse><p class="coop-orb-text">欢迎加入共创</p><span class="coop-orb-sub">转动看看</span></MiniUniverse></div>`。
+
+实测（`cdp.mjs`，端口 9541）：300×300、canvas 298×298、188 个采样点有像素、
+文字「欢迎加入共创」带 `background-clip:text`，页面顺序
+`coop-intro → coop-orb → coop-form → coop-done → coop-mark`。
+
+#### ⑤ 音乐歌词页（子代理 Ptolemy 交付）
+
+| 文件 | 改动 |
+| --- | --- |
+| `frontend/src/routes/MusicLyrics.jsx` | 重做布局与歌词渲染 |
+| `frontend/src/styles/lyrics.css` | **新建**，歌词页全部新样式（未触碰 `global.css`） |
+| `frontend/src/components/MiniPlayer.jsx` | `.mini-meta` 跳转改 `/music/{id}/lyrics`，title 改「展开歌词」 |
+| `frontend/src/routes/MusicView.jsx` | 详情页封面改为可点按钮，跳歌词页，悬停显示「歌词」提示 |
+
+桌面端左右两栏：左黑胶（`clamp(200px,24vw,300px)`、圆形裁切、播放时 28s 匀速自转
++ 外圈呼吸光晕）；右歌词滚动区。`≤900px` 自动上下堆叠。
+
+**已唱 / 未唱的区分**：未唱行 `color-mix(--text 22%)`、字号小、行距 1.95 松排；
+已唱行按「离当前行的距离」在 40% → 86% 之间渐变（越早唱过越淡），形成若隐若现的
+渐隐带（实测 alpha 0.40 → 0.83，始终高于未唱的 0.22）；当前行最大最亮、主题渐变
+文字 + 流动光带 + `drop-shadow` 光晕。
+
+**顺带修掉一个真实缺陷**：`.vinyl.lp` / `.vinyl-hole` / `.lp-*` 原本只写在
+`now-settings.css` 里，而歌词页不 import 它 —— 直接访问 `/music/:id/lyrics` 时
+黑胶退回 168px、封面 300px 未裁切溢出、轴孔消失。已把这些样式自包含进 `lyrics.css`。
+
+#### ⑥ 影视播放的代理兼容（子代理 Lovelace 交付）
+
+`backend/src/routes/vodProxy.js`：
+
+- 白名单补齐实测缺口（`360zyx.vip`、`modujx15.com`），并把 `modujx` 序号域名
+  正则从 `^modujx\d+\.com$` 放宽为 `(^|\.)modujx\d+\.com$`，覆盖 `bf.modujx15.com`
+  这类带子域的分片域名；
+- `MEDIA_EXT` 兜底扩容（补 `mpd` / `m4b` / `f4v` / `flv` / `mov` / `webm` / `mkv` /
+  `mp3` / `wav` / `ogg` / `ogv`）；`localhost` / 内网 IP / 非 http(s) 的
+  `isPrivateHost` 边界**未放松**；
+- **302 逐跳校验**：新增 `fetchUpstream`，改手动跟随（`redirect:'manual'`，最多 5 跳），
+  每一跳都重新走 `checkTarget`；重定向到未知域名且非媒体路径返回 403；
+- 判型与 content-type 兜底改用**最终路径**；m3u8 改写 base 用最终 URL；
+- 缓存 / CORS：m3u8 `max-age=300`、分片 / 密钥 `max-age=86400`，补 `Vary: Accept-Encoding`。
+
+`frontend/src/components/MoviePlayer.jsx`：
+
+- 新增 `probePlayable`：并行探测直连与代理，**一路探到首个分片**（`Range: bytes=0-0`），
+  master 先取变体再取分片，顺便探 key；`PROBE_MS = 2500`；
+- 选路由 `viaProxy` 改为 `routeOverride + useMemo`：命中 `dora:vod-proxy-hosts`
+  直接走代理、命中新增 `dora:vod-direct-hosts` 直接直连（首帧就走对路）；
+- 首帧超时 6000ms → **2500ms** 立即切代理；两条记忆互斥（互删），各留最近 50 条；
+- 双路都失败且无下条线路时 `toastError` 明确提示（`failedToastRef` 保证只弹一次）。
+
+#### ⑦ 本轮验证结果（2026-10-12，本机）
+
+| 项目 | 结果 |
+| --- | --- |
+| 后端 `npm run test:unit` | **113 项全过** |
+| 前端 `coop.probe.mjs`（新增） | **17 项全过**：区块顺序 / 四类分类 / 默认匿名 / 匿名时无称呼框 / 空内容禁用提交 / 输入后可用 / 计数器 / 访客态实名按钮禁用 / 结尾字标 10 字母 + 1 空格 / 渐变细线 / 逐字错峰 2s→5.6s / 迷你星体 300×300 / 星体 canvas / 「欢迎加入共创」/ 渐变裁切 / 无横向溢出 |
+| 前端 `favorites` | 5 项全过 |
+| 前端 `gallery` | 15 项全过 |
+| 前端 `changelog` | 39 项全过 |
+| 前端 `statCharts` | 311 项全过 |
+| 前端 `graphStats` | 42 项全过 |
+| 前端 `ui-buttons` | 18 项全过（含 `/graph/repos` 侧栏与画布等高 620px 差 0px） |
+| `scripts/check-secrets.mjs` | 245 个文件，无凭据泄漏 |
+| `git diff --check` | 干净 |
+| 生产构建 | 成功（24.99s） |
+
+**无头 Chrome 真渲染实测**（`cdp.mjs`）：
+
+- 页面加载进度条：点导航进 `/gallery` → **145ms** 出现、**632ms** 收尾淡出、宽度爬到 **100%**；
+- 影视卡：切「最新入库」→ 30 张 `.vod-card`，右上角 `.vod-collect` 是 `999px` 胶囊、
+  高 28px、带图标 + 文字，访客态文案「播放」；
+- 歌词页（真实曲目 `a9d283f5-…`）：左 340px / 右 707px **同排两栏**，黑胶 **300px** 圆形
+  （`border-radius:50%`、动画 `lyr-spin`），**50 行**歌词渲染。
+
+**待用户确认后再动手**：
+
+- 迁移 `20261012000021_wallpapers.sql` 与 `20261012000022_feedback.sql`
+  **尚未应用到线上 Supabase**（线上 `/api/wallpapers` 实测 404、`feedback` 表不存在）；
+- 需先跑 `supabase db push`（或走 `db-migrate.yml` CI）再部署前端。
+
+### 十一、首页书架改成「两行反向流动书带 + 就地阅读」（2026-10-12 第八轮）
+
+#### ① 四条要求与落地
+
+用户原话拆解：
+
+1. 「尺寸不要两边都抵到边缘，要合理规划宽度」→ 收回上一版的 `100vw` 全幅，
+   书架改成**只占「此刻」Bento 栅格的一整行**（`grid-column: 1 / -1`），
+   宽度即正文宽度（1440 视口下 1232px / 正文 1280px），两侧再用渐隐遮罩收口，
+   书是「淡出」而不是被硬切在边缘。
+2. 「两行就行了」→ 从三层改成 **两行**。
+3. 「上面一行从左往右、下面一行从右往左移动」→ 两条**无缝滚动**书带
+   （`bs-run-right` / `bs-run-left`），同速反向。
+4. 「鼠标停在某一本上、点击可以在线阅读」→ 悬停**暂停**整条带，
+   点真实图书**就地弹出阅读器**；右上角另有「查看更多 →」跳 `/books`。
+
+#### ② 关键实现
+
+| 文件 | 改动 |
+| --- | --- |
+| `frontend/src/components/BookShelf.jsx` | 整文件重写（两行书带 + 无缝滚动 + 悬停暂停 + 就地阅读 + 查看更多） |
+| `frontend/src/components/BookReader.jsx` | 新增 `import '../styles/books.css'` 与 `'../styles/wenkai.css'`（阅读器自包含样式，不依赖宿主页面 import 过） |
+
+**无缝循环的做法**：把这一行的书**复制一份**接在后面，整条轨道 `translateX(-50%)`
+就是一个完美循环 —— 半条轨道的长度等于复制出来的那半条，接缝处的间距与轨道内部
+一致（同一个 flex `gap`），所以看不出接缝。滚动是纯 CSS animation（GPU 合成，
+不跑 rAF，不烧 CPU）。
+
+**速度口径**：一条轨道的时长 = 半条轨道长度 / 线速度（`SPEED = 42 px/s`），
+因此两行的**视觉速度一致**，只是方向相反（实测两行都是 29s、1.2 秒各走 48px）。
+
+**悬停暂停为什么必须用原生鼠标事件测**：合成 `mouseover` 事件**不会**触发 CSS `:hover`，
+所以探针里用 CDP 的 `Input.dispatchMouseEvent` 发真实鼠标移动。实测悬停后
+`animation-play-state` 变为 `paused`，移开恢复 `running`。
+
+**就地阅读**：`BookShelf` 直接复用 `/books` 的同一个 `BookReader` 组件
+（portal 到 `body`），因此阅读器设置（字号 / 字体 / 背景 / 单双页）、EPUB 章节、
+PDF 内嵌全部与图书页一致，不需要第二套实现。补位书（生成式封面）点了跳 `/books`。
+
+#### ③ 验证
+
+- 前端 `bookshelf.probe.mjs`（新增，**12 项全过**）：书架落在正文宽度内（1232 / 1280，
+  且 < 视口 1440）、两行、两条滚动带、两块层板、上行向右（Δ+48px）、下行向左（Δ−48px）、
+  两带同速（29s）、书是 2:3 竖版（132×198）、28 本真书上架、「查看更多」跳 `/books`、
+  页面无横向溢出
+- 无头 Chrome 原生鼠标实测：悬停书带 → `paused`；点真实图书 → 就地弹出
+  `.bk-reader`，标题为《三体读客版（套装共3册）》
+- 后端 `npm run test:unit` **113 项全过**；`git diff --check` 干净；生产构建成功
+
+---
+
+## 2026-10-12（本轮补记）：图展排版修复 + 阅读手势 + 搜索历史位置 + 星体位置
+
+用户本轮反馈三件事，另加两条追加要求，已全部落地（**未部署**，等用户确认）。
+
+### ① 图展图片「排版很不协调」
+
+- **根因**：静态图片区用纯 CSS `columns` 做错落瀑布流。各列高度不齐，底部会留一大块
+  空档；R2 里 48 张图宽高比差异很大（1080~2560 宽，另有一张 6144×3321），
+  一混排就「看着乱」。
+- **做法**：改用「整齐等高行」（justified rows）。新增纯函数
+  `frontend/src/lib/justified.js`（零依赖，可离线单测）：逐张往当前行里塞，
+  一旦「现在收行这一行会有多高」掉到目标行高以下就收行；行高 = 行内可用宽度 ÷
+  该行宽高比之和；舍入余数补给行尾，整行宽度与容器严格一致。
+- **接入**：`Gallery.jsx` 用**回调 ref + ResizeObserver** 量容器宽度（关键：图片区在数据
+  到达前不渲染，普通 `useRef + useEffect` 只跑首帧、那时 `ref.current` 还是 `null`，
+  宽度会永远停在 0，排版只能用兜底宽度 —— 实测确认过这个 bug）。
+- **折叠改成按行**：`expandPics` 现在按 `COLLAPSE_ROWS = 4` **行**切，而不是按张数切。
+  按张数切会在行中间断开、底部留一行「半截图」的图片。
+- **实测**（1440 视口 / 容器 1232px）：4 行；前三行各 3 张、行高 227px、行宽合计 1209px；
+  第四行 4 张、行高 193px；无横向溢出。
+
+### ② 动态壁纸无法在线预览
+
+- **根因**：`<video src>` 无法携带 `Authorization` 请求头，而 `/api/wallpapers/:id/file`
+  走 `requireAuth`，私人壁纸一律 404（图片能用是因为 `/api/assets` 是公开接口）。
+- **做法**：`backend/src/middleware/auth.js` 的 `extractToken` 增加「GET 请求接受
+  `?token=<JWT>` 查询串」（**仅 GET**，写操作不认）；前端新增
+  `setAuthToken` / `withMediaToken`，图书文件 / 封面 / 下载 / 壁纸文件 URL 统一走它。
+- **另加**：图展策展抽屉新增「一键公开全部」（图片 / 动态壁纸各一个），
+  串行 PATCH 该区所有未公开条目，带确认、计数，失败不中断。
+
+### ③ 图书翻页手势
+
+- **根因**：原来只有**双指**滑动绑定翻页（`if (!touch || !touch.multi) return;`），
+  单指滑动完全没逻辑 —— 这就是「滑到底之后再滑完全没反应」。
+- **做法**：抽成纯函数 `resolveSwipe({ dx, dy, atBottom, atTop, threshold })`：
+  - 向右滑（`dx>0`）→ 下一章；向左滑 → 上一章（横滑一律翻章，正文是纵向排版不冲突）；
+  - 向下滑到底（起点就在底部）→ 下一章；向上滑到顶 → 上一章；
+  - 起点是否在尽头在**手势开始时**记录，而不是抬手时才查 —— 否则「滑到底的那一次」
+    会被判成没到底，白滚一下没反应；
+  - 短章节（一屏到底）上下滑直接翻章；双指上下滑保留。
+- `epubReader.js` 的 `body` 加 `touch-action: pan-y`：纵向滚动交还浏览器，
+  横向留给阅读器的翻章手势（不被系统的横滑返回吃掉）。
+
+### ④ 搜索历史位置（追加要求）
+
+- 原来 `SearchHistory` 是工具条的兄弟节点，flex 把它排到了搜索框**右边**。
+  现在音乐 / 影视页都把「搜索框 + 历史」包进 `.toolbar-search`（column flex），
+  历史贴在搜索框正下方；`.sh-bar` 改成网格，`一键清空` 单独占一行靠右。
+
+### ⑤ 共创页星体位置（追加要求）
+
+- 从「段落下方居中」改成贴在介绍文字**右侧**、高度与那段文字齐平
+  （`.coop-lead` 两栏 + `.coop-orb { align-self: center }`）；≤900px 落回上下堆叠。
+- 实测（1440 视口）：星体在文字右侧、同一行、高度比 0.87；页面无横向溢出。
+
+### 验证
+
+- `frontend/tests/justified.probe.mjs` **50 项全过**
+- `frontend/tests/gallery.probe.mjs` **17 项全过**（含「默认最多 4 行」「按行折叠」新断言）
+- `frontend/tests/readerSwipe.probe.mjs`（新增）**19 项全过**
+- `frontend/tests/coop.probe.mjs` **19 项全过**（含星体位置 3 项新断言）
+- `frontend/tests/bookshelf.probe.mjs` **12 项全过**；`favorites` **5 项**；
+  `changelog` **39 项**
+- 后端 `npm run test:unit` **113 项全过**
+- 生产构建成功；无头 Chrome 实测图展 4 行整齐、共创页星体位置、书架两行反向流动
+
+---
+
+## 2026-10-12（本轮补记 2）：底部播放条按《Nacre 音乐》模板补齐
+
+用户要求（原话要点）：参照 `E:\documents\111\Nacre 音乐.html` 的底部播放条，
+**把播放相关的功能都集成进这一条**，不要再为它们另开页面 ——
+点封面立即进歌词页、收藏按钮、循环播放、顺序播放、下一曲后面的播放队列，
+点了就地弹出。除了「点封面看实时歌词」这一个交互外，不需要新的页面。
+
+### ① 播放顺序抽成纯函数 `frontend/src/lib/queueOrder.js`
+
+原来「下一首 / 上一首」是 `index ± 1`，做不到随机、循环，也做不到
+「随机时上一首能回到刚才那首」。现在用一个**显式的顺序表**：
+
+| 函数 | 作用 |
+| --- | --- |
+| `buildOrder(length, { shuffle, current, random })` | 生成播放顺序；随机时 Fisher–Yates 洗牌，并把当前曲目固定在最前（开着随机点下一首不会立刻跳走） |
+| `stepIndex(order, current, delta, repeat)` | 沿顺序走一步；`-1` 表示没有下一首（顺序播放到头） |
+| `nextRepeat(repeat)` | 顺序 → 列表循环 → 单曲循环 → 顺序 |
+
+关键设计：顺序表只在**队列长度 / 随机开关**变化时重排，换歌（index 变）不重排 ——
+否则「随机」会退化成「每次点下一首随机抽一首」，「上一首」也回不去。
+
+### ② `lib/player.jsx` 接入
+
+- 新增 `shuffle` / `repeat`（持久化到 localStorage）、`order`；
+- `next` / `prev` 改走 `stepIndex`；`prev` 保留「播放超过 3 秒先回到开头」的惯例；
+- `onEnded`：单曲循环重播本首（不重新解析音源）、列表循环绕回开头、
+  顺序播放到头则停下；
+- `hasPrev` / `hasNext`：顺序播放到头时置灰，循环模式下始终可点；
+- 新增 `toggleShuffle` / `cycleRepeat`（带 toast 提示当前模式）。
+
+### ③ `components/MiniPlayer.jsx` 重写
+
+播放条从左到右：**封面（点进歌词页）· 曲目信息（点进详情）· 收藏 ·
+随机 · 上一首 · 播放 · 下一首 · 循环 · 队列 · 音量 · 关闭**。
+
+- 封面从原来的「整块可点」拆成独立按钮：点封面**立即**进 `/music/:id/lyrics`；
+  曲目信息另外可点，进歌曲详情。
+- 收藏按钮复用 `/api/favorites` 同一套接口，登出后自动隐藏；收藏后用危险色 + 实心。
+- 循环按钮在「单曲循环」时带一个 `1` 角标；随机 / 循环开启时按钮走主色。
+- 队列按钮点了**就地弹出**浮层（不跳页）：列出全部曲目、显示当前曲目与均衡器动画、
+  点击任意行 `goTo(i)` 切歌；点外部 / Esc 关闭。
+- 样式集中在 `styles/global.css` 的 `.mini-*` 段：图标按钮、角标、队列浮层；
+  颜色一律走主题变量，中文不套等宽字体。
+
+### 验证
+
+- `frontend/tests/queueOrder.probe.mjs`（新增）**34 项全过**：
+  顺序 / 随机 / 列表循环 / 单曲循环 / 边界 / 模式轮转
+- `frontend/tests/miniPlayer.probe.mjs`（新增）**36 项全过**：
+  无曲目不渲染、访客不渲染收藏、点封面跳歌词页、点信息进详情、
+  随机 / 循环 on 态与角标、点队列就地弹出（不跳页）、队列列出全部曲目、
+  点队列第 3 首调 `goTo(2)`、登录后收藏可加可取消
+- 回归：`justified` 50 / `gallery` 17 / `readerSwipe` 19 / `favorites` 5 /
+  `changelog` 39 全过；后端 `npm run test:unit` **113 项全过**
+- 生产构建成功
+
+---
+
+### 十二、首页首屏重构 + 全站字体收口 + 音乐音源扩充（2026-10-12 第九轮）
+
+本轮用户提了 8 条，全部落在**前端视觉**与**音乐音源**两块，后端业务逻辑未动。
+改动**未部署**，等用户确认。
+
+#### ① 首屏做减法，标题独立成「标题带」
+
+用户要求：「把散落的知识 收进一张星图」的**知识改碎片**；
+这句话要**挪到「写在前面」上面、也就是「开始浏览」下面**；
+文字特效参照 `E:\documents\111\blog-home-v2.html` 第一个页面；
+首屏大图上的**时钟、印章、「个人知识库」小标全部去掉**，但**时钟不要删，放进新标题带**。
+
+落地（`HeroCarousel.jsx` + 新增 `LandingParts.jsx::TitleBand`）：
+
+| 位置 | 改动 |
+| --- | --- |
+| `HeroCarousel.jsx` | 删掉 kicker「个人知识库」、删掉巨型标题两行、删掉时钟与印章两个悬浮小组件；首屏只剩大图 + 图注 + 两个按钮 |
+| `LandingParts.jsx` | 新增导出 `TitleBand`：巨字「把散落的碎片 / 收进一张星图」，逐字错峰升起（`translateY(112%) rotate(7deg)` → 归位）+ 手绘感下划线（`stroke-dashoffset` 画出）+ 实时时钟；渐变按字切片（`charGradients(TITLE_LINES, TITLE_GRADIENT)`） |
+| `Home.jsx` | `<HeroCarousel />` 后插入 `<TitleBand />`；「最近写的」改「**写在前面**」 |
+| `home-landing.css` | 新增 `.tb*` 全套样式（渐变字 `background-clip:text`、手绘线、时钟、≤820px 隐藏时钟） |
+
+**为什么渐变要逐字切片**（老坑，代码里已注明）：每个字都要做 transform 动画，
+transform 会让这个字自成一层合成层，父元素上的 `background-clip:text` 裁不到
+别的合成层里的字形，整行会直接变透明。所以按字在标题里的位置算出它该分到的那一小段渐变。
+
+#### ② 「写在前面」改成逐字跟随滚动由虚到实
+
+用户要求：参照 `E:\documents\111\余白 · 博客首页111.html` 的呈现方式 ——
+向下滑动时那些字**由虚到实**。
+
+改法（`LandingParts.jsx::IntroBlock` + `home-landing.css`）：
+从「整行一起模糊揭幕」改成**每个字一个 `.ld-i-ch`**，
+初始 `filter: blur(6px); opacity: .16`，进入视口后加 `.on` 变 `filter:none; opacity:1`，
+按字序错峰点亮。
+
+实测：1440×1000 下滚动，178 个字从 0 → 178 逐字点亮（y=700 亮 1 个 / y=1600 全亮）。
+
+#### ③ 「站点构成」环形图：数字醒目 + 颜色加深 + 线条加粗 + 提速
+
+用户反馈：「周围的那些数字要醒目一些，你的太小了」「颜色加深、线条加粗、
+变化快一些、虚实相间」。
+
+| 项 | 改前 | 改后 |
+| --- | --- | --- |
+| `viewBox` | 680 | **760**（圆心 380,380；`transform-origin` 同步改） |
+| 画布宽度 | max-width 620 | **700** |
+| 环带描边 `.ld-ring-band` | 4.5 | **6.5** |
+| 刻度 `.ld-ring-ticks` | 0.9 | **1.2** |
+| 模块名 `.ld-label-name` | 17px | **20px** |
+| 模块说明 `.ld-label-meta` | 9px | **11.5px**，weight 600，fill 改 `--ld-ink` |
+| 旋转一圈 `.ld-rotor` | 120s | **42s**，另叠一层 `ld-breathe 5.6s` 呼吸（`data-active` 时只留旋转） |
+
+实测：标签 `11.5px/600`、动画 `ld-spin 42s` + `ld-breathe 5.6s`、**0 个标签被裁**。
+
+#### ④ 全站字体收口（子代理完成，已验收）
+
+用户要求：「导航栏里面的那些按钮的话它的字体可以改成统一的」「有些页面的字体
+换成有精致感的，像博客里 dora 那个字母就很好看」。
+
+根因：`.app-nav a` **压根没声明字体**，各浏览器各自回退，所以和左侧品牌名对不上。
+
+改动：
+
+- `global.css`：`.app-nav a` 显式 `var(--font-ui)` / 13.5px / 500 / `letter-spacing:-0.01em`；
+  `.app-nav a.active` 字重 600 → 500（Satoshi 只自托管 400/500/700，600 是浏览器**合成的假粗体**，边缘发虚）；
+  顶栏 `.menu-*` / `.login-link` / `.theme-toggle` 全部显式走 `var(--font-ui)` 并与导航对齐；
+  `button, .btn` 与 `input, select, textarea` 在原有 `font: inherit` 之后补 `font-family: var(--font-ui)`
+  （只写 inherit 的话，按钮被放进博客正文或歌词页就会跟着变，表单控件在 Windows 上会回退到系统字体）；
+  新增 `table, optgroup { font-family: var(--font-ui) }` 收口；
+  `.post-content h1/h2/h3` 硬编码 → `var(--font-ui)`；`.post-content code` / `.cs-month time` → `var(--font-mono)`。
+- `books.css`(7 处) / `changelog.css` / `coop.css` / `now-settings.css`：`font-family: inherit` → `var(--font-ui)`。
+- `routes/PostEdit.jsx`：编辑器内联等宽栈 → `var(--font-mono)`。
+- **故意保留**：`global.css` 的 `.post-content-wrap` 衬线栈（全站唯一一处刻意绕过令牌，
+  比 `--font-display` 多了 `Noto Serif SC` / 思源宋体 / `PingFang SC`，是为长文阅读观感加的）；
+  `--font-mono` 与 `graph-console.css` / `starmap.css` 的中文兜底全部原样保留。
+
+实测：新增 `frontend/tests/fontUnify.probe.mjs` **11 项全过** ——
+导航 `Satoshi | 13.5px | 500`、品牌 / 登录胶囊 / body / 按钮 / 搜索页 input+select 全部 `Satoshi`；
+1440/1080/768/390/360 五档顶栏无横向溢出、链接高度一致、顶栏仍 64px。
+
+#### ⑤ 博客列表页站名改英文
+
+`frontend/src/routes/Posts.jsx`：横幅 `<h1>Dora 的博客</h1>` → **`<h1>The Blog of Dora</h1>`**
+（用户要求「the blog of dora，该大写的大写」）。
+
+#### ⑥ 音乐音源扩充（子代理完成，已验收）
+
+用户反馈：「音乐源还是有点少了」「三四十五六十的音乐搜不出来，或者搜出来都看不了」，
+并要求「尽量先是音质高的」。
+
+**新增酷我（官方）这一路**（`backend/src/lib/musicSources.js` 新增约 150 行）：
+
+- 酷我是**完全独立于网易云 / 酷狗的第三个片库**，搜索与取流都是自有接口，
+  不依赖第三方中转、不需要 Key，直链是普通 CDN 地址（**非签名、不会过期**）；
+- 实测（2026-10-12，8 个热门关键词：晴天/稻香/青花瓷/孤勇者/海阔天空/平凡之路/
+  see you again/hello）：**搜索 8/8 有结果、取流 8/8 返回可用地址、
+  拉首个 1KB 分片 8/8 返回 206 `audio/mpeg`** —— 可用性是目前所有音源里最好的一路；
+- 音质策略：FLAC(2000kflac) → 320K → 128K → 通用 mp3 逐档降级，拿到哪档标哪档，
+  **绝不虚标**（搜索阶段 `bitrate` 一律 0，只留 `max_bitrate_hint`，真实音质等取流成功后回填）；
+- 搜索接口返回的是**单引号伪 JSON**（值里可能带引号、`&nbsp;` 实体、`\uXXXX` 转义），
+  直接 `JSON.parse` 会炸，因此按条目切块后逐字段正则提取（`parseKuwoSearch`）；
+- 取直链是「每首一次请求」，全量取会把搜索拖到十几秒 —— 只解析最靠前的 12 条，
+  其余标 `needs_resolve`，播放时按需重解析。
+
+**顺带修掉「搜出来点进去放不了」的一类情况**：网易云官方外链端点对**版权受限**曲目会
+302 到 `/404`（返回 HTML 而不是音频）。实测 10 个热门关键词各取首条正片，**只有 6/10 返回真音频**，
+其余 4 首（孤勇者 / 海阔天空 / 平凡之路 / 夜曲）返回 `text/html`。
+现在搜索阶段对最靠前的 12 条并发做一次轻量探测（`Range: bytes=0-1` 判 `content-type`），
+探测不通过的标 `playable_probe_failed`，由 `fetchers.js` 的排序（`candidateRank` 里 `-1000`）
+沉到最后一档 —— **只降权不剔除**，网络抖动时用户仍能手动点到。
+
+**排序权重调整**（`fetchers.js`）：`PLATFORM_RANK` 加 `kuwo: 6` 排最高
+（同时满足「可用性最好」与「能取到无损 / 320K」两个条件），`kugou: 5`、`netease: 5`。
+另：GD 音乐台实测**单源就要 9.8s**（其余源都在 1s 内），在 7s 预算下基本必被丢弃却仍占一次并发请求 ——
+这就是「搜索要等 9 秒」的根源，因此默认**不再查 GD**（改成空串），需要它的无损 FLAC 时
+用环境变量 `GD_MUSIC_SOURCES=netease,joox` 显式打开。
+
+源探活（`sourceHealth.js`）：`probeOfficialMusic` 从「二选一」改成查表，
+新增 `probeKuwo` 与「酷我（官方）」条目。
+
+#### ⑦ 音乐去重与播放历史（上一轮已落地，本轮复验）
+
+`musicIdentity.js`（前后端各一份同规则）：`normalizeMusicText` / `musicIdentity` /
+`dedupeMusicList` / `findDuplicateMusic`。列表接口用 `dedupeMusicList` 去重，
+`createMusic` 入库前查重（命中返回 200 + `duplicate: true`），前端提示「已经在音乐库里了」。
+新增 `GET /api/music/history`（路由排在 `/api/music/:id` **之前**），音乐页新增「播放历史」分组。
+
+#### 验证
+
+- 后端 `npm run test:unit` **117 项全过**（含新增的酷我伪 JSON 解析、音乐去重、
+  动态壁纸类型、MOBI/AZW3 必须被拒、默认影视源复测口径等用例）
+- 前端探针全过：`justified` 50 / `gallery` 17 / `readerSwipe` 19 / `favorites` 5 /
+  `changelog` 39 / `queueOrder` 34 / `miniPlayer` 36 / `musicIdentity` 19 / `coop` 20 /
+  `ui-buttons` 18 / `graphStats` 42 / `statCharts` 311 / `bookshelf` 12 / `fontUnify` 11
+- `node scripts/check-secrets.mjs` 245 文件无泄漏；`git diff --check` 干净
+- 生产构建成功（20.9s）
+
+#### 坑与教训
+
+1. **渐变 + transform 动画不能共存**：父元素 `background-clip:text` 裁不到
+   自成合成层的字形，必须按字切片。这个坑在首屏标题与 Dora Studio 字标上各踩过一次。
+2. **`font: inherit` 不等于「用全站字体」**：只写 inherit，控件被放进改过字体的容器里就会跟着变。
+   要么显式声明 `var(--font-ui)`，要么就别指望它。
+3. **Satoshi 没有 600 字重**：写 600 浏览器会**合成假粗体**，边缘发虚。真实档位只有 400/500/700。
+4. **伪 JSON 不要硬 `JSON.parse`**：酷我返回单引号 + `&nbsp;` 实体，按条目切块逐字段提取更稳。
+5. **官方外链的「有结果」不等于「能播」**：网易云对版权受限曲目 302 到 HTML，
+   必须真的探一下 `content-type`。
+6. **未跟踪的大目录**：`frontend/public/hero/`（36 文件 5.2MB）与
+   `frontend/public/fonts/lxgw/`（98 文件 4.7MB）**从未入库** ——
+   若直接推 GitHub main 会导致线上首页轮播图与霞鹜文楷 404。
+   本项目的 Pages 一直是本地 `wrangler pages deploy dist` 直传，不走 Git，所以线上正常。
+
+#### 待决策
+
+1. 导航字号本轮从 14px 收到 **13.5px**（为了贴近登录 / 主题胶囊的 13px）。
+   若觉得导航变小了不好看，可以改回 14px。
+2. 新增探针 `frontend/tests/fontUnify.probe.mjs` 是否保留在仓库里。
+
+---
+
+### 十三、移动端触屏适配 + 铁屑卡片的环绕铁屑（2026-10-12 第十轮）
+
+用户要求两条：
+
+1. 「Dora Studio 那个铁屑框，除了名字之外，它的**周围**也应该有铁屑，把它们整个包围起来」；
+2. 「你没有针对手机移动端做适配吗？适配一下」（另：「PDF 那个不用管，可以下载就行，
+   它的一些按钮的适配你做一下就可以了」）。
+
+#### ① 铁屑卡片：字形外面加一圈「环绕铁屑」
+
+`frontend/src/components/BrandFilings.jsx`。
+
+**改前**：只有「字形主体 + 一圈极窄毛边」——字是孤零零浮在卡片里，周围什么都没有。
+
+**改后**：`classifyCells()` 新增两个参数 `haloRadius` / `haloDensity`，返回里多一个
+`halo` 数组 —— 字形（含毛边）**之外**一圈环形区域内的自由铁屑：
+
+- 只取 `haloRadius` 格以内的点，外面彻底留白（不退化成模板那种「铺满整块」）；
+- 密度用**确定性伪随机**控制，且按到字形的距离衰减（紧贴字形处概率 1，最外圈降到 0.25），
+  形成由内向外散开的过渡；
+- halo 点没有字形切向（`hasN` 为假），所以默认就**指向磁极** ——
+  正是模板里「铁屑被磁场吸住」的观感；长度比毛边更短、透明度更低，
+  近看是一圈散铁屑，远看不会把字糊住。
+
+**踩到的坑**：`haloRadius` 一开始写死 3 格，实测几乎看不见 ——
+因为网格步长 `step` 是跟着笔画宽度走的（这块卡片上只有 6px），3 格才 18px。
+改成按**像素**反推：`haloPx = fs * 0.5`（钳在 24~64px），再除以 step 得格数，
+这样无论字号 / 容器多大，环绕带的宽度观感一致。
+
+**另一个坑**：`picked.all` 是按覆盖率筛过的点，halo 不在里面，
+必须单独并进绘制列表（`const list = [...glyph, ...halo]`），否则永远画不出来。
+
+实测（无头 Chrome，1440×1200 与 390×844 两档）：
+画布 500×340 上字形居中，四周都采到了环绕铁屑（左 / 右 / 上 / 下四向均有），
+窄屏 360px 下无横向溢出。
+
+#### ② 移动端触屏适配
+
+**实测手段**：`cdp.mjs` 之外另写了一个探针，用 CDP 的
+`Emulation.setDeviceMetricsOverride` + `setTouchEmulationEnabled` +
+`setEmitTouchEventsForMouse` 真正模拟触屏设备
+（无头 Chrome 默认报 `hover:hover`，不模拟就测不到触屏样式），
+然后逐页扫描所有 `button / a[href] / [role=button]`，列出命中区小于 40px 的。
+
+**修掉的两类问题**：
+
+| 问题 | 表现 | 修法 |
+| --- | --- | --- |
+| ① 顶栏控件被 flex 压扁 | 390px 视口下，搜索按钮从 38px 挤成 **20px**、主题按钮从 52px 挤成 **27px** | `.app-header > a[title] / > button / > .row > *` 一律 `flex: none`（固定尺寸的控件不该参与收缩） |
+| ② 一批按钮命中区小于 44px | 首页轮播进度点 3px、轮播箭头 36px、影视 / 音乐大按钮 28px、「查看更多」25px、更新日志版本锚点 31px、共创页底部链接 19px、首页页脚链接 28px、海报墙行箭头 30px | 各自在所属样式文件里用 `@media (hover:none) and (pointer:coarse)` 放大到 40~44px |
+
+**为什么用 `(hover:none) and (pointer:coarse)` 而不是宽度断点**：
+窗口窄不等于触摸屏（桌面把窗口拉窄仍然用鼠标），而 44px 命中区是**手指**的需求，
+跟视口宽度无关。两者分开判断，桌面鼠标环境的外观一点不变。
+
+**另外**：手机端把首页轮播那 18 个进度点**收起**了 ——
+18 个点横排要 750px 宽，必然溢出（实测右侧越界 53px）；
+收起后只留「上一张 / 03 / 18 / 下一张」，信息不丢、不再溢出。
+
+**一个必须记住的加载顺序坑**：`home-landing.css` 随 Home 路由**异步**加载，
+排在 `global.css` 之后。所以轮播箭头（`.ld-hero-arrow`）的放大规则
+写到 `global.css` 里会被 `home-landing.css` 的基础规则覆盖（实测写了 44px 仍是 36px）。
+凡是 `ld-*` 前缀的样式，覆盖规则必须写回 `home-landing.css` 自己。
+
+#### ③ 首页「写在前面」文案修正
+
+用户指出：「还有反复听过的歌和**看过的片**」——「看过的片」容易被想歪。
+
+`frontend/src/routes/Home.jsx`：
+
+- 「反复听过的歌和看过的片」→「反复听过的歌**与看过的影视**」；
+- 下一句「从一篇文章走到一个项目、**一段影像**」→「……**一部作品**」（同类联想一并消掉）。
+
+#### 验证
+
+- 移动端探针（390×844 触屏模拟）逐页扫描：`/` `/posts` `/books` `/music` `/movies`
+  `/gallery` `/timeline` `/moments` `/favorites` `/changelog` `/coop` 全部
+  **`overflowX = 0`**，不再有 40px 以下的可点目标（除顶栏品牌图标 36px 与
+  两个胶囊的 38px 宽度，高度均已 40px）。
+- 前端探针全过：`justified` 50 / `gallery` 17 / `readerSwipe` 19 / `favorites` 5 /
+  `changelog` 39 / `queueOrder` 34 / `miniPlayer` 36 / `musicIdentity` 19 / `coop` 20 /
+  `ui-buttons` 18 / `graphStats` 42 / `statCharts` 311 / `fontUnify` 11 / `bookshelf` 12
+- `check-secrets` 245 文件无泄漏；`git diff --check` 干净；生产构建成功
+
+#### 已知噪声（不是缺陷）
+
+`bookshelf.probe.mjs` 的「有真实图书上架」偶发失败（跑 3 次 2 过 1 失败）：
+首页书架的数据来自 `api.listBooks('?limit=40')`，接口偶发慢 / 超时会被 `.catch` 吞掉，
+书架就全部退回占位书。这是**数据竞态**，与本轮 CSS 改动无关，已记录备查。
+
+#### 决策记录（PDF）
+
+用户明确：「PDF 那个不用管，可以下载就行」。因此**不做**站内 PDF 渲染
+（手机浏览器不支持 iframe 内嵌 PDF，会直接下载；要做需要引入 pdf.js，约 1.5MB 额外体积），
+保留现在的行为：桌面 Chrome 能在 iframe 里看，手机上点开即下载。
+
+---
+
+## 2026-10-12（本轮补记 3）：影视源改为「订阅 + 自动探测」（分支 feat/now-settings）
+
+用户决定（原话要点）：**不要再人工维护那 8 个源**了 —— 搜来搜去有些片子找不到、
+有些还卡。改用 MoonTVPlus 同款的那份**每天自动检测的源清单**，
+「用他的这个速度还挺快的」，把源接进主站即可。
+
+### 背景：为什么之前没找到这类项目
+
+上一轮找影视源时是**一个个试采集站接口**（能搜到 + 能播就收），
+而 LunaTV-config 这类项目是**「源清单」项目**：别人把几十个源收集好、
+还写了脚本每天自动检测。搜索思路不同，所以当时没搜到 —— 是方法窄了，不是网上没有。
+
+### 方案（已与用户确认）
+
+| 项 | 决定 |
+| --- | --- |
+| 源清单来源 | `hafrey1/LunaTV-config`（该仓库每天北京时间凌晨 1 点自动检测并重新生成，base58 编码） |
+| 是否保留人工 8 条 | **不保留**。实测 8 条里有 6 条与清单完全一致，另 2 条是同站不同接口 —— 已被覆盖 |
+| 筛选标准 | 用主站自己的探测筛，**不直接采信上游**（上游只验「接口能连通」，不验「点进去能播」） |
+| 存储 | R2（`system/dynamic-vod-sources.json`），不新增 Supabase 表、不做迁移 |
+| 定时任务 | **复用现有 cron**（不新增触发器，见下） |
+
+### ① 新增 `backend/src/lib/dynamicSources.js`
+
+- **base58 解码**：零依赖自实现（约 16KB 文本，朴素按位累加足够），
+  同时兼容明文 JSON（`parseSubscription` 两种都认）。
+- **源结构转换**：LunaTV 的 `{host:{name,api,detail}}` → 主站 `{key,name,api,detail}`，
+  `key` 用域名，保证多次拉取顺序变化时 key 稳定。
+- **成人源过滤（硬性）**：上游清单里混着 **30 个成人资源站**（名字带 🔞 及一批黑话命名的站）。
+  面向普通访客的知识库站点**绝不能**收录，因此在 `normalizeLunaSources` 里直接剔除：
+  **69 → 39 个**。
+- **探测（比健康中心更严）**：
+  1. 列表：`ac=videolist`（**不带关键词**，取最新更新）
+  2. 详情：`ac=detail&ids=` 首条 → 必须有可播地址
+  3. 主清单：GET m3u8 → 200 且内容像 m3u8
+  4. 首个分片：取一个分片看 200/206 —— **参考项，不决定成败**
+     （很多源分片做了防盗链直连 403，但播放器走 `/api/vod/proxy` 能播）
+- **分批探测 + 滚动体检**：游标存 R2，每轮探一小批，几轮覆盖全部源，然后从头再来。
+- **失败不立刻摘**：连续失败 `MAX_CONSECUTIVE_FAILURES = 3` 轮才移除，
+  避免一次网络抖动误杀好源。
+- **失败回退**：探测异常时保留上一次的结果，绝不把源列表清空。
+
+### ② 关键修正：**不能用关键词搜索判源好坏**
+
+第一版用「搜索关键词」探测，结果 **49/69 被误判为坏**。
+排查发现：**很多源禁用了关键词搜索**（接口直接返回 `Current API forbids keyword search`），
+但它们「取最新列表」完全正常、站点上照样能搜到片。
+改用 `ac=videolist`（不带关键词）后误判消失。
+
+### ③ 探测必须带 Referer
+
+采集接口普遍校验 Referer 必须来自源站自身，否则 403/503。
+实测 `iqiyizyapi.com` 详情接口不带 Referer 返回 **503**，带上就 200。
+因此 `fetchJsonWithTimeout` 先带源站 Referer 请求，失败再不带重试一次
+（两类站都存在，兜底比猜更省事）。
+
+### ④ 接线：`maccms.js` 改为「动态源优先」
+
+- 新增 `ensureVodSources(env)`（**异步**）：`env.VOD_SOURCES` > 动态源（R2）> 内置兜底源。
+- 保留 `getVodSources(env)`（**同步**）用于兼容，只读内存缓存 / env / 内置源。
+- **isolate 级内存缓存**：同实例内 5 分钟只读一次 R2，避免每次搜索都打 R2。
+- 6 处调用点全部改走 `ensureVodSources`：
+  `fetchers.js`(4) / `sourceHealth.js`(1) / `routes/movies.js`(1)。
+- 内置 `DEFAULT_VOD_SOURCES` **保留作兜底**：动态源尚未探出结果时站点仍可用。
+
+### ⑤ 定时任务：复用现有 cron（重要）
+
+新增 `*/15 * * * *` 触发器时**部署失败**：
+
+```
+This account has reached the Workers Free limit of 5 cron triggers per account
+```
+
+排查账号 cron 占用：`mailflare`(2) + `moontv-plus`(1) + `rin-server`(1) +
+`knowledge-base-api`(1) = **5 个，已满**。
+
+因此改为**搭现有 cron 的车**：在 `*/5 2-3 * * *` 分支里顺带跑一批探测
+（每次 3 个源，`DYNAMIC_SOURCE_BATCH` 可覆盖）。该 cron 每天触发 24 次
+→ 每天约探 72 次，足够覆盖 39 个源并滚动体检。
+子请求预算：每源最多 5 次请求 ≈ 15 次，与 Star 同步共用 50 次上限仍有余量。
+
+### ⑥ 新增管理员接口（`backend/src/routes/dynamicSources.js`）
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| GET | `/api/admin/vod-sources/dynamic` | 查看订阅状态 + 当前生效源 + 游标 |
+| POST | `/api/admin/vod-sources/dynamic/refresh` | 手动触发一轮探测 |
+| POST | `/api/admin/vod-sources/dynamic/reset` | 清空动态源，回退内置兜底 |
+
+### 验证结果
+
+- 本机端到端（内存 R2 + 本地订阅文件）：4 轮探完，**12 个源通过四步探测**（分片校验全 ✅）。
+- 本机接线验证：R2 空 → 回退内置 8 个；探测写入后 → 生效 16 个动态源（与内置完全不同）。
+- **线上实测**：部署后探测正常写入 R2（`system/dynamic-vod-sources.json`），
+  搜索路径实际拿到 **5 个动态源**（电影天堂 / 猫眼 / iKun / 豆瓣 / 茅台），
+  确认不是内置那 8 个 → 接线生效。
+- 单元测试 117 项全过；`/health` `/api/movies/latest` `/api/sources/health`
+  `/api/moments` `/api/books` `/api/gallery` 全部 200。
+- 临时调试端点与临时 cron 已删除，线上确认 `/api/debug/dynamic-sources` → 404。
+
+### 坑与注意
+
+1. **CF 免费版每账号 5 个 cron 触发器**，加之前先查占用：
+   `curl .../accounts/<id>/workers/scripts/<name>/schedules`。
+2. **CF 出口 IP 会被部分源站拒绝**：线上探测时 `iqiyizyapi.com` 返回 503
+   （本机同样如此），`cj.lzcaiji.com` 主清单超时。这是源站风控，不是代码问题；
+   靠「连续失败 3 轮才摘 + 失败回退上一次结果」兜住。
+3. **`wrangler tail` 抓不到 scheduled 日志**（只显示 fetch 请求），
+   排查 cron 问题用临时 HTTP 端点更直接。
+4. 本机走代理，探测耗时会明显高于 CF 边缘（速播本机 9.9s，CF 上快得多），
+   **不要用本机耗时给线上定超时**。
+
+### 下一步
+
+- 观察几天线上探测通过率，必要时调 `DYNAMIC_SOURCE_BATCH` 或超时。
+- 管理员接口目前只有后端，前端「源状态」页可考虑加一个入口（待用户决定）。

@@ -388,27 +388,40 @@ export async function getAnimeClassIds(source) {
 }
 
 // 默认采集源（可用环境变量 VOD_SOURCES 覆盖，格式为 JSON 数组）
-// 5 个源并发检索，命中率显著高于单源；代价是单次搜索耗时变长（多源均无结果时才等超时）。
+// 多源并发检索，命中率显著高于单源；代价是单次搜索耗时变长（多源均无结果时才等超时）。
+//
+// ⚠ 排序口径（2026-10-12 用户明确要求）：
+//   「先选有效的，再选低延迟的 —— 直接没效果的（点了播不了的）就不要放进来。」
+//   因此下面的顺序 = **实测能端到端播通** 为前提，组内再按响应快慢排。
+//   验证口径（每一步都真的拉一次网络，任一步失败即判不可用）：
+//     搜索接口 → 首条结果的 m3u8 主清单 → 变体清单 → 首个 .ts 分片返回 206/200。
+//   「搜索能用但片源 403/404」的源一律不收 —— 用户懒得看「因为某某原因播不了」。
 export const DEFAULT_VOD_SOURCES = [
-  // 2026-10-09 全量复测（22 个候选 × 5 部片：流浪地球/庆余年/繁花/兰香如故/凡人修仙传）
-  // 判定标准：搜得到 + m3u8 能拉 + 第一个 ts 分片能下载（无 Referer，模拟浏览器直连）；只留 5/5 且快的。
-  // 顺序即优先级（按片源响应速度）。
-  { key: 'guangsu', name: '光速资源', api: 'https://api.guangsuapi.com/api.php/provide/vod/' },   // 5/5 搜索~280ms 片源~130ms
-  { key: 'subo', name: '速播资源', api: 'https://subocaiji.com/api.php/provide/vod/' },           // 5/5 ~370ms / ~180ms
-  { key: 'hhzy', name: '豪华资源', api: 'https://hhzyapi.com/api.php/provide/vod/' },             // 5/5 ~320ms / ~250ms
-  { key: 'ikun', name: '艾坤资源', api: 'https://ikunzyapi.com/api.php/provide/vod/' },           // 5/5 ~100ms / ~500ms
-  { key: 'zy360new', name: '360资源', api: 'https://360zyzz.com/api.php/provide/vod/' },          // 5/5 ~240ms / ~650ms，目录最深
-  { key: 'mdzy', name: '魔都资源', api: 'https://www.mdzyapi.com/api.php/provide/vod/' },         // 5/5 ~150ms / ~1s（2026-10-09 新增）
-  // 2026-10-10 复测新增：360zy.com 与上面的 zy360new（360zyzz.com）是**两个不同域名**的独立片库，
-  // 实测 5/5 端到端可播（搜索→详情→master→变体→首个 ts 分片 206，直连与经 /api/vod/proxy 均可）。
-  // 分片域名 vod.maowushi.com / vod1/vod2.maowushi.com 为常规 HTTPS 端口。
-  { key: '360zy', name: '360资源(备用)', api: 'https://360zy.com/api.php/provide/vod/' },         // 5/5 搜索~1.3s / 片源~1.3s
+  // —— 第一档：2026-10-12 复测「搜索 + 取流都可用，且响应快」——
+  { key: 'subo', name: '速播资源', api: 'https://subocaiji.com/api.php/provide/vod/' },           // 搜索~3.2s 片源~0.5s
+  { key: 'hhzy', name: '豪华资源', api: 'https://hhzyapi.com/api.php/provide/vod/' },             // 搜索~3.8s 片源~0.5s
+  // 旧项目（E:\AI Agent测试\...\项目开发\影音助手）里当时可用的三条源，
+  // 2026-10-12 复测：搜索 + m3u8 + 首个 ts 分片全部 206，且搜索明显比现用源快。
+  { key: 'ffzy', name: '非凡资源', api: 'https://api.ffzyapi.com/api.php/provide/vod/' },          // 搜索~0.9s 片源可用
+  { key: 'dytt', name: '电影天堂', api: 'https://caiji.dyttzyapi.com/api.php/provide/vod/' },      // 搜索~0.7s 片源可用
+  { key: 'lzi', name: '量子资源', api: 'https://cj.lziapi.com/api.php/provide/vod/' },             // 搜索~1.1s 片源可用
+  { key: '360zy', name: '360资源', api: 'https://360zy.com/api.php/provide/vod/' },               // 搜索~1.7s 片源可用
+  { key: 'zy360new', name: '360资源(备用)', api: 'https://360zyzz.com/api.php/provide/vod/' },     // 搜索~3.6s 片源可用
+  // —— 第二档：可用但明显偏慢，排在后面（用户要「低延迟优先」）——
+  { key: 'guangsu', name: '光速资源', api: 'https://api.guangsuapi.com/api.php/provide/vod/' },    // 搜索~10s，压线
 ];
-// 2026-10-09 移除（详见 docs/removed-features.md）：
+// 2026-10-12 移除（用户要求「直接没效果的不要测、不要放」）：
+//   片源 403/404（防盗链/链接失效，点进去播不了）：jszy 极速、zuid 最大、wujin、bfzy、
+//     hongniu 红牛、jyzy 金鹰、kuyun、tiankong、tyyszy、heimuer、mahua、cjtv、ffzy5
+//   实测连不上 / 超时：ikun 艾坤（fetch failed）、mdzy 魔都（超时）
+//   —— 上面这些都不再放进默认源列表，避免「搜索有结果但点了播不了」。
+//
+// 2026-10-09 历史记录（详见 docs/removed-features.md）：
 //   片源 403（防盗链/地区限制，点进去播不了）：dytt 电影天堂、jszy 极速、ffzy 非凡、zuid 最大
 //   片源 404（链接失效）：lzi 量子
 //   能播但太慢：hongniu 红牛（片源 2.6s，且 1/5 超时）、jyzy 金鹰（片源 6.2s）
 //   文档候选未采用：wujin/bdzy（403）、bfzy（404）、heimuer/tyyszy/wolong/yinghua（搜索接口坏）
+//   ⚠ dytt / ffzy / lzi 这三条在 2026-10-09 判为不可用，2026-10-12 复测已恢复并重新收录。
 //
 // 2026-10-10 复测（5 部片 × 端到端：搜索 → 详情 → master → 变体 → 首个 ts 分片）：
 //   ruyi 如意资源（https://cj.rycjapi.com/api.php/provide/vod/）——**不采用**。
@@ -424,20 +437,89 @@ export const DEFAULT_VOD_SOURCES = [
 //     把典型搜索耗时从 ~3s 拖到 ~11s。移除后其余源实测均在 2.1s 内返回。
 //     2026-10-10 复测已恢复（见上方 360zy 条目）：搜索/详情/片源均正常，耗时回到 ~1.3s。
 
-// 读取配置的采集源：优先 env.VOD_SOURCES，否则用默认列表
-export function getVodSources(env = {}) {
-  const raw = env.VOD_SOURCES;
-  if (raw) {
-    try {
-      const list = JSON.parse(raw);
-      if (Array.isArray(list)) {
-        return list
-          .filter((s) => s && s.key && s.api)
-          .map((s) => ({ key: String(s.key), name: String(s.name || s.key), api: String(s.api) }));
-      }
-    } catch {
-      // 解析失败时回退默认源
-    }
+// ---------------------------------------------------------------
+// 读取采集源（2026-10-12 起改为「动态源优先」）
+// ---------------------------------------------------------------
+//
+// 优先级：env.VOD_SOURCES（管理员手动指定）> 动态源（R2，每日定时刷新）
+//         > DEFAULT_VOD_SOURCES（内置兜底）
+//
+// 动态源由 lib/dynamicSources.js 从 LunaTV-config 订阅拉取 + 四步探测筛选后写入 R2。
+// 这里做**isolate 级内存缓存**：同一个 Worker 实例内 5 分钟内只读一次 R2，
+// 避免每次搜索都打一次 R2（R2 读虽便宜，但没必要）。
+//
+// 兼容性：getVodSources 保持同步（6 处老调用点不用改签名）；
+// 异步路径请改用 ensureVodSources(env)，它会在需要时把动态源装进缓存。
+let dynamicSourceCache = null;   // { sources, at }
+const DYNAMIC_SOURCE_TTL_MS = 5 * 60 * 1000;
+
+function normalizeSourceList(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter((s) => s && s.key && s.api)
+    .map((s) => ({
+      key: String(s.key),
+      name: String(s.name || s.key),
+      api: String(s.api),
+      ...(s.detail ? { detail: String(s.detail) } : {})
+    }));
+}
+
+function sourcesFromEnv(env) {
+  const raw = env?.VOD_SOURCES;
+  if (!raw) return null;
+  try {
+    const list = JSON.parse(raw);
+    const normalized = normalizeSourceList(list);
+    return normalized.length ? normalized : null;
+  } catch {
+    return null;   // 解析失败时回退
   }
+}
+
+/**
+ * 取当前生效的采集源（异步，会按需装载动态源）。
+ * 所有异步调用点都应该用这个。
+ */
+export async function ensureVodSources(env = {}) {
+  // 1) 管理员手动指定优先
+  const fromEnv = sourcesFromEnv(env);
+  if (fromEnv) return fromEnv;
+
+  // 2) 内存缓存命中
+  if (dynamicSourceCache && Date.now() - dynamicSourceCache.at < DYNAMIC_SOURCE_TTL_MS) {
+    return dynamicSourceCache.sources;
+  }
+
+  // 3) 读 R2 里的动态源
+  try {
+    const { getDynamicSources } = await import('./dynamicSources.js');
+    const dyn = await getDynamicSources(env);
+    const normalized = normalizeSourceList(dyn);
+    if (normalized.length) {
+      dynamicSourceCache = { sources: normalized, at: Date.now() };
+      return normalized;
+    }
+  } catch (err) {
+    console.error('[maccms] 装载动态源失败，回退内置源:', err?.message || err);
+  }
+
+  // 4) 兜底：内置源（动态源尚未探测出结果时，站点仍可用）
+  return DEFAULT_VOD_SOURCES;
+}
+
+/** 清空动态源缓存（管理员手动刷新后用）。 */
+export function resetVodSourceCache() {
+  dynamicSourceCache = null;
+}
+
+/**
+ * 同步取源（兼容老调用点）。只读内存缓存 / env / 内置默认，
+ * **不会**触发 R2 读取；首次请求若缓存为空会先返回内置源，
+ * 由并行的 ensureVodSources 在后续请求补上动态源。
+ */
+export function getVodSources(env = {}) {
+  const fromEnv = sourcesFromEnv(env);
+  if (fromEnv) return fromEnv;
+  if (dynamicSourceCache) return dynamicSourceCache.sources;
   return DEFAULT_VOD_SOURCES;
 }

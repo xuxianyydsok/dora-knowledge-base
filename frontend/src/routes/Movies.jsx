@@ -88,6 +88,11 @@ export function Movies() {
   const [candLoading, setCandLoading] = useState(false);
   const [candError, setCandError] = useState('');
   const [busy, setBusy] = useState(false);
+  // 正在处理的那一条候选的 key。为什么不用一个全局 busy 布尔：
+  // 全局布尔会让**所有**卡片同时进入加载态，用户看不出自己点的是哪一个；
+  // 2026-10-12 用户要求「点击了就显示加载动画，加载出来马上消失」，
+  // 因此按条目记录，只有被点的那张卡显示动画。
+  const [pendingKey, setPendingKey] = useState('');
   const [media, setMedia] = useState('all');
   const [year, setYear] = useState('all');
   const [sort, setSort] = useState('relevance');
@@ -179,11 +184,24 @@ export function Movies() {
     route(`/movies/watch/${encodeURIComponent(candidate.source)}/${encodeURIComponent(candidate.external_id)}`);
   }
 
+  // 候选条目的稳定 key（与下面渲染时的 key 保持一致），用来定位「正在处理哪一张卡」。
+  const keyOf = (c) => `${c.source}-${c.external_id}`;
+
   async function addFrom(candidate) {
-    if (!isAuthenticated) { watch(candidate); return; }
+    // 访客不入库、直接进播放页 —— 这条路同样要立刻给加载反馈，
+    // 因为跳过去之后还要回源取线路，期间页面是空的。
+    if (!isAuthenticated) {
+      setPendingKey(keyOf(candidate));
+      watch(candidate);
+      // 交给路由切走；万一跳转失败也把动画收掉，不留一个永远转圈的卡片。
+      setTimeout(() => setPendingKey(''), 4000);
+      return;
+    }
+    const key = keyOf(candidate);
     setBusy(true);
+    setPendingKey(key);
     try {
-      await api.createMovie({
+      const created = await api.createMovie({
         title: candidate.title,
         media_type: candidate.media_type,
         original_title: candidate.original_title,
@@ -206,13 +224,26 @@ export function Movies() {
         url: candidate.playable_url || null,
         external_url: candidate.page_url || null
       });
-      const list = await load();
-      const created = (list || []).find((m) => m.title === candidate.title);
       toastSuccess(`《${candidate.title}》已加入影视库`);
-      if (created) route(`/movies/${created.id}`);
+      // 关键：**不再重新拉一遍整个影视列表**再去找刚建的那条。
+      // createMovie 的响应就是完整的影视对象（含 title_info），直接拿它跳转。
+      // 之前那一步 `await load()` 会把整张表拉回来，实测让「点击 → 进详情」
+      // 平白多了 3~4 秒，正是用户说的「点击之后有延迟」。
+      if (created?.id) {
+        // 先清掉加载动画再跳转：不然跳过去的瞬间卡片上还挂着一个转圈，
+        // 视觉上像「点了两次」。动画的消失条件就是「内容已就绪」，这里正合适。
+        setPendingKey('');
+        route(`/movies/${created.id}`);
+      } else {
+        // 兜底：后端没回 id（理论上不会）才退回原来的「拉列表找一遍」。
+        const list = await load();
+        const found = (list || []).find((m) => m.title === candidate.title);
+        setPendingKey('');
+        if (found) route(`/movies/${found.id}`);
+      }
     } catch (e) {
       toastError(`加入失败：${e.message}`);
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setPendingKey(''); }
   }
 
   // —— 本地筛选与排序：采集候选一次性取回，切筛选不再打接口 ——
@@ -261,6 +292,9 @@ export function Movies() {
         activeTab={mode}
         onTab={(k) => { if (k === 'search') return; switchMode(k); }}
       >
+        <a class="btn" href="https://moontv.xuguochen.de5.net" target="_blank" rel="noreferrer" title="打开增强版影视库（多源聚合，独立站点）">
+          <Icon name="external" size={14} /> 增强版影视库
+        </a>
         <button class="primary" onClick={() => route('/movies/new')}>
           <Icon name="plus" size={14} /> 手动添加
         </button>
@@ -268,22 +302,26 @@ export function Movies() {
 
       {/* —— 常驻工具条：搜索 + 筛选 + 源状态 —— */}
       <div class="toolbar sticky">
-        <form class="toolbar-field" onSubmit={search}>
-          <Icon name="search" size={15} />
-          <input
-            placeholder="搜索电影 / 剧集 / 动漫，如：蜘蛛侠、庆余年、凡人修仙传"
-            value={query}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-          />
-          {query && (
-            <button type="button" class="field-clear" title="清空" onClick={() => setQuery('')}>
-              <Icon name="close" size={12} />
-            </button>
-          )}
-        </form>
+        {/* 搜索框 + 它正下方的搜索历史：两者包成一栏，历史才真的贴在搜索框下面，
+            而不是被 flex 排到搜索框右边去（2026-10-12 用户要求）。 */}
+        <div class="toolbar-search">
+          <form class="toolbar-field" onSubmit={search}>
+            <Icon name="search" size={15} />
+            <input
+              placeholder="搜索电影 / 剧集 / 动漫，如：蜘蛛侠、庆余年、凡人修仙传"
+              value={query}
+              onInput={(e) => setQuery(e.currentTarget.value)}
+            />
+            {query && (
+              <button type="button" class="field-clear" title="清空" onClick={() => setQuery('')}>
+                <Icon name="close" size={12} />
+              </button>
+            )}
+          </form>
 
-        {/* 搜索历史：每条右侧 × 单独删，另有「一键清空」（用户要求） */}
-        <SearchHistory scope="movies" refreshKey={histKey} onPick={(kw) => { setQuery(kw); lastQuery.current = kw; switchMode('search', kw); }} />
+          {/* 搜索历史：每条右侧 × 单独删，另有「一键清空」（用户要求） */}
+          <SearchHistory scope="movies" refreshKey={histKey} onPick={(kw) => { setQuery(kw); lastQuery.current = kw; switchMode('search', kw); }} />
+        </div>
 
         {!isChannel && <>
           <div class="seg">
@@ -363,6 +401,8 @@ export function Movies() {
                     item={c}
                     hot={mode === 'hot'}
                     busy={busy}
+                    pending={pendingKey === keyOf(c)}
+                    collectLabel={isAuthenticated ? '加入影视库' : '播放'}
                     onOpen={() => addFrom(c)}
                     onCollect={() => addFrom(c)}
                   />
