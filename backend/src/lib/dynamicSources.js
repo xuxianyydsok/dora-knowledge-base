@@ -19,6 +19,23 @@
 const CONFIG_URL_DEFAULT =
   'https://raw.githubusercontent.com/hafrey1/LunaTV-config/main/LunaTV-config.txt';
 
+// 补充订阅源（2026-10-12 调研后接入）。
+// 为什么加：主库 hafrey1 过滤成人后约 39 条，实测安全源通过率 67%；
+// smallmain/moontv-aggr-config 是「五库去重合并」的产物，lite.json 全是安全源、
+// 通过率 82%，能补进主库没有的约 30 条可用源。
+// 走 jsdelivr 而不是 raw.githubusercontent：实测 raw 对这两个仓库间歇 403，
+// jsdelivr 稳定 200（且本身是 CDN，从 CF 边缘取更快）。
+// 只当**补充**：拉取失败不影响主库（见 fetchAllSubscriptions）。
+// 每条补充库给**多个镜像**，按顺序尝试、第一个成功即用：
+//   实测 jsdelivr 与 raw.githubusercontent 都会间歇性失败（本机测 jsdelivr 约 1/3 失败），
+//   单挂一个地址等于「补充库时有时无」，源数量会来回抖。两个都挂上，可用性高得多。
+const EXTRA_CONFIGS = [
+  { name: 'smallmain/lite', urls: [
+    'https://cdn.jsdelivr.net/gh/smallmain/moontv-aggr-config@main/lite.json',
+    'https://raw.githubusercontent.com/smallmain/moontv-aggr-config/main/lite.json'
+  ] }
+];
+
 // R2 对象键：探测结果
 const R2_KEY_SOURCES = 'system/dynamic-vod-sources.json';
 // R2 对象键：探测进度（记录上一轮探到第几个，实现分批）
@@ -107,6 +124,47 @@ export function parseSubscription(text) {
 const ADULT_NAME_RE = /🔞|成人|里番|色情|黄片|福利片|老色|黑料|桃花|小鸡|jkun|番号|白嫖|乐播|av资源|午夜/i;
 const ADULT_HOST_RE = /(^|[.\-])(av|porn|xxx|sex|18|18av|jav)([.\-]|$)/i;
 
+// 类目级判定：**比名字更可靠**，用来抓「名字干净、内容全是成人」的伪装源。
+// 2026-10-12 实测发现的真实案例（名字完全看不出问题）：
+//   · bhziyuan.com「百花资源站」→ 类目：强奸乱伦 / 日韩无码 / 日本AV / 经典三级 / 少女嫩模…
+//   · api.vnzyz.com「越南资源站」→ 类目：亚洲情色 / 热门女优 / 无码专区 / VR资源 / JAV高清…
+//   · jipinvip1.com「新极品资源站」→ 类目：日韩无码 / 自拍偷拍 / SM重味 / 颜射系列…
+// 这三条都是调研里「实测可用、通过率不低」的源，只按名字过滤会全部放进主站。
+// ⚠ 只收**高精度**词：这里的词一旦误判就会整源剔除，宁缺毋滥。
+// 特意不收的模糊词（正规源也常用，收了会误杀）：
+//   原创 / 精品 / 传媒 / 网红 / 二次元 / 人妻 / 少妇 / 丝袜 / 美腿 / 写真 /
+//   福利 / 激情 / 三级（单看「三级」太宽，改用「伦理三级」这类组合）
+const ADULT_CLASS_RE = /强奸|乱伦|人兽|无码|有码专区|日本AV|JAV|AV解说|AV明星|色情|情色|伦理三级|伦理片|伦理影片|自拍偷拍|偷拍自拍|黑料|吃瓜|探花|女优|嫩模|传媒视频|淫|口交|颜射|自慰|SM重味|SM调教|换脸|男同|女同|同性恋|人妖|VR资源|深夜视频|里番|H漫|禁漫|巨乳|爆乳|母狗|反差|媚药|迷奸|援交|外围|约炮|撸管|大秀|视频[一二三四五]区|变态另类|欧美性爱|制服诱惑|制服师生|教师学生|学生空姐|野战车震|偷情少妇|精品探花|精品网红|家庭乱伦|百合女同|亚洲情色|热门女优|4K岛国|国产自拍|韩国资源|卡通动漫|制服诱惑/i;
+
+// 判定「类目名是否成人向」。类目表来自 ac=list 的 class 数组。
+// 注意：**只看类目名，不看条目名** —— 条目名里出现「人妻 / 少妇」等词在正规
+// 影视剧里也常见（如《昼颜》类题材），按标题判会大量误杀正常片子；
+// 而类目表是源站自己划的专区，命名直白，是判定站点性质的可靠信号。
+export function isAdultClassLabel(label) {
+  return ADULT_CLASS_RE.test(String(label || '').trim());
+}
+
+/**
+ * 统计一个源站类目表里的成人向类目占比。
+ * @returns {{adult: string[], total: number, ratio: number}}
+ */
+export function adultClassStats(classes = []) {
+  const names = (Array.isArray(classes) ? classes : [])
+    .map((c) => String(c?.type_name || '').trim())
+    .filter(Boolean);
+  const adult = names.filter((n) => isAdultClassLabel(n));
+  return { adult, total: names.length, ratio: names.length ? adult.length / names.length : 0 };
+}
+
+// 成人类目占比超过该阈值即整源剔除。
+// 为什么不是「命中一个就剔除」：正规源也常挂一个「伦理片」叶子类目
+// （实测电影天堂 / 猫眼 / iKun / 豆瓣 / 茅台都有，占比 1/30 上下），
+// 一刀切会把所有正常源一起干掉。而真正的成人站占比普遍 > 50%。
+const ADULT_CLASS_RATIO_LIMIT = 0.3;
+// 单看占比仍可能漏掉「小站只有几个类目、其中一个是成人」的情况，
+// 因此再补一条绝对量阈值：成人类目 ≥ 6 个也直接剔除（正常源不会挂这么多）。
+const ADULT_CLASS_ABS_LIMIT = 6;
+
 /** 判断一个源是否为成人 / 违规源（命中即排除）。 */
 export function isBlockedSource(site) {
   const name = String(site?.name || '');
@@ -183,6 +241,68 @@ export async function fetchSubscription(env = {}, { url = null, timeoutMs = 8000
 // R2 读写（探测结果 + 游标）
 // ---------------------------------------------------------------
 
+/**
+ * 拉取**全部**订阅（主库 + 补充库）并合并去重。
+ *
+ * 合并规则：按**接口主机名**去重，主库优先 —— 同一个站点在主库与补充库里
+ * 都有时，保留主库那条（主库的维护频率更高、name 更规范）。
+ *
+ * 容错：补充库拉取失败**不影响主库**。这是有意的设计 ——
+ * 主库是站点的生命线，不能因为一个可选的补充库 403/超时就整体拉不到源。
+ * 主库失败才抛错（调用方会回退到上一次的 R2 结果）。
+ */
+export async function fetchAllSubscriptions(env = {}, { url = null, timeoutMs = 8000 } = {}) {
+  const primary = await fetchSubscription(env, { url, timeoutMs });
+  // ⚠ 按 api 的**主机名**去重，不能按 key：
+  //   两个库的 key 命名规则不同 —— 主库用域名（`caiji.dyttzyapi.com`），
+  //   补充库把整条路径拼成 key（`caiji_dyttzyapi_com_provide_vod`）。
+  //   按 key 比会把同一个站点当成两条：实测合并出 77 条，其中 34 条是这种重复
+  //   （唯一主机名只有 43 个），等于把每个源都探两遍、白烧子请求配额。
+  const hostOf = (s) => {
+    try { return new URL(s.api).hostname.toLowerCase(); } catch { return String(s.key || '').toLowerCase(); }
+  };
+  const merged = new Map(primary.sources.map((s) => [hostOf(s), s]));
+  const extras = [];
+
+  // 显式传 url 时（管理接口手动重探 / 单测）只拉那一个，不叠加补充库，
+  // 保证「指定 url」的行为可预期。
+  const configs = url ? [] : EXTRA_CONFIGS;
+  for (const cfg of configs) {
+    let done = null;
+    const tried = [];
+    for (const mirror of cfg.urls) {
+      try {
+        const sub = await fetchSubscription(env, { url: mirror, timeoutMs });
+        let added = 0;
+        for (const s of sub.sources) {
+          const h = hostOf(s);
+          if (merged.has(h)) continue;
+          merged.set(h, s);
+          added += 1;
+        }
+        done = { url: mirror, total: sub.sources.length, added };
+        break;
+      } catch (err) {
+        tried.push({ url: mirror, error: String(err?.message || err).slice(0, 120) });
+      }
+    }
+    if (done) {
+      extras.push({ name: cfg.name, ...done, tried: tried.length ? tried : undefined });
+    } else {
+      // 补充库全部镜像都失败只记日志，不影响主库结果
+      console.error(`[dynamicSources] 补充订阅全部镜像失败 ${cfg.name}`);
+      extras.push({ name: cfg.name, error: '所有镜像均失败', tried });
+    }
+  }
+
+  return {
+    sources: [...merged.values()],
+    cacheTime: primary.cacheTime,
+    encoding: primary.encoding,
+    extras
+  };
+}
+
 async function r2GetJson(env, key) {
   if (!env?.R2_BUCKET) return null;
   try {
@@ -258,6 +378,21 @@ export async function probeSourceDeep(source, {
   // —— 步骤 1：列表（不带关键词，取最新更新）——
   let detailUrl;
   try {
+    // 步骤 0（与列表同一轮请求内完成）：先看类目表，剔除「名字干净、内容全是成人」的伪装源。
+    // 放在最前面是有意的：这类源接口是通的、片子也能播，只有类目表能识破它，
+    // 如果放到最后判定，等于白花 4 次子请求去验证一个注定要丢的源。
+    // 拿不到类目表时**不判死**（部分源不支持 ac=list），交给后面的四步探测决定。
+    try {
+      const classBody = await fetchJsonWithTimeout(buildApiUrl(source.api, { ac: 'list' }), listTimeoutMs);
+      const stats = adultClassStats(classBody?.class);
+      if (stats.total >= 4 && (stats.ratio > ADULT_CLASS_RATIO_LIMIT || stats.adult.length >= ADULT_CLASS_ABS_LIMIT)) {
+        return {
+          ...done(false, 'adult', `成人向类目 ${stats.adult.length}/${stats.total}：${stats.adult.slice(0, 4).join('/')}`),
+          adult: true
+        };
+      }
+    } catch { /* 类目表取不到就跳过这一道，不据此判死 */ }
+
     const listUrl = buildApiUrl(source.api, { ac: 'videolist', pg: 1 });
     const body = await fetchJsonWithTimeout(listUrl, listTimeoutMs);
     const list = Array.isArray(body?.list) ? body.list : [];
@@ -466,11 +601,12 @@ export async function refreshDynamicSources(env = {}, { batchSize = PROBE_BATCH_
     errors: []
   };
 
-  // 1) 拉订阅
-  const sub = await fetchSubscription(env, { url });
+  // 1) 拉订阅（主库 + 补充库合并）
+  const sub = await fetchAllSubscriptions(env, { url });
   const all = sub.sources;
   summary.total = all.length;
   summary.encoding = sub.encoding;
+  summary.extras = sub.extras || [];
 
   // 2) 读旧状态（含游标 + 已通过名单）
   const prev = await r2GetJson(env, R2_KEY_SOURCES);

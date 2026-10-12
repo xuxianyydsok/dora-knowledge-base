@@ -32,6 +32,7 @@ import * as safeUrl from '../src/lib/safeUrl.js';
 import * as momentsRoute from '../src/routes/moments.js';
 import * as meRoute from '../src/routes/me.js';
 import * as githubAi from '../src/lib/githubAi.js';
+import * as dynamicSources from '../src/lib/dynamicSources.js';
 // 前端纯函数（无依赖、无 import，Node 可直接加载）：验证前后端直链判定一致
 import * as feMediaUrl from '../../frontend/src/lib/mediaUrl.js';
 
@@ -1164,6 +1165,48 @@ async function unit() {
     const cover = fetchers.musicScore({ title: '稻香', artist: '其他歌手', audio_url: 'x' }, '周杰伦', tally);
     assert(self > cover, '单词查询：本人应高于翻唱');
     return `正片 ${real} > 伴奏 ${beat} / DJ ${dj}；两段命中 ${swapped} > 仅歌手 ${onlyArtist}`;
+  });
+
+  await test('影视源过滤：名字干净但内容全是成人的伪装源必须被类目级判定剔除', async () => {
+    const { isAdultClassLabel, adultClassStats } = dynamicSources;
+    // 真实案例（2026-10-12 从 Cloudflare 出口实测 ac=list 拿到的类目表）：
+    // 这三个源的**名字**完全正常，只按名字过滤会全部放进主站。
+    const baiflower = ['变态另类', '云转码入库勿删', '强奸乱伦', '日韩无码', '日本AV', '黑料吃瓜',
+      '传媒视频', '国产精品', '欧美电影', '经典三级', '明星淫梦', 'AV解说', '动漫电影',
+      '少女嫩模', '精选短片', '深夜视频', '原创', '国产综艺', '人兽', '二次元', '同性恋', '国产探花'];
+    const vietnam = ['视频一区', '视频二区', '视频三区', '亚洲情色', '热门女优', '中文字幕',
+      '国产自拍', '无码专区', '伦理三级', '制服师生', '强奸乱伦', '丝袜美腿', '人妻熟女',
+      '欧美性爱', '4K岛国', '韩国资源', '卡通动漫', '人妖人兽', '男同女同', 'VR资源', 'JAV高清'];
+    const jipin = ['视频一区', '日韩无码', '国产精品', '日韩精品', '欧美精品', '自拍偷拍',
+      '伦理影片', '人妻系列', '制服诱惑', '强奸乱伦', 'AV明星', 'SM重味', '巨乳系列',
+      '颜射系列', '口交视频', '自慰系列', '教师学生', '大秀视频', '明星换脸', '熟女少妇', '人兽乱交'];
+    for (const [name, labels] of [['百花', baiflower], ['越南', vietnam], ['新极品', jipin]]) {
+      const s = adultClassStats(labels.map((type_name) => ({ type_name })));
+      const blocked = s.total >= 4 && (s.ratio > 0.3 || s.adult.length >= 6);
+      assert(blocked, `${name} 应被判为成人源（命中 ${s.adult.length}/${s.total}）`);
+    }
+
+    // 正常源不能误杀：它们各自都挂着一个「伦理片」叶子类目（实测电影天堂 / 猫眼 /
+    // iKun / 豆瓣 / 茅台都是如此），占比很低，必须放行。
+    const normal = ['电影片', '连续剧', '综艺片', '动漫片', '动作片', '喜剧片', '爱情片',
+      '科幻片', '恐怖片', '剧情片', '战争片', '国产剧', '香港剧', '韩国剧', '欧美剧',
+      '记录片', '台湾剧', '日本剧', '海外剧', '泰国剧', '大陆综艺', '港台综艺', '伦理片'];
+    const ns = adultClassStats(normal.map((type_name) => ({ type_name })));
+    const nblocked = ns.total >= 4 && (ns.ratio > 0.3 || ns.adult.length >= 6);
+    assert(!nblocked, `正常源不应被剔除（命中 ${ns.adult.length}/${ns.total}）`);
+
+    // 「三级」「写真」「人妻」这类词单独出现时不该判成人（正规源也常用），
+    // 但「伦理三级」「自拍偷拍」这类组合要判。
+    assert(!isAdultClassLabel('三级'), '裸词「三级」不应单独判成人');
+    assert(isAdultClassLabel('伦理三级'), '「伦理三级」应判成人');
+    assert(isAdultClassLabel('自拍偷拍'), '「自拍偷拍」应判成人');
+    assert(!isAdultClassLabel('都市情感'), '普通类目不应误判');
+    assert(!isAdultClassLabel(''), '空类目不应误判');
+
+    // 名字级过滤仍要保留（上游清单里带 🔞 的源根本不该进来）
+    assert(dynamicSources.isBlockedSource({ name: '🔞XX资源', key: 'x.com', api: 'https://x.com/api' }), '带 🔞 的源应被剔除');
+    assert(!dynamicSources.isBlockedSource({ name: '电影天堂', key: 'dyttzyapi.com', api: 'http://caiji.dyttzyapi.com/api.php/provide/vod' }), '正常源不应被名字级过滤误杀');
+    return `成人源拦截 3/3，正常源放行，类目级判定 5 组断言全过`;
   });
 
   await test('默认采集源：含 360zy、不含实测不可用源', async () => {
