@@ -1,0 +1,522 @@
+/* 管理员「上传本地音乐」页面（routes/AdminMusic.jsx）
+ *
+ * 类名前缀 `amu-`（admin music upload）。
+ * 不用 `am-` 是因为它已被音乐首页占用（global.css 的 .am-hero / .am-track /
+ * .am-shelf 等，配合 components/MusicHome.jsx），复用会直接串味。
+ *
+ * 全部颜色取自 global.css 的主题变量，所以纯净 / 素雅 / 天青三套主题与
+ * 亮暗色都自动跟随，这里不写死任何色值。
+ */
+
+.amu-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap, 34px);
+}
+
+/* 拦截页里的「去音乐页」：<a> 要显式对齐，否则和按钮不等高 */
+.amu-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill, 999px);
+  font-size: var(--fs-sm, 13px);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* ---------------- 按钮：与全站同高同圆角 ----------------
+ * 用户反复提过「按钮高度不一致、搜索框里的字框超出框体」，
+ * 所以这里所有按钮统一 38px 高（与全局 button 一致），不靠 padding 撑。
+ */
+.amu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm, 10px);
+  border: 1px solid var(--border);
+  background: var(--glass-bg-strong, var(--bg-elevated));
+  color: var(--text);
+  font-size: var(--fs-sm, 13px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--dur-fast, .18s) var(--ease-out, ease),
+              background var(--dur-fast, .18s) var(--ease-out, ease),
+              transform var(--dur-fast, .18s) var(--ease-out, ease);
+}
+
+.amu-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  transform: translateY(-1px);
+}
+
+.amu-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.amu-btn.small {
+  height: 32px;
+  padding: 0 12px;
+  font-size: var(--fs-caption, 12px);
+}
+
+.amu-btn.ghost {
+  background: transparent;
+}
+
+.amu-btn.ghost:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+/* 方形图标按钮：与 32px 的 small 按钮同高，视觉成对 */
+.amu-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-sm, 10px);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur-fast, .18s) var(--ease-out, ease),
+              border-color var(--dur-fast, .18s) var(--ease-out, ease);
+}
+
+.amu-icon-btn:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+}
+
+.amu-icon-btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+/* ---------------- 上传区（拖拽 + 点击）---------------- */
+.amu-drop {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5, 16px);
+  flex-wrap: wrap;
+  padding: var(--sp-7, 26px) var(--sp-6, 20px);
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg, var(--bg-elevated));
+  color: var(--text-muted);
+  transition: border-color var(--dur-fast, .18s) var(--ease-out, ease),
+              background var(--dur-fast, .18s) var(--ease-out, ease);
+}
+
+.amu-drop.dragging {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.amu-drop-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.amu-drop-text strong {
+  font-size: var(--fs-lead, 15px);
+  color: var(--text);
+}
+
+.amu-drop-text span {
+  font-size: var(--fs-caption, 12.5px);
+  color: var(--text-muted);
+}
+
+.amu-drop-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 8px);
+}
+
+/* ---------------- 待上传队列 ---------------- */
+.amu-queue,
+.amu-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5, 16px);
+}
+
+.amu-queue-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4, 12px);
+  flex-wrap: wrap;
+}
+
+.amu-queue-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3, 8px);
+  margin: 0;
+  font-size: var(--fs-title, 17px);
+  letter-spacing: var(--track-ui, -0.02em);
+}
+
+.amu-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: var(--fs-caption, 12px);
+  font-weight: 600;
+}
+
+.amu-queue-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 8px);
+}
+
+.amu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4, 12px);
+}
+
+/* 一行一首：文件名 / 两个输入框 / 进度 / 操作。
+ * 用 grid 让四段在窄屏自动折行，而不是把输入框挤成一条缝。 */
+.amu-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 2fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: var(--sp-4, 12px);
+  padding: var(--sp-4, 12px) var(--sp-5, 16px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg-strong, var(--bg-elevated));
+}
+
+.amu-row.is-running {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.amu-row.is-failed {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+}
+
+.amu-row-file {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 8px);
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.amu-filename {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm, 13px);
+  color: var(--text);
+}
+
+.amu-size {
+  flex: none;
+  font-size: var(--fs-caption, 12px);
+  color: var(--text-muted);
+}
+
+.amu-row-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--sp-3, 8px);
+  min-width: 0;
+}
+
+.amu-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.amu-field span {
+  font-size: var(--fs-caption, 12px);
+  color: var(--text-muted);
+}
+
+/* 输入框显式 box-sizing：这是「搜索框里的按钮超出框体」那类问题的根因，
+ * 不设的话 padding + border 会把高度撑过容器。 */
+.amu-field input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 10px);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: var(--fs-sm, 13px);
+  font-family: inherit;
+}
+
+.amu-field input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--ring-focus, 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent));
+}
+
+.amu-field.has-error input {
+  border-color: var(--danger);
+}
+
+/* 歌词：可选字段，占满整行（歌名/歌手是两个窄列）。
+ * 站长习惯把整段 LRC 直接粘进来，所以用 textarea 并允许纵向拉伸，
+ * 初始只占一行高，不把列表撑得很长。 */
+.amu-field-lyrics {
+  grid-column: 1 / -1;
+}
+
+.amu-field-lyrics span em {
+  margin-left: 6px;
+  font-style: normal;
+  font-size: var(--fs-caption, 12px);
+  color: var(--text-faint, var(--text-muted));
+}
+
+.amu-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  max-height: 220px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 10px);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: var(--fs-sm, 13px);
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.amu-field textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--ring-focus, 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent));
+}
+
+.amu-row-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.amu-bar {
+  height: 6px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.amu-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--primary) 70%, white 30%),
+    var(--primary));
+  transition: width var(--dur, .32s) var(--ease-out, ease);
+}
+
+.amu-status-text {
+  font-size: var(--fs-caption, 12px);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amu-row.is-failed .amu-status-text {
+  color: var(--danger);
+}
+
+.amu-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2, 6px);
+}
+
+/* ---------------- 上传结果 ---------------- */
+.amu-result-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--card-gap, 20px);
+}
+
+.amu-result {
+  display: flex;
+  gap: var(--sp-4, 12px);
+  padding: var(--sp-4, 12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg-strong, var(--bg-elevated));
+  transition: transform var(--dur-fast, .18s) var(--ease-out, ease),
+              box-shadow var(--dur-fast, .18s) var(--ease-out, ease);
+}
+
+.amu-result:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elev-hover, var(--shadow-md));
+}
+
+.amu-cover {
+  position: relative;
+  flex: none;
+  width: 68px;
+  height: 68px;
+  border-radius: var(--radius-sm, 10px);
+  overflow: hidden;
+  background: var(--bg-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.amu-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.amu-cover-title {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 2px 5px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: #fff;
+  background: linear-gradient(to top, rgba(0, 0, 0, .68), transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amu-cover.is-empty .amu-cover-title {
+  display: none;
+}
+
+.amu-result-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.amu-result-title {
+  font-size: var(--fs-body, 14.5px);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amu-result-artist {
+  font-size: var(--fs-caption, 12.5px);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amu-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.amu-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.amu-tag.ok {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+}
+
+.amu-tag.muted {
+  background: transparent;
+}
+
+/* ---------------- 窄屏：四列折成两行 ----------------
+ * 手机上把「文件名 + 输入框」放上面、「进度 + 操作」放下面，
+ * 避免横向挤到看不清。
+ */
+@media (max-width: 860px) {
+  .amu-row {
+    grid-template-columns: 1fr;
+    gap: var(--sp-3, 8px);
+  }
+
+  .amu-row-actions {
+    justify-content: flex-end;
+  }
+
+  .amu-queue-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .amu-queue-actions .amu-btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .amu-drop {
+    padding: var(--sp-5, 16px);
+  }
+
+  .amu-drop-actions,
+  .amu-drop-actions .amu-btn {
+    width: 100%;
+  }
+
+  .amu-result-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -20,6 +20,7 @@ import { parseOpml, buildOpml } from '../lib/rss.js';
 import { syncFeed } from '../lib/rssSync.js';
 import { guestRssFeedFilters } from '../lib/publicScope.js';
 import { listPresets, PRESET_GROUPS } from '../lib/rssPresets.js';
+import { backfillTrending, isGithubTrendingFeed } from '../lib/rssTranslate.js';
 
 const FEEDS = 'rss_feeds';
 const ARTICLES = 'rss_articles';
@@ -171,7 +172,7 @@ export async function createFeed(request, env) {
   if (optionalBool(body.fetch_now, 'fetch_now') !== false) {
     try {
       const fresh = await db.select(FEEDS, qs({ select: FEED_SELECT, id: `eq.${feed.id}` }));
-      sync = await syncFeed(db, fresh[0]);
+      sync = await syncFeed(db, fresh[0], { env });
     } catch (err) {
       sync = { error: err.message };
     }
@@ -223,8 +224,80 @@ export async function deleteFeed(request, env, id) {
 export async function fetchFeedNow(request, env, id) {
   const { db, user } = await requireAdmin(request, env);
   const feed = await findFeed(db, user, id);
-  const result = await syncFeed(db, feed);
+  const result = await syncFeed(db, feed, { env });
   return ok({ feed_id: feed.id, ...result }, request, env);
+}
+
+// 判定「僵尸源」的默认天数：源下最新一条文章的发布时间早于这个天数，
+// 且源本身也不是 GitHub Trending（那三条天生是「日榜/周榜/月榜」，不能按更新时间删）。
+const STALE_DAYS = 30;
+// 永远豁免清理的源：GitHub Trending 三榜（用户明确要求「除了 GitHub 的月榜、周榜之外」）。
+function isExemptFromStale(feedUrl) {
+  return /mshibanami\.github\.io\/GitHubTrendingRSS/i.test(String(feedUrl || ''));
+}
+
+// GET /api/rss/stale?days=30 —— 列出「很久没更新」的订阅源（站长用来决定退订）
+// POST /api/rss/translate-trending —— 给已存的 GitHub Trending 条目补中文（摘要 + README 正文）
+// 用于「历史存量」：新抓取的条目会在 syncFeed 里自动翻译，这个接口处理之前抓下来的英文条目。
+export async function translateTrendingNow(request, env) {
+  const { db, user } = await requireAdmin(request, env);
+  const feeds = await db.select(FEEDS, qs({
+    select: 'id,title,feed_url', user_id: `eq.${user.id}`, is_active: 'eq.true'
+  }));
+  const trending = feeds.filter((f) => isGithubTrendingFeed(f.feed_url));
+  let translated = 0;
+  let readmeFilled = 0;
+  for (const f of trending) {
+    try {
+      const r = await backfillTrending(env, db, f, 30);
+      translated += r.translated || 0;
+      readmeFilled += r.readmeFilled || 0;
+    } catch { /* 单个源失败不影响其他 */ }
+  }
+  return ok({ feeds: trending.length, translated, readme_filled: readmeFilled }, request, env);
+}
+
+// 返回每个源最新一条文章的发布时间，以及距今天数。前端按天数倒序展示，一键退订。
+// 只读、不改库；真正的删除由站长点「退订」走 DELETE /api/rss/feeds/:id。
+export async function listStaleFeeds(request, env) {
+  const { db, user } = await requireAdmin(request, env);
+  const url = new URL(request.url);
+  const days = Math.min(Math.max(Number(url.searchParams.get('days')) || STALE_DAYS, 7), 365);
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+
+  const feeds = await db.select(FEEDS, qs({
+    select: FEED_SELECT, user_id: `eq.${user.id}`, is_active: 'eq.true'
+  }));
+
+  // 每个源取最新一条文章的发布时间。逐个源查最新一条（源数量不多，够用且简单）。
+  const out = [];
+  for (const f of feeds) {
+    if (isExemptFromStale(f.feed_url)) continue;   // Trending 三榜豁免
+    const latest = await db.select(ARTICLES, qs({
+      select: 'published_at,created_at',
+      feed_id: `eq.${f.id}`,
+      order: 'published_at.desc.nullslast',
+      limit: '1'
+    }));
+    const at = latest[0]?.published_at || latest[0]?.created_at || null;
+    // 从没抓到过任何文章的源：以「最后一次抓取时间」为准，同样算僵尸。
+    const ref = at || f.last_fetched_at || null;
+    if (!ref || ref < cutoff) {
+      const ageDays = ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 86400000) : null;
+      out.push({
+        id: f.id,
+        title: f.title,
+        feed_url: f.feed_url,
+        last_article_at: at,
+        last_fetched_at: f.last_fetched_at,
+        age_days: ageDays,
+        never_fetched: !at
+      });
+    }
+  }
+  // 越久没更新越靠前；从没抓到过的排最前。
+  out.sort((a, b) => (b.age_days ?? 99999) - (a.age_days ?? 99999));
+  return ok({ days, cutoff, count: out.length, feeds: out }, request, env);
 }
 
 // POST /api/rss/fetch-all  —— 抓取本人全部活跃订阅源（分批，规避超时）
@@ -248,7 +321,7 @@ export async function fetchAllFeeds(request, env) {
   for (const feed of feeds) {
     if (Date.now() - started > 45000) break;   // 单次请求 45s 上限
     try {
-      const res = await syncFeed(db, feed, { timeoutMs: 8000 });
+      const res = await syncFeed(db, feed, { timeoutMs: 8000, env });
       newItems += res.newCount;
       results.push({ feed_id: feed.id, title: feed.title, ...res });
     } catch (err) {

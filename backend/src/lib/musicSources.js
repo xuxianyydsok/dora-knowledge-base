@@ -27,7 +27,8 @@ const KUGOU_URL_TIMEOUT_MS = 4000;
 // 每次搜索最多为多少条酷狗结果去取直链。
 // 取直链是**每首一次请求**，全量取（100 条）会把整次搜索拖到十几秒 ——
 // 因此只解析最靠前的这些，其余标 needs_resolve（播放失败时前端会按需重解析）。
-const KUGOU_RESOLVE_LIMIT = 12;
+// 子请求预算见 NETEASE_PROBE_LIMIT 处的说明（统一收敛到 8）。
+const KUGOU_RESOLVE_LIMIT = 8;
 
 async function fetchJson(url, { headers, timeoutMs }) {
   const controller = new AbortController();
@@ -77,7 +78,11 @@ export function neteaseOuterUrl(id) {
 // 因此搜索阶段对外链做一次轻量探测（Range 取 1 字节即可判定 content-type），
 // 探测不通过的条目降权排到后面，让「能播的」先出现。
 // 探测是并发的，且只对最靠前的若干条做，不显著增加搜索耗时。
-const NETEASE_PROBE_LIMIT = 12;
+// 子请求预算（Cloudflare 免费版单次请求上限 50 个）很紧：音乐搜索一次要并发
+// 十来个上游，每个上游还会为「探活/取直链」再发若干子请求。此前 12/12/12 的配置
+// 加上新增的 QQ 路会直接顶到上限（实测探针报 error 1101）。
+// 因此统一收敛到 8：仍然足够覆盖展示的前若干条，且留出余量给封面/歌词等后续请求。
+const NETEASE_PROBE_LIMIT = 8;
 const NETEASE_PROBE_TIMEOUT_MS = 3500;
 
 /** 探测一条网易云外链是否真的是音频；失败（含超时）一律当不可播。 */
@@ -267,7 +272,8 @@ const KUWO_TIMEOUT_MS = 6000;
 const KUWO_URL_TIMEOUT_MS = 5000;
 // 取直链是「每首一次请求」，全量取会把搜索拖到十几秒 —— 只解析最靠前的这些，
 // 其余标 needs_resolve（播放时按需重解析）。
-const KUWO_RESOLVE_LIMIT = 12;
+// 子请求预算见 NETEASE_PROBE_LIMIT 处的说明（统一收敛到 8）。
+const KUWO_RESOLVE_LIMIT = 8;
 
 /** 音质档位：数字越大越好。999 = 无损 FLAC。 */
 const KUWO_FORMATS = [
@@ -394,4 +400,129 @@ export async function searchKuwoMusic(q, limit = 40) {
     delete c.needs_resolve;
   });
   return { source: 'kuwo', candidates };
+}
+
+// ---------------------------------------------------------------
+// QQ 音乐（经「落月 API」vkeys 中转，2026-10-13 新增）
+// ---------------------------------------------------------------
+// 为什么加这一路：网易云对**原唱正版**收录很差 —— 搜「陈奕迅」给的多是翻唱/合唱，
+// 《富士山下》《葡萄成熟时》这些原唱根本搜不出来。QQ 音乐片库对这些歌手覆盖完整，
+// 但 QQ 官方搜索接口（c.y.qq.com / u.y.qq.com）从 Cloudflare 出口一律返回空。
+//
+// vkeys（落月 API）是开源社区维护的 QQ 音乐解析中转，实测从 **Cloudflare 出口**：
+//   · 搜索 6/6 成功、单次 ~0.33s、无限流、无 Key、无签名；
+//   · 返回体带 `pay` 字段（"付费" / "免费"），正好用来给结果标注「需会员」；
+//   · 取流接口 `geturl` 对**免费曲**能返回可播直链，对**VIP 曲**返回
+//     「当前歌曲无音质或付费专辑」或 28kbps 试听 —— 属 QQ 侧版权限制，非接口故障。
+// 因此这里把它当**搜索源**接入（补齐片库），取流按需（点播时再取，失败则前端提示）。
+//
+// 许可提醒：vkeys 是第三方中转，稳定性依赖对方；本站只做个人自用，保留来源说明。
+const VKEYS_BASE = 'https://api.vkeys.cn/v2/music';
+const VKEYS_TIMEOUT_MS = 5000;
+const VKEYS_URL_TIMEOUT_MS = 5000;
+// 取直链是「每首一次请求」，全量取会把搜索拖长；只解析最靠前的这些，
+// 其余标 needs_resolve（点播时按需调 /api/music/stream）。
+// 取到直链的意义不止「能播」——它同时证明这首**不是**会员专享，
+// 前端据此把「能放的」排前面、「要会员的」标出来（用户要求：点了放不了的懒得看）。
+const VKEYS_RESOLVE_LIMIT = 8;
+
+/** 解析 vkeys 返回的时长文本（"4分29秒"）为秒数。 */
+function vkeysDuration(text) {
+  const m = String(text || '').match(/(?:(\d+)\s*分)?\s*(\d+)\s*秒/);
+  if (!m) return null;
+  return (Number(m[1]) || 0) * 60 + Number(m[2]);
+}
+
+/**
+ * 搜索 QQ 音乐（经 vkeys）。返回候选；`pay` 字段转成 `needs_member` 供前端标注，
+ * 并并发解析最靠前的若干条直链 —— 解析成功的即「确定可播」，失败的标 needs_member。
+ */
+export async function searchVkeysMusic(q, limit = 40) {
+  const url = `${VKEYS_BASE}/tencent?` + new URLSearchParams({ word: q }).toString();
+  const body = await fetchJson(url, {
+    headers: { Accept: 'application/json' },
+    timeoutMs: VKEYS_TIMEOUT_MS
+  });
+  const rows = Array.isArray(body?.data) ? body.data : [];
+  const candidates = rows.slice(0, Math.max(limit, 10)).map((s) => {
+    if (!s || !s.mid || !s.song) return null;
+    const paid = String(s.pay || '').includes('付费');
+    const c = {
+      platform: 'qq',
+      external_id: String(s.mid),
+      title: String(s.song),
+      artist: s.singer || (s.singer_list || []).map((x) => x.name).filter(Boolean).join('/') || null,
+      artist_avatar: null,
+      album: s.album || null,
+      artwork_url: s.cover || null,
+      audio_url: null,
+      audio_fallbacks: [],
+      preview_url: null,
+      quality: 'full',
+      bitrate: null,
+      format: 'mp3',
+      file_size: 0,
+      duration: vkeysDuration(s.interval),
+      genre: null,
+      release_year: s.time ? Number(String(s.time).slice(0, 4)) || null : null,
+      page_url: s.mid ? `https://y.qq.com/n/ryqq/songDetail/${s.mid}` : null,
+      // 直链未取（点播时按需调 /api/music/stream），前端据此显示「待解析」。
+      needs_resolve: true,
+      // VIP 曲：QQ 侧只给试听/不给流，提前标出来，避免用户点了才发现放不了。
+      needs_member: paid
+    };
+    return c;
+  }).filter(Boolean);
+
+  // 并发解析最靠前的若干条：取到直链的改成「确定可播」，取不到且标了付费的维持 needs_member。
+  const head = candidates.slice(0, VKEYS_RESOLVE_LIMIT);
+  const settled = await Promise.allSettled(head.map((c) => vkeysStreamUrl(c.external_id)));
+  settled.forEach((res, i) => {
+    const c = head[i];
+    if (res.status === 'fulfilled' && res.value?.url) {
+      c.audio_url = res.value.url;
+      c.bitrate = res.value.bitrate;
+      c.format = res.value.format;
+      c.quality = res.value.quality;
+      delete c.needs_resolve;
+      delete c.needs_member;      // 已取到直链 → 不是会员专享，去掉误标
+    } else {
+      // 取不到流：VIP 曲只给试听/不给流。标成 needs_member，让前端如实提示。
+      c.needs_member = true;
+    }
+  });
+
+  return { source: 'qq', candidates };
+}
+
+/**
+ * 按 QQ 音乐 mid 取一条可播直链（经 vkeys 中转）。
+ * 返回 `{ url, bitrate, format, quality }`；拿不到（VIP 曲/接口异常）返回 null。
+ */
+export async function vkeysStreamUrl(mid, wantBr = 320) {
+  const id = String(mid || '').trim();
+  if (!id) return null;
+  // quality: 8=128k 9=320k 10=flac 16=flac24bit。实测多数曲目只给 9，故直接要 320k。
+  const q = wantBr >= 999 ? 10 : 9;
+  try {
+    const url = `${VKEYS_BASE}/tencent/geturl?` + new URLSearchParams({ mid: id, quality: String(q) }).toString();
+    const body = await fetchJson(url, {
+      headers: { Accept: 'application/json' },
+      timeoutMs: VKEYS_URL_TIMEOUT_MS
+    });
+    const d = body?.data;
+    if (!d || typeof d !== 'object' || !d.url) return null;
+    const kbps = Number(String(d.kbps || '').replace(/[^\d]/g, '')) || 0;
+    const qualityText = String(d.quality || '');
+    // 「音乐试听」= 只有试听片段，如实标注，别冒充完整曲目。
+    const preview = qualityText.includes('试听') || (kbps > 0 && kbps < 96);
+    return {
+      url: String(d.url).replace(/^http:\/\//i, 'https://'),
+      bitrate: kbps || null,
+      format: 'mp3',
+      quality: preview ? 'preview' : (kbps >= 900 ? 'lossless' : 'full')
+    };
+  } catch {
+    return null;
+  }
 }

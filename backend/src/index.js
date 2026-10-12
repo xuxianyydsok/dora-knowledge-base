@@ -39,7 +39,7 @@ export default {
       //    站点默认抓取间隔是 4 小时，所以一个源一天大约被真正抓 4~6 次。
       ctx.waitUntil((async () => {
         const db = new SupabaseClient(env);
-        const summary = await syncAllFeeds(db, { deadlineMs: 20000, batchSize: 6, timeoutMs: 8000 });
+        const summary = await syncAllFeeds(db, { deadlineMs: 20000, batchSize: 6, timeoutMs: 8000, env });
         console.log('rss sync', JSON.stringify(summary));
       })().catch((e) => console.error('rss sync 失败:', e?.message || e)));
     }

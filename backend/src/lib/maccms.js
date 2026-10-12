@@ -362,10 +362,32 @@ const ANIME_CLASS_IDS = {
 };
 
 // 同步取类目 ID：命中硬编码表返回数组（可能为空数组），未知源返回 null。
-// 调用方据此判断是否需要发起网络发现 —— 默认 12 个源全部命中，零往返。
+// 调用方据此判断是否需要发起网络发现。
+//
+// ⚠ 2026-10-13：动态源（LunaTV 订阅来的 40 多个源）**全部不在**这张硬编码表里，
+//   早期实现因此会对每一个动态源发一次 `ac=list` 去发现动漫类目 —— 43 个源就是
+//   43 个子请求，叠加后续的关键词/类目搜索直接超过免费版 50 的上限，
+//   整次搜索报「Too many subrequests」（用户看到的就是「只有 3 条源」）。
+//   现在改为：**优先用探测阶段已经存好的 anime_class_ids**（见 dynamicSources.js
+//   的 probeSourceDeep），只有连探测数据都没有时才回退到网络发现。
 export function getAnimeClassIdsSync(source) {
+  // 探测阶段已经算好：直接复用，零网络往返
+  if (Array.isArray(source?.anime_class_ids)) return source.anime_class_ids;
+  // 探测过但记录里没有该类目字段（本次改版前落库的旧数据）：
+  // 当作「没有动漫类目」处理，**不要**再联网发现 —— 一次 ac=list 就是
+  // 一个子请求，40 多个源全发现一遍会把整次搜索打爆（见上面的说明）。
+  if (source?.verified_at) return [];
   if (!Object.prototype.hasOwnProperty.call(ANIME_CLASS_IDS, source.key)) return null;
   return ANIME_CLASS_IDS[source.key];
+}
+
+// 该源是否支持关键词搜索（ac=videolist&wd=）。
+// 探测阶段已实测并写进源记录；没有该字段时返回 null（未知 → 上层照常尝试）。
+// 实测有 8 个源明确不支持（回「暂不支持搜索」/「forbids keyword search」），
+// 对它们发关键词请求纯属浪费最稀缺的子请求配额。
+export function supportsKeywordSearch(source) {
+  if (typeof source?.keyword_search === 'boolean') return source.keyword_search;
+  return null;
 }
 
 export async function getAnimeClassIds(source) {

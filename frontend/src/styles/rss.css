@@ -256,6 +256,11 @@
 .rss-item {
   display: flex;
   flex-direction: column;
+  /* flex: none 是必须的：.rss-articles 是 flex 列容器，条目默认 flex-shrink:1，
+     条目一多就会被压到比内容还矮；而标题/摘要又是 -webkit-line-clamp（可缩到极矮），
+     于是几行文字叠在一起 —— 这就是「信息重叠」的根因。
+     固定为不收缩，让容器滚动而不是压缩条目。 */
+  flex: none;
   gap: 5px;
   width: 100%;
   padding: 11px 12px;
@@ -270,7 +275,12 @@
 .rss-item:hover {
   background: color-mix(in srgb, var(--text) 5%, transparent);
   opacity: 1;
+  /* 关掉全局按钮的「上浮 + 阴影」：列表条目密集，悬停上浮会与上下行视觉重叠、抖动 */
+  transform: none;
+  box-shadow: none;
+  border-color: transparent;
 }
+.rss-item:hover::after { display: none; }   /* 关掉全局按钮的光泽扫过，避免干扰扫读 */
 
 .rss-item.on {
   background: color-mix(in srgb, var(--primary) 11%, transparent);
@@ -650,6 +660,42 @@
 }
 
 .icon-btn.danger:hover { color: var(--danger); }
+
+/* ---------------- 管理抽屉：清理僵尸源 ---------------- */
+.rss-clean { display: flex; flex-direction: column; gap: 10px; }
+.rss-clean-bar { display: flex; align-items: center; gap: 8px; }
+.rss-clean-bar select {
+  flex: 1;
+  padding: 7px 10px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm, 10px);
+  cursor: pointer;
+}
+.rss-clean-empty { font-size: 12.5px; padding: 6px 0; }
+.rss-clean-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 4px 0;
+}
+.rss-clean-head b { color: var(--primary); }
+.rss-clean-list { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+.rss-clean-list .rss-manage-row { padding: 5px 2px; }
+.rss-clean-age {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.rss-mini.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.rss-mini.danger:hover:not(:disabled) { color: #fff; background: var(--danger); border-color: var(--danger); }
 
 /* ---------------- 窄屏：逐级折叠成单栏 ---------------- */
 @media (max-width: 1180px) {

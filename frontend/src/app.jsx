@@ -22,7 +22,7 @@ import {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
   Search, Graph, GraphHub, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
-  MusicPlayer,
+  MusicPlayer, AdminMusic,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
   Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback, Rss
 } from './routes/routes.js';
@@ -74,6 +74,9 @@ function RouterView() {
       <ProtectedRoute guest path="/music/:id/lyrics"><MusicLyrics /></ProtectedRoute>
       <ProtectedRoute guest path="/music/:id/play"><MusicPlayer /></ProtectedRoute>
       <ProtectedRoute guest path="/music/:id"><MusicView /></ProtectedRoute>
+      {/* 站长上传本地音乐（2026-10-13）：不带 guest —— 未登录直接跳登录页；
+          页面内部还会再拦一次非管理员，避免普通用户误入。 */}
+      <ProtectedRoute path="/admin/music"><AdminMusic /></ProtectedRoute>
       <ProtectedRoute guest path="/movies"><Movies /></ProtectedRoute>
       <ProtectedRoute path="/movies/new"><MovieEdit /></ProtectedRoute>
       <ProtectedRoute path="/movies/:id/edit"><MovieEdit /></ProtectedRoute>

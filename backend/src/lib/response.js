@@ -10,9 +10,10 @@ export function corsHeaders(request, env) {
 
   const headers = {
     'Access-Control-Allow-Methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
-    // X-Book-Name：图书上传用原始请求体直传（不走 multipart），文件名只能走自定义头，
+    // X-Book-Name / X-Wallpaper-Name / X-Audio-*：这几个上传都走**原始请求体直传**
+    // （不走 multipart，避免大文件被 formData() 读进内存），文件名与元信息只能走自定义头，
     // 因此必须在预检里放行，否则跨域上传会被浏览器拦下。
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Book-Name,X-Wallpaper-Name',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Book-Name,X-Wallpaper-Name,X-Audio-Name,X-Audio-Title,X-Audio-Artist',
     'Access-Control-Expose-Headers': 'Content-Range,Content-Length,Accept-Ranges',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin'

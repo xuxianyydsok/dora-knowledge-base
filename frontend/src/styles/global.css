@@ -3836,6 +3836,19 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
   border-style: dashed;
   background: none;
 }
+/* 需会员：会员专享曲目（如 QQ 音乐 VIP 曲），取不到完整音轨。
+   用暖色实心标记，比「试听」更醒目 —— 用户要求一眼看出哪些点了放不了。 */
+.result-quality.member {
+  color: #b8860b;
+  border-color: color-mix(in srgb, #b8860b 45%, transparent);
+  background: color-mix(in srgb, #b8860b 14%, transparent);
+}
+[data-theme='dark'] .result-quality.member,
+.theme-dark .result-quality.member {
+  color: #e8b84b;
+  border-color: color-mix(in srgb, #e8b84b 45%, transparent);
+  background: color-mix(in srgb, #e8b84b 16%, transparent);
+}
 
 /* 本次检索实际命中的音源数 */
 .src-count {

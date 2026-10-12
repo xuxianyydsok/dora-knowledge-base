@@ -8,7 +8,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchMusicMeta, fetchLyrics, resolveGdstudioUrl, GD_DEFAULT_SOURCE } from '../lib/fetchers.js';
 import { getMetingInstances, metingStreamUrl } from '../lib/meting.js';
-import { neteaseOuterUrl, kugouStreamUrl, kuwoStreamUrl } from '../lib/musicSources.js';
+import { neteaseOuterUrl, kugouStreamUrl, kuwoStreamUrl, vkeysStreamUrl } from '../lib/musicSources.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool
 } from '../lib/validate.js';
@@ -19,6 +19,23 @@ import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicSco
 import { looksLikeAudioStream, isStaleAudioUrl, resolveAudioPlayback } from '../lib/mediaUrl.js';
 import { isAdminFavorited } from './favorites.js';
 import { dedupeMusicList, findDuplicateMusic, musicIdentity, normalizeMusicText } from '../lib/musicIdentity.js';
+import { toSimplified, hasTraditional } from '../lib/zhConvert.js';
+
+// 歌词统一转简体（2026-10-12 用户要求：「有些时候搜出来的歌词展现的是繁体中文，
+// 这一点需要改正」）。
+//
+// 为什么要先 hasTraditional 再转：toSimplified 是全表逐字符查表，
+// 虽然快，但对本来就没有繁体的歌词（绝大多数）纯属白做功。
+// 同步歌词（LRC）带 [mm:ss.xx] 时间轴，转换只认汉字、原样保留其他字符，
+// 因此时间轴不会被破坏 —— 这一点由 zhConvert 的单测锁定。
+function lyricsToSimplified(lyrics) {
+  if (!lyrics) return lyrics;
+  const out = {};
+  for (const [k, v] of Object.entries(lyrics)) {
+    out[k] = (typeof v === 'string' && hasTraditional(v)) ? toSimplified(v) : v;
+  }
+  return out;
+}
 
 const TABLE = 'resources';
 const EXT = 'music_tracks';
@@ -46,6 +63,36 @@ async function withTrack(db, resources) {
     const { resource_id, user_id, created_at, updated_at, ...track } = t;
     return { ...r, track };
   });
+}
+
+// 统一出口脱敏：**所有**对外返回的曲目都必须经过这里。
+//
+// 做两件事：
+//   ① 剔除 audio_key / cover_key —— 它们是 R2 的内部 object key，
+//      发出去等于把可枚举的内部路径暴露给前端（assets / books 同样从不外发 key）。
+//   ② 管理员上传的曲目（track.uploaded）把音频与封面存在 R2 里，
+//      对外换成「按 id 取字节」的公开地址（/api/music/:id/audio 与 /:id/cover），
+//      前端 <audio> 与 <img> 直接就能用。
+//
+// 非上传曲目：audio_url / artwork_url 本来就是可直接用的外链，原样保留。
+function withPublicMedia(list, origin) {
+  return list.map((r) => {
+    const t = r.track || {};
+    const { audio_key, cover_key, ...restTrack } = t;
+    if (!t.uploaded) return { ...r, track: restTrack };
+    const audioUrl = audio_key ? `${origin}/api/music/${r.id}/audio` : (t.audio_url || null);
+    const coverUrl = cover_key ? `${origin}/api/music/${r.id}/cover` : (t.artwork_url || null);
+    return {
+      ...r,
+      cover_path: coverUrl || r.cover_path,
+      track: { ...restTrack, audio_url: audioUrl, artwork_url: coverUrl }
+    };
+  });
+}
+
+function requestOrigin(request, env) {
+  try { return new URL(request.url).origin; }
+  catch { return env.ASSET_PUBLIC_BASE || 'https://api.xuguochen.de5.net'; }
 }
 
 // POST /api/music/search  —— 搜索音乐元信息候选（不落库）
@@ -78,7 +125,7 @@ export async function getMusicLyrics(request, env) {
   const duration = optionalInt(body.duration, 'duration', { min: 0, max: 100000 }) ?? null;
 
   const lyrics = await fetchLyrics({ title, artist, album, duration }, env.GD_MUSIC_SOURCE || GD_DEFAULT_SOURCE);
-  return ok({ title, artist, album, duration, ...lyrics }, request, env);
+  return ok({ title, artist, album, duration, ...lyricsToSimplified(lyrics) }, request, env);
 }
 
 // POST /api/music/stream —— 重新解析可播放直链
@@ -157,6 +204,21 @@ export async function resolveMusicStream(request, env) {
         quality: fresh.bitrate >= 999 ? 'lossless' : 'full'
       }, request, env);
     }
+    // QQ 音乐（经 vkeys 中转）：搜索阶段不带直链，点播时按 mid 现取。
+    // VIP 曲会拿不到完整音轨（返回试听或直接无地址），此时如实报错让前端提示。
+    if (platform === 'qq') {
+      const fresh = await vkeysStreamUrl(externalId);
+      if (!fresh) throw new HttpError(404, '该曲目为会员专享或暂不可播，换个版本试试');
+      return ok({
+        platform,
+        external_id: externalId,
+        source: gdSource,
+        audio_url: fresh.url,
+        bitrate: fresh.bitrate,
+        file_size: null,
+        quality: fresh.quality
+      }, request, env);
+    }
     throw new HttpError(422, `该音源不支持重新解析：${platform || 'unknown'}`);
   }
   const info = await resolveGdstudioUrl(externalId, gdSource);
@@ -191,7 +253,9 @@ export async function listMusic(request, env) {
   const withExt = await withTrack(db, tagged);
   // 同一首歌被重复收藏时（历史脏数据），列表层合并掉，只留最新那一条。
   // 去重放在「扩展字段拼好之后」——歌手的唯一来源是 music_tracks.artist。
-  return ok(dedupeMusicList(withExt), request, env);
+  const deduped = dedupeMusicList(withExt);
+  // 上传曲目把 R2 内部 key 换成公开的按 id 取字节地址（见 withPublicMedia）
+  return ok(withPublicMedia(deduped, requestOrigin(request, env)), request, env);
 }
 
 // GET /api/music/:id
@@ -214,13 +278,14 @@ export async function getMusic(request, env, id) {
 
   const [tagged] = await withTags(db, rows);
   const [withExt] = await withTrack(db, tagged);
+  const [shaped] = withPublicMedia([withExt], requestOrigin(request, env));
   // 访客的 user.id 是 owner 范围限定，不能把站长的播放进度当公开数据返回
   const progress = user.isGuest ? null : await getProgress(db, user.id, id);
   // 只读体检：存库的 url / audio_url 若不是媒体直链（历史数据里可能有网页地址），
   // 标记 url_stale，前端提示「音源可能已过期，点播放会自动重解析」。**不自动改库**。
-  const storedUrl = withExt?.track?.audio_url || withExt?.url || null;
+  const storedUrl = shaped?.track?.audio_url || shaped?.url || null;
   const urlStale = isStaleAudioUrl(storedUrl);
-  return ok({ ...withExt, progress, url_stale: urlStale }, request, env);
+  return ok({ ...shaped, progress, url_stale: urlStale }, request, env);
 }
 
 // POST /api/music
@@ -284,7 +349,8 @@ export async function createMusic(request, env) {
         const full = await db.select(TABLE, qs({ select: '*', id: `eq.${dup.id}` }));
         const [taggedDup] = await withTags(db, full.length ? full : [dup]);
         const [withExtDup] = await withTrack(db, [taggedDup]);
-        return ok({ ...withExtDup, duplicate: true }, request, env, 200);
+        const [shapedDup] = withPublicMedia([withExtDup], requestOrigin(request, env));
+        return ok({ ...shapedDup, duplicate: true }, request, env, 200);
       }
     }
   }
@@ -345,7 +411,8 @@ export async function createMusic(request, env) {
   await setResourceTags(db, resource.id, user.id, tagIds);
   const [tagged] = await withTags(db, [resource]);
   const { resource_id, user_id, created_at, updated_at, ...track } = ext[0];
-  return ok({ ...tagged, track }, request, env, 201);
+  const [shaped] = withPublicMedia([{ ...tagged, track }], requestOrigin(request, env));
+  return ok(shaped, request, env, 201);
 }
 
 // PATCH /api/music/:id
@@ -359,15 +426,24 @@ export async function updateMusic(request, env, id) {
   const existing = await db.select(TABLE, qs({ select: 'id', ...scope }));
   if (!existing.length) throw new HttpError(404, '音乐不存在或无权限');
 
+  // 上传曲目的「音频 / 封面」由 R2 派生（audio_key / cover_key），而编辑页回填给前端的
+  // 又是 /api/music/:id/audio 这类**派生地址** —— 若把它们当外链写回 audio_url /
+  // artwork_url，就会出现「自己指向自己」的循环，且清掉 cover_key 后封面还会残留。
+  // 因此上传曲目**忽略**这三个字段的写入，只允许改标题 / 歌手 / 专辑 / 歌词 / 公开状态。
+  const uploadedMap = await loadTracks(db, [id]);
+  const isUploaded = !!uploadedMap[id]?.uploaded;
+
   // 主资源字段
   const patch = {};
   if (body.title !== undefined) patch.title = requireString(body.title, 'title', { max: 300 });
   if (body.notes !== undefined) patch.summary = optionalString(body.notes, 'notes', { max: 2000 }) ?? null;
-  if (body.artwork_url !== undefined) patch.cover_path = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
+  if (body.artwork_url !== undefined && !isUploaded) {
+    patch.cover_path = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
+  }
   // url 只接受可直接播的地址：网页地址不写入（否则前端拿到网页地址会报「暂无可用的播放地址」）。
   // 注意用 looksLikeAudioStream 而不是 isDirectAudioUrl —— Meting 的取流端点是
   // 无后缀的 302 地址，用后者会被误判成网页地址。
-  if (body.url !== undefined) {
+  if (body.url !== undefined && !isUploaded) {
     const candidate = optionalString(body.url, 'url', { max: 1000 }) ?? null;
     if (candidate && !looksLikeAudioStream(candidate)) {
       throw new HttpError(422, 'url 必须是可播放的音频直链，不能是网页地址');
@@ -388,11 +464,11 @@ export async function updateMusic(request, env, id) {
   const extPatch = {};
   if (body.artist !== undefined) extPatch.artist = optionalString(body.artist, 'artist', { max: 200 }) ?? null;
   if (body.album !== undefined) extPatch.album = optionalString(body.album, 'album', { max: 200 }) ?? null;
-  if (body.audio_url !== undefined) extPatch.audio_url = optionalString(body.audio_url, 'audio_url', { max: 1000 }) ?? null;
+  if (body.audio_url !== undefined && !isUploaded) extPatch.audio_url = optionalString(body.audio_url, 'audio_url', { max: 1000 }) ?? null;
   if (body.preview_url !== undefined) extPatch.preview_url = optionalString(body.preview_url, 'preview_url', { max: 1000 }) ?? null;
   if (body.artist_avatar !== undefined) extPatch.artist_avatar = optionalString(body.artist_avatar, 'artist_avatar', { max: 1000 }) ?? null;
   if (body.quality !== undefined) extPatch.quality = body.quality === 'preview' ? 'preview' : 'full';
-  if (body.artwork_url !== undefined) extPatch.artwork_url = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
+  if (body.artwork_url !== undefined && !isUploaded) extPatch.artwork_url = optionalString(body.artwork_url, 'artwork_url', { max: 1000 }) ?? null;
   if (body.duration !== undefined) extPatch.duration = optionalInt(body.duration, 'duration', { min: 0 }) ?? null;
   if (body.genre !== undefined) extPatch.genre = optionalString(body.genre, 'genre', { max: 100 }) ?? null;
   if (body.release_year !== undefined) extPatch.release_year = optionalInt(body.release_year, 'release_year', { min: 0, max: 3000 }) ?? null;
@@ -418,7 +494,8 @@ export async function updateMusic(request, env, id) {
   const rows = await db.select(TABLE, qs({ select: '*', ...scope }));
   const [tagged] = await withTags(db, rows);
   const [withExt] = await withTrack(db, tagged);
-  return ok(withExt, request, env);
+  const [shaped] = withPublicMedia([withExt], requestOrigin(request, env));
+  return ok(shaped, request, env);
 }
 
 // DELETE /api/music/:id
@@ -429,6 +506,19 @@ export async function deleteMusic(request, env, id) {
 
   const rows = await db.select(TABLE, qs({ select: 'id', ...scope }));
   if (!rows.length) throw new HttpError(404, '音乐不存在或无权限');
+
+  // 管理员上传的曲目：音频与封面是 R2 上的真实文件，删记录时必须一并清掉，
+  // 否则 R2 会攒下一堆再也访问不到的孤儿对象。清理失败不阻断删除（记录优先）。
+  try {
+    const track = await loadTracks(db, [id]);
+    const t = track[id];
+    if (t?.uploaded && env.R2_BUCKET) {
+      if (t.audio_key) await env.R2_BUCKET.delete(t.audio_key);
+      if (t.cover_key) await env.R2_BUCKET.delete(t.cover_key);
+    }
+  } catch {
+    // 忽略：R2 清理失败不应让用户看到「删除失败」
+  }
 
   await db.remove(EXT, qs({
     resource_id: `eq.${id}`,

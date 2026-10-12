@@ -31,7 +31,7 @@ const RECOMMEND = ['周杰伦', '林俊杰', '陈奕迅', '五月天', 'Beyond',
 
 const PLATFORM_LABEL = {
   gdstudio: 'GD音乐台', meting: 'Meting', audius: 'Audius', itunes: 'iTunes', deezer: 'Deezer',
-  netease: '网易云', kugou: '酷狗'
+  netease: '网易云', kugou: '酷狗', kuwo: '酷我', qq: 'QQ音乐'
 };
 
 // 上游平台的中文名：后端会把来源写成 `meting@<实例>:<平台>` / `gdstudio@<平台>`，
@@ -131,9 +131,13 @@ function SearchRow({ item, busy, resolving, onPlay, onCollect }) {
   const pending = !item.audio_url && !!item.needs_resolve;
   const isPreview = !pending && item.quality === 'preview';
   const isLoss = item.format === 'flac' || (item.bitrate || 0) >= 900;
+  // needs_member：已知会员专享（QQ 音乐 VIP 曲取不到完整音轨）。
+  // 用户明确要求「点了放不了的懒得看」——这类要一眼看出来，而不是点了才发现。
+  const memberOnly = !item.audio_url && !item.needs_resolve && !!item.needs_member;
   const qualityLabel = resolving
     ? '解析中…'
-    : (pending ? '待解析' : (isPreview ? '试听' : (isLoss ? '无损' : '完整音轨')));
+    : (memberOnly ? '需会员'
+      : (pending ? '待解析' : (isPreview ? '试听' : (isLoss ? '无损' : '完整音轨'))));
   const rate = item.bitrate
     ? `${item.format === 'flac' ? 'FLAC · ' : ''}${item.bitrate}kbps`
     : (item.format === 'flac' ? 'FLAC' : '');
@@ -163,7 +167,7 @@ function SearchRow({ item, busy, resolving, onPlay, onCollect }) {
 
       <span class="result-src">{PLATFORM_LABEL[item.platform] || item.platform}</span>
       {rate && <span class="result-rate">{rate}</span>}
-      <span class={`result-quality${isPreview ? ' preview' : ''}${pending && !resolving ? ' pending' : ''}`}>
+      <span class={`result-quality${isPreview ? ' preview' : ''}${pending && !resolving ? ' pending' : ''}${memberOnly ? ' member' : ''}`}>
         {qualityLabel}
       </span>
       <span class="result-time">{fmtDuration(item.duration)}</span>
@@ -184,7 +188,9 @@ function SearchRow({ item, busy, resolving, onPlay, onCollect }) {
 export function Music() {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
-  const { isAuthenticated } = useAuth();
+  // isAdmin 用来决定要不要显示「上传音乐」入口（2026-10-13 用户要求：
+  // 「在用户端的话是不能看到那个音乐导入的」）。普通用户与访客都看不到这个按钮。
+  const { isAuthenticated, isAdmin } = useAuth();
   const [mode, setMode] = useState('home');          // home | library | search | queue
   const [searchedFor, setSearchedFor] = useState('');
   const [candidates, setCandidates] = useState([]);
@@ -275,7 +281,10 @@ export function Music() {
         audioUrl = fresh?.audio_url || null;
       }
       if (play && !audioUrl && !candidate.preview_url) {
-        toastError(`「${candidate.title}」暂时拿不到播放地址，换一首或稍后重试`);
+        // 会员专享曲（QQ 音乐 VIP）：如实告诉用户原因，而不是含糊的「拿不到地址」。
+        toastError(candidate.needs_member
+          ? `「${candidate.title}」是会员专享曲，需要 QQ 音乐会员才能完整播放，换一首免费版试试`
+          : `「${candidate.title}」暂时拿不到播放地址，换一首或稍后重试`);
         return;
       }
       if (!isAuthenticated) {
@@ -433,7 +442,12 @@ export function Music() {
         activeTab={mode}
         onTab={setMode}
       >
-        <button onClick={() => route('/music/new')}><Icon name="plus" size={14} /> 手动录入</button>
+        {/* 只有站长能上传本地音乐；普通用户/访客不渲染这个按钮 */}
+        {isAdmin && (
+          <button onClick={() => route('/admin/music')}>
+            <Icon name="plus" size={14} /> 上传音乐
+          </button>
+        )}
       </PageHeader>
 
       {/* —— 常驻工具条：搜索 + 分组/音质 —— */}

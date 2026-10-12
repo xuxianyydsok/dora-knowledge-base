@@ -378,6 +378,54 @@ function uploadBookDirect(file, { onProgress, auth }) {
   });
 }
 
+// 音乐上传（管理员）：与 uploadBookDirect 同款「原始请求体直传」。
+// 歌名 / 歌手走自定义头（encodeURIComponent 编码，避免中文头被浏览器拒绝），
+// 请求体就是文件本身 —— 这样大文件不会被 formData() 整段读进内存。
+async function uploadMusicFile(file, { title, artist, lyrics, onProgress } = {}) {
+  const auth = await authHeader();
+  if (!auth.Authorization) throw new ApiError(401, '上传音乐需要站长登录');
+  if (!title || !String(title).trim()) throw new ApiError(422, '请填写歌名');
+
+  return await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}/api/music/upload`);
+    // 无损音频可能几十 MB，慢网络上给足 10 分钟
+    xhr.timeout = 600000;
+    xhr.setRequestHeader('Authorization', auth.Authorization);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('X-Audio-Name', encodeURIComponent(file.name || 'audio'));
+    xhr.setRequestHeader('X-Audio-Title', encodeURIComponent(String(title).trim()));
+    // 歌手允许为空（后端会尝试从标签或在线元数据里补）
+    xhr.setRequestHeader('X-Audio-Artist', encodeURIComponent(String(artist || '').trim()));
+    // 歌词可选：填了就用站长这份，后端不再联网刮削（见 routes/musicUpload.js）
+    const lyricsText = String(lyrics || '').trim();
+    if (lyricsText) xhr.setRequestHeader('X-Audio-Lyrics', encodeURIComponent(lyricsText));
+
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+
+    xhr.onload = () => {
+      let payload = null;
+      if (xhr.responseText) {
+        try {
+          payload = JSON.parse(xhr.responseText);
+        } catch {
+          reject(new ApiError(xhr.status, `服务返回了无法识别的响应 (${xhr.status})`, 'invalid_response'));
+          return;
+        }
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(payload?.data);
+      else reject(new ApiError(xhr.status, payload?.error || `上传失败 (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error'));
+    xhr.ontimeout = () => reject(new ApiError(0, '上传超时（10 分钟）', 'timeout'));
+    xhr.onabort = () => reject(new ApiError(0, '上传已取消', 'aborted'));
+
+    xhr.send(file);
+  });
+}
+
 // 分片上传：创建 → 逐片 PUT → 合并。任何一步失败都 best-effort abort，避免 R2 留碎片。
 async function uploadBookMultipart(file, { onProgress, auth }) {
   const totalBytes = file.size;
@@ -647,6 +695,10 @@ export const api = {
   createMusic: (body) => request('/api/music', { method: 'POST', body }),
   updateMusic: (id, body) => request(`/api/music/${id}`, { method: 'PATCH', body }),
   deleteMusic: (id) => request(`/api/music/${id}`, { method: 'DELETE' }),
+  // 管理员上传本地音频（原始请求体直传，不走 multipart：无损 FLAC 常有几十 MB，
+  // formData() 会把整个文件读进内存，而 Worker 内存上限 128MB）。
+  uploadMusic: (file, { title, artist, lyrics, onProgress } = {}) =>
+    uploadMusicFile(file, { title, artist, lyrics, onProgress }),
   getMusicProgress: (id) => request(`/api/music/${id}/progress`),
   saveMusicProgress: (id, body) => request(`/api/music/${id}/progress`, { method: 'PUT', body }),
   // 播放历史（按上次收听时间倒序，含进度；用于音乐库「播放历史」分组）
@@ -696,6 +748,8 @@ export const api = {
     request('/api/rss/articles/read-all', { method: 'POST', body: feedId ? { feed_id: feedId } : {} }),
   // 精选源清单（「懒得一个一个订阅」：一键导入）
   listRssPresets: (group = 'all') => request(`/api/rss/presets?group=${encodeURIComponent(group)}`),
+  listRssStale: (days = 30) => request(`/api/rss/stale?days=${encodeURIComponent(days)}`),
+  translateRssTrending: () => request('/api/rss/translate-trending', { method: 'POST', timeout: 120000 }),
   // 自动发现：粘一个站点首页，后端去找它的 feed 地址（不落库，只返回候选）
   discoverRssFeed: (url) => request('/api/rss/discover', { method: 'POST', body: { url }, timeout: 30000 }),
   importRssOpml: (opml) => request('/api/rss/opml', { method: 'POST', body: { opml }, timeout: 60000 }),

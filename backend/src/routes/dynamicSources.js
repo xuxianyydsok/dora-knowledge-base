@@ -51,11 +51,18 @@ export async function getDynamicVodSources(request, env) {
   }, request, env);
 }
 
-/** 手动触发一轮探测。 */
+/**
+ * 手动触发一轮探测。
+ *
+ * 与 cron 的区别：这里是独立的 fetch invocation，**没有** GitHub Star 同步
+ * 与 RSS 抓取抢子请求，所以可以一次探更多源（cron 里固定 6 个）。
+ * 子请求预算：8 个源 × 最多 5 步 = 40，加订阅拉取 3 个 ≈ 43，卡在免费版 50 以内。
+ * 想快速把源池灌满时，连点几次这个接口即可（43 个源约 6 次全覆盖）。
+ */
 export async function refreshDynamicVodSources(request, env) {
   await requireAdmin(request, env);
 
-  const summary = await refreshDynamicSources(env);
+  const summary = await refreshDynamicSources(env, { batchSize: 8 });
   resetVodSourceCache();
   return ok({ ok: true, summary }, request, env);
 }

@@ -5,12 +5,15 @@
 import { qs } from './supabase.js';
 import { fetchFeed } from './rss.js';
 import { notify } from './notify.js';
+import { translateTrendingItems } from './rssTranslate.js';
+import { stripHtml } from './rss.js';
 
 const MAX_EXISTING_GUIDS = 5000;
 
 // 抓取单个订阅源并落库，返回 { notModified, newCount }
 // feed 为 rss_feeds 表的一行（含 id/user_id/feed_url/etag/last_modified）
-export async function syncFeed(db, feed, { timeoutMs = 10000 } = {}) {
+// env 用于 GitHub Trending 的中文翻译（Workers AI 绑定）；缺省时跳过翻译，不影响抓取。
+export async function syncFeed(db, feed, { timeoutMs = 10000, env = null } = {}) {
   const now = new Date().toISOString();
   let result;
   try {
@@ -51,6 +54,17 @@ export async function syncFeed(db, feed, { timeoutMs = 10000 } = {}) {
   const seen = new Set(existing.map((r) => r.guid));
   const fresh = items.filter((it) => it.guid && !seen.has(it.guid));
 
+  // GitHub Trending 是英文源：落库前把描述翻成中文（用户要求「翻译成中文显示」）。
+  // 只对 Trending 那几条源生效（见 lib/rssTranslate.js 的判定），其他中文源不受影响。
+  // 翻译失败不影响抓取：拿不到中文就保留英文原文。
+  if (fresh.length && env) {
+    try {
+      await translateTrendingItems(env, db, feed, fresh);
+    } catch (e) {
+      console.warn('trending 翻译失败:', e?.message || e);
+    }
+  }
+
   if (fresh.length) {
     await db.request('rss_articles', {
       method: 'POST',
@@ -62,7 +76,9 @@ export async function syncFeed(db, feed, { timeoutMs = 10000 } = {}) {
         link: it.link,
         author: it.author,
         summary: it.summary,
-        content_html: it.contentHtml,
+        // 正文：GitHub Trending 已用 README（中文）填好 contentHtml；
+        // 其他源沿用 feed 自带正文。用长度兜底，避免把极短内容当正文。
+        content_html: (it.contentHtml && stripHtml(it.contentHtml).length >= 100) ? it.contentHtml : null,
         cover_path: it.coverPath,
         published_at: it.publishedAt,
         is_read: false
@@ -109,7 +125,7 @@ function isDue(feed, nowMs) {
 
 // 批量抓取所有用户的活跃订阅源
 // 采用「截止时间 + 单次上限」分批处理，规避 Workers 30s 超时
-export async function syncAllFeeds(db, { deadlineMs = 25000, batchSize = 20, timeoutMs = 8000 } = {}) {
+export async function syncAllFeeds(db, { deadlineMs = 25000, batchSize = 20, timeoutMs = 8000, env = null } = {}) {
   const started = Date.now();
   const feeds = await db.select('rss_feeds', qs({
     select: 'id,user_id,title,feed_url,site_url,fetch_interval,last_fetched_at,etag,last_modified',
@@ -125,7 +141,7 @@ export async function syncAllFeeds(db, { deadlineMs = 25000, batchSize = 20, tim
   for (const feed of due) {
     if (Date.now() - started > deadlineMs) break;   // 超时保护，剩余留待下次 Cron
     try {
-      const res = await syncFeed(db, feed, { timeoutMs });
+      const res = await syncFeed(db, feed, { timeoutMs, env });
       summary.newItems += res.newCount;
     } catch {
       summary.errors++;

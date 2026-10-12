@@ -2,9 +2,15 @@
 import { useEffect, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/auth.jsx';
+import { EmptyState } from '../components/StateView.jsx';
+import { Icon } from '../components/Icon.jsx';
 
 export function MusicEdit({ id }) {
   const isNew = !id || id === 'new';
+  // 手动录入属于站长操作（2026-10-13 用户要求：「在用户端的话是不能看到那个音乐导入的」）。
+  // 前端按钮已经只对站长渲染，这里再拦一道，避免普通用户直接敲 /music/new。
+  const { isAdmin, loading: authLoading } = useAuth();
   const [form, setForm] = useState({
     title: '', artist: '', album: '', artwork_url: '', artist_avatar: '', audio_url: '',
     audio_fallbacks: '', preview_url: '', quality: 'full', duration: '', genre: '', release_year: '',
@@ -33,6 +39,17 @@ export function MusicEdit({ id }) {
   }, [id]);
 
   function set(field, value) { setForm((f) => ({ ...f, [field]: value })); }
+
+  if (!authLoading && !isAdmin) {
+    return (
+      <EmptyState
+        icon="crown"
+        title="只有站长能录入音乐"
+        hint="音乐录入是站点管理操作。想收藏歌曲的话，直接在音乐页搜索后点收藏即可。"
+        action={<a class="btn primary" href="/music"><Icon name="music" size={15} />去音乐页</a>}
+      />
+    );
+  }
 
   async function save(e) {
     e.preventDefault();

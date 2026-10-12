@@ -41,9 +41,27 @@ const R2_KEY_SOURCES = 'system/dynamic-vod-sources.json';
 // R2 对象键：探测进度（记录上一轮探到第几个，实现分批）
 const R2_KEY_CURSOR = 'system/dynamic-vod-cursor.json';
 
-// 每批探测的源数量。每条源探测需要 2 个子请求（搜索 + 详情），
-// 取 12 → 24 个子请求，安全落在免费版 50 的上限内。
-const PROBE_BATCH_SIZE = 12;
+// 每批探测的源数量。
+//
+// 2026-10-13 调整：从 3 提到 6，并改成**并行探测**（见 refreshDynamicSources）。
+//
+// 起因（用户反馈「有些电视剧搜出来只有 3 条影视源，你那不是 69 条吗？」）：
+//   探测是分批滚动的，原来每批只探 3 个源，而订阅里有 43 个安全源
+//   → 要 15 轮才覆盖一遍。cron 每天只触发 24 次，等于「一整天都覆盖不完一轮」，
+//   R2 里长期只有 5 条「已验证通过」的源 —— 搜索自然只有 3 条源命中。
+//   改 6 后一天 24 轮可探 144 次，43 个源当天就能覆盖 3 遍，之后滚动复检。
+//
+// ⚠ 子请求预算（Cloudflare 免费版**单次调用**上限 50，实测确认）：
+//   每条源最多 5 个子请求（类目表 + 列表 + 详情 + m3u8 主清单 + 分片探测），
+//   再叠加订阅拉取（主库 + 补充库最多 3 个）与探测内可能的重试。
+//   6 × 5 = 30，加订阅约 33，留足余量。
+//   注意这是**总量**限制而非并发限制 —— 批大小开太大（例如 12）会直接把
+//   整轮探测打爆在「Too many subrequests」上，结果一个源都存不进去。
+const PROBE_BATCH_SIZE = 6;
+
+// 探测并发度。串行探测 10 个源要 30~60s，远超 cron 的 waitUntil 舒适区间；
+// 全并发又可能瞬时打满子请求预算。折中取 3。
+const PROBE_CONCURRENCY = 3;
 
 // 连续失败多少次才把一个源摘掉。
 // 一次失败可能只是网络抖动 / 上游瞬时 503，立刻摘掉会误杀好源；
@@ -377,6 +395,12 @@ export async function probeSourceDeep(source, {
 
   // —— 步骤 1：列表（不带关键词，取最新更新）——
   let detailUrl;
+  // 探测副产品：把「动漫类目 ID」和「是否支持关键词搜索」一并测出来，
+  // 写进动态源记录里。这样搜索阶段就不用再对每个源发一次 ac=list
+  // 去发现类目 —— 43 个源就是 43 个子请求，直接超过免费版 50 的上限，
+  // 会让整次搜索 500（2026-10-13 定位到的「只有 3 条源」的根因）。
+  let animeClassIds = [];
+  let keywordSearch = false;
   try {
     // 步骤 0（与列表同一轮请求内完成）：先看类目表，剔除「名字干净、内容全是成人」的伪装源。
     // 放在最前面是有意的：这类源接口是通的、片子也能播，只有类目表能识破它，
@@ -391,7 +415,22 @@ export async function probeSourceDeep(source, {
           adult: true
         };
       }
+      // 类目表顺手解析出动漫类目 ID（与 maccms.js 的 ANIME_CLASS_RE 同一口径）
+      animeClassIds = (Array.isArray(classBody?.class) ? classBody.class : [])
+        .filter((c) => /^(国产|日韩|欧美)动漫$/.test(String(c?.type_name || '').trim()))
+        .map((c) => Number(c.type_id))
+        .filter(Number.isFinite);
     } catch { /* 类目表取不到就跳过这一道，不据此判死 */ }
+
+    // 关键词搜索能力：探测一次，结果写进源记录，搜索阶段照此决定要不要调用。
+    // 实测有 8 个源明确回「暂不支持搜索」/「Current API forbids keyword search」，
+    // 对它们发关键词请求纯属浪费子请求（而子请求是最稀缺的资源）。
+    try {
+      const kwBody = await fetchJsonWithTimeout(
+        buildApiUrl(source.api, { ac: 'videolist', wd: '庆余年', pg: 1 }), listTimeoutMs
+      );
+      keywordSearch = Array.isArray(kwBody?.list) && kwBody.list.length > 0;
+    } catch { keywordSearch = false; }
 
     const listUrl = buildApiUrl(source.api, { ac: 'videolist', pg: 1 });
     const body = await fetchJsonWithTimeout(listUrl, listTimeoutMs);
@@ -478,7 +517,7 @@ export async function probeSourceDeep(source, {
     segmentOk = false;
   }
 
-  return { ...done(true, 'ok'), segment_ok: segmentOk };
+  return { ...done(true, 'ok'), segment_ok: segmentOk, animeClassIds, keywordSearch };
 }
 
 // —— 探测用的小工具 ——
@@ -625,10 +664,34 @@ export async function refreshDynamicSources(env = {}, { batchSize = PROBE_BATCH_
   }
   summary.cursor = (cursor + slice.length) % all.length;
 
-  // 4) 逐个深探（串行，避免瞬时子请求打爆；单批 12 个 × 4 步 ≈ 48 个子请求）
-  for (const source of slice) {
+  // 4) 深探本批源（3 路并发，兼顾速度与子请求预算）。
+  //
+  // 2026-10-13 由串行改并发：串行时 6 个源要 20~40s，cron 的 waitUntil
+  // 容易被掐断，探测结果写不进 R2 —— 表现就是「源列表长期不更新」。
+  // 每条源最多 5 个子请求，3 路并发峰值约 15 个在途，安全落在免费版 50 以内。
+  const results = new Array(slice.length);
+  let nextIdx = 0;
+  const probeNext = async () => {
+    while (true) {
+      const idx = nextIdx++;
+      if (idx >= slice.length) return;
+      const source = slice[idx];
+      let res;
+      try {
+        res = await probeSourceDeep(source);
+      } catch (err) {
+        res = { ok: false, step: 'exception', error: String(err?.message || err).slice(0, 160) };
+      }
+      results[idx] = { source, res };
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(PROBE_CONCURRENCY, slice.length) }, probeNext)
+  );
+
+  for (const { source, res } of results) {
+    if (!res) continue;
     try {
-      const res = await probeSourceDeep(source);
       summary.probed += 1;
       if (res.ok) {
         summary.passed += 1;
@@ -637,6 +700,11 @@ export async function refreshDynamicSources(env = {}, { batchSize = PROBE_BATCH_
           weight: DYNAMIC_WEIGHT,
           latency_ms: res.latencyMs,
           segment_ok: !!res.segment_ok,
+          // 探测副产品，供搜索阶段复用（避免每次搜索都对 43 个源发 ac=list）：
+          //   anime_class_ids —— 动漫类目 ID，空数组表示「这个源没有动漫类目」
+          //   keyword_search  —— 是否支持 ac=videolist&wd= 关键词搜索
+          anime_class_ids: Array.isArray(res.animeClassIds) ? res.animeClassIds : [],
+          keyword_search: !!res.keywordSearch,
           verified_at: new Date().toISOString()
         });
         failMap.delete(source.key);
@@ -650,10 +718,7 @@ export async function refreshDynamicSources(env = {}, { batchSize = PROBE_BATCH_
       }
     } catch (err) {
       summary.failed += 1;
-      const fails = (failMap.get(source.key) || 0) + 1;
-      failMap.set(source.key, fails);
-      if (fails >= MAX_CONSECUTIVE_FAILURES) passedMap.delete(source.key);
-      summary.errors.push({ key: source.key, step: 'exception', error: String(err?.message || err).slice(0, 160) });
+      summary.errors.push({ key: source.key, step: 'merge', error: String(err?.message || err).slice(0, 160) });
     }
   }
 

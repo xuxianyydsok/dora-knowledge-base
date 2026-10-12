@@ -23,6 +23,9 @@ const MusicView = lazy(() => import('./MusicView.jsx').then((m) => ({ default: m
 const MusicEdit = lazy(() => import('./MusicEdit.jsx').then((m) => ({ default: m.MusicEdit })));
 const MusicLyrics = lazy(() => import('./MusicLyrics.jsx').then((m) => ({ default: m.MusicLyrics })));
 const MusicPlayer = lazy(() => import('./MusicPlayer.jsx').then((m) => ({ default: m.MusicPlayer })));
+// 管理员「上传本地音乐」页（2026-10-13）：入口只在音乐页对站长显示，
+// 页面自身也再做一次 isAdmin 拦截（双保险，直接敲 URL 也进不去）。
+const AdminMusic = lazy(() => import('./AdminMusic.jsx').then((m) => ({ default: m.AdminMusic })));
 const Movies = lazy(() => import('./Movies.jsx').then((m) => ({ default: m.Movies })));
 const MovieView = lazy(() => import('./MovieView.jsx').then((m) => ({ default: m.MovieView })));
 const MovieEdit = lazy(() => import('./MovieEdit.jsx').then((m) => ({ default: m.MovieEdit })));
@@ -42,7 +45,7 @@ export {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
   Search, Graph, GraphHub, Favorites, Backup, Settings,
   Music, MusicView, MusicEdit, MusicLyrics,
-  MusicPlayer,
+  MusicPlayer, AdminMusic,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
   Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback, Rss
 };

@@ -76,6 +76,8 @@ function ManagePanel({ feeds, onClose, onChanged }) {
   const [found, setFound] = useState(null);
   const [presets, setPresets] = useState(null);
   const [picked, setPicked] = useState(new Set());
+  const [stale, setStale] = useState(null);     // 「很久没更新」的源，供站长一键退订
+  const [staleDays, setStaleDays] = useState(30);
   const fileRef = useRef(null);
 
   // 新增：直接粘 feed 地址，或粘站点首页让后端自动发现
@@ -172,6 +174,63 @@ function ManagePanel({ feeds, onClose, onChanged }) {
     }
   }
 
+  // 列出「很久没更新」的源：站长据此决定退订哪些（用户要求清理僵尸源）
+  async function loadStale(days = staleDays) {
+    setBusy('stale');
+    try {
+      const res = await api.listRssStale(days);
+      setStale(res);
+    } catch (err) {
+      toastError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // 一键退订单个僵尸源
+  async function unsubscribeStale(f) {
+    setBusy(`del-${f.id}`);
+    try {
+      await api.deleteRssFeed(f.id);
+      toastSuccess(`已退订「${f.title || hostOf(f.feed_url)}」`);
+      setStale((s) => (s ? { ...s, feeds: s.feeds.filter((x) => x.id !== f.id), count: s.count - 1 } : s));
+      onChanged?.();
+    } catch (err) {
+      toastError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // 一键退订全部列出的僵尸源
+  async function unsubscribeAllStale() {
+    const list = stale?.feeds || [];
+    if (!list.length) return;
+    setBusy('stale-all');
+    let ok = 0;
+    for (const f of list) {
+      try { await api.deleteRssFeed(f.id); ok++; } catch { /* 单个失败继续 */ }
+    }
+    toastSuccess(`已退订 ${ok} 个源`);
+    setStale({ days: staleDays, count: 0, feeds: [] });
+    setBusy('');
+    onChanged?.();
+  }
+
+  // 给 GitHub 趋势的历史条目补中文（摘要 + README 正文）
+  async function translateTrendingNow() {
+    setBusy('translate');
+    try {
+      const r = await api.translateRssTrending();
+      toastSuccess(`已翻译 ${r.translated} 条摘要、补全 ${r.readme_filled} 篇 README 正文`);
+      onChanged?.();
+    } catch (err) {
+      toastError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function exportOpml() {
     try {
       const xml = await api.exportRssOpml();
@@ -228,13 +287,18 @@ function ManagePanel({ feeds, onClose, onChanged }) {
         {[
           ['add', '添加'],
           ['presets', '精选源'],
-          ['tools', '批量']
+          ['tools', '批量'],
+          ['clean', '清理']
         ].map(([key, label]) => (
           <button
             key={key}
             type="button"
             class={tab === key ? 'on' : ''}
-            onClick={() => { setTab(key); if (key === 'presets' && !presets) loadPresets(); }}
+            onClick={() => {
+              setTab(key);
+              if (key === 'presets' && !presets) loadPresets();
+              if (key === 'clean' && !stale) loadStale();
+            }}
           >{label}</button>
         ))}
       </nav>
@@ -345,6 +409,9 @@ function ManagePanel({ feeds, onClose, onChanged }) {
             <button type="button" onClick={() => fileRef.current?.click()} disabled={busy === 'import'}>
               <Icon name="plus" size={15} /> 导入 OPML
             </button>
+            <button type="button" onClick={translateTrendingNow} disabled={busy === 'translate'}>
+              <Icon name="refresh" size={15} /> {busy === 'translate' ? '翻译中…' : '翻译 GitHub 趋势（含 README）'}
+            </button>
             <input
               ref={fileRef}
               type="file"
@@ -352,6 +419,68 @@ function ManagePanel({ feeds, onClose, onChanged }) {
               style="display:none"
               onChange={importOpml}
             />
+          </div>
+        )}
+
+        {tab === 'clean' && (
+          <div class="rss-clean">
+            <p class="rss-hint">
+              很久没更新的源多半已经停更了，留着只会占位。选一个时间范围，
+              把超过这个天数没有新文章的源找出来，确认后一键退订。
+              <br /><span class="muted">GitHub 趋势的日榜 / 周榜 / 月榜不受影响（它们本身更新就慢）。</span>
+            </p>
+            <div class="rss-clean-bar">
+              <select
+                value={staleDays}
+                onChange={(e) => { const d = Number(e.currentTarget.value); setStaleDays(d); loadStale(d); }}
+              >
+                <option value={15}>超过 15 天没更新</option>
+                <option value={30}>超过 30 天没更新</option>
+                <option value={60}>超过 60 天没更新</option>
+                <option value={90}>超过 90 天没更新</option>
+              </select>
+              <button type="button" class="rss-mini" onClick={() => loadStale()} disabled={busy === 'stale'}>
+                {busy === 'stale' ? '检测中…' : '重新检测'}
+              </button>
+            </div>
+
+            {!stale ? (
+              <p class="muted rss-clean-empty">点上面的「重新检测」开始扫描。</p>
+            ) : stale.count === 0 ? (
+              <p class="muted rss-clean-empty">没有发现停更的源，订阅都很活跃。</p>
+            ) : (
+              <>
+                <div class="rss-clean-head">
+                  <span>发现 <b>{stale.count}</b> 个源超过 {stale.days} 天没更新</span>
+                  <button
+                    type="button"
+                    class="rss-mini danger"
+                    onClick={unsubscribeAllStale}
+                    disabled={busy === 'stale-all'}
+                  >
+                    {busy === 'stale-all' ? '退订中…' : '全部退订'}
+                  </button>
+                </div>
+                <div class="rss-clean-list">
+                  {stale.feeds.map((f) => (
+                    <div key={f.id} class="rss-manage-row">
+                      <span class="rss-manage-name" title={f.feed_url}>{f.title || hostOf(f.feed_url)}</span>
+                      <span class="rss-clean-age">
+                        {f.never_fetched ? '从未抓到' : `${f.age_days} 天前`}
+                      </span>
+                      <button
+                        type="button"
+                        class="rss-mini"
+                        onClick={() => unsubscribeStale(f)}
+                        disabled={busy === `del-${f.id}`}
+                      >
+                        退订
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -47,6 +47,10 @@ export function isGuestAllowed(method, pathname) {
   if (method !== 'GET') return false;
   if (pathname.endsWith('/progress')) return false;
   if (PUBLIC_EXACT_GET_PATHS.has(pathname)) return true;
+  // 上传曲目的字节端点：/api/music/:id/audio 与 /api/music/:id/cover。
+  // 访客要能听站长公开的音乐、看它的封面，因此必须放行；
+  // 路由层会按 is_public 再过滤一次（私有曲目对访客一律 404）。
+  if (/^\/api\/music\/[0-9a-f-]{36}\/(audio|cover)$/.test(pathname)) return true;
   return PUBLIC_READ_RE.test(pathname);
 }
 

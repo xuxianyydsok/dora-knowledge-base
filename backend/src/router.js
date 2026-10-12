@@ -16,6 +16,7 @@ import * as notifications from './routes/notifications.js';
 import * as backup from './routes/backup.js';
 import * as preferences from './routes/preferences.js';
 import * as music from './routes/music.js';
+import * as musicUpload from './routes/musicUpload.js';
 import * as movies from './routes/movies.js';
 import * as admin from './routes/admin.js';
 import * as news from './routes/news.js';
@@ -154,6 +155,8 @@ const routes = [
   ['GET', '/api/img/music', musicCharts.musicImage],
   ['POST', '/api/music/lyrics', music.getMusicLyrics],
   ['POST', '/api/music/stream', music.resolveMusicStream],
+  // 管理员上传本地音频（requireAdmin，原始请求体直传；见 routes/musicUpload.js）
+  ['POST', '/api/music/upload', musicUpload.uploadMusic],
   // 播放历史：3 段路径，必须排在 /api/music/:id 之前，否则会被当成 id='history'
   ['GET', '/api/music/history', music.listMusicHistory],
   ['GET', '/api/music/:id', music.getMusic],
@@ -161,6 +164,9 @@ const routes = [
   ['DELETE', '/api/music/:id', music.deleteMusic],
   ['GET', '/api/music/:id/progress', music.getMusicProgress],
   ['PUT', '/api/music/:id/progress', music.saveMusicProgress],
+  // 上传曲目的字节端点：audio 给 <audio> 播放（支持 Range），cover 给封面图
+  ['GET', '/api/music/:id/audio', musicUpload.getMusicAudio],
+  ['GET', '/api/music/:id/cover', musicUpload.getMusicCover],
 
   // 影视收藏库
   ['GET', '/api/movies', movies.listMovies],
@@ -205,6 +211,8 @@ const routes = [
   ['DELETE', '/api/rss/feeds/:id', rss.deleteFeed],
   ['POST', '/api/rss/feeds/:id/fetch', rss.fetchFeedNow],
   ['POST', '/api/rss/fetch-all', rss.fetchAllFeeds],
+  ['GET', '/api/rss/stale', rss.listStaleFeeds],
+  ['POST', '/api/rss/translate-trending', rss.translateTrendingNow],
   ['GET', '/api/rss/articles', rss.listArticles],
   ['POST', '/api/rss/articles/read-all', rss.markArticlesRead],
   ['GET', '/api/rss/articles/:id', rss.getArticle],

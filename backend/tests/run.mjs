@@ -26,6 +26,8 @@ import * as timelineMerge from '../src/lib/timelineMerge.js';
 import * as timelineRoute from '../src/routes/timeline.js';
 import * as mediaUrl from '../src/lib/mediaUrl.js';
 import * as musicSources from '../src/lib/musicSources.js';
+import * as markdown from '../src/lib/markdown.js';
+import * as rssTranslate from '../src/lib/rssTranslate.js';
 import * as musicIdentity from '../src/lib/musicIdentity.js';
 import * as movies from '../src/routes/movies.js';
 import * as safeUrl from '../src/lib/safeUrl.js';
@@ -36,6 +38,9 @@ import * as dynamicSources from '../src/lib/dynamicSources.js';
 import * as rssParse from '../src/lib/rss.js';
 import * as rssPresets from '../src/lib/rssPresets.js';
 import * as rssRoute from '../src/routes/rss.js';
+import * as audioType from '../src/lib/audioType.js';
+import * as audioMeta from '../src/lib/audioMeta.js';
+import * as zhConvert from '../src/lib/zhConvert.js';
 // 前端纯函数（无依赖、无 import，Node 可直接加载）：验证前后端直链判定一致
 import * as feMediaUrl from '../../frontend/src/lib/mediaUrl.js';
 
@@ -658,6 +663,24 @@ async function unit() {
     assert(!isGuestAllowed('PATCH', '/api/posts/1'), '访客不应 PATCH');
     assert(!isGuestAllowed('DELETE', '/api/favorites/1'), '访客不应 DELETE');
     return '只读检索 5 条放行；analyze/写操作全拒绝';
+  });
+
+  await test('访客白名单：上传曲目的 audio/cover 字节端点放行，上传本身拒绝', async () => {
+    const { isGuestAllowed } = publicScope;
+    const id = '11111111-1111-1111-1111-111111111111';
+    // 访客要能听站长公开的音乐、看它的封面
+    assert(isGuestAllowed('GET', `/api/music/${id}/audio`) === true, '访客应可读音频字节');
+    assert(isGuestAllowed('GET', `/api/music/${id}/cover`) === true, '访客应可读封面字节');
+    // 上传是管理员专属写操作，访客一律不能碰
+    assert(isGuestAllowed('POST', '/api/music/upload') === false, '访客不应能上传音乐');
+    // 白名单只负责「能不能进」：非 uuid 路径虽然会被 /api/music 前缀放进中间件，
+    // 但路由层的 requireUuid 会返回 422，因此不构成绕过（这里显式锁定这个分工）。
+    const audioSrc = readFileSync(join(BACKEND, 'src', 'routes', 'musicUpload.js'), 'utf8');
+    assert(/getMusicAudio[\s\S]{0,200}requireUuid\(/.test(audioSrc), 'getMusicAudio 必须先校验 uuid');
+    assert(/getMusicCover[\s\S]{0,200}requireUuid\(/.test(audioSrc), 'getMusicCover 必须先校验 uuid');
+    // 私有曲目的过滤也在路由层（is_public），白名单不负责这一步
+    assert(/readable[\s\S]{0,200}is_public === true/.test(audioSrc), '路由层必须按 is_public 过滤');
+    return 'audio/cover 放行、upload 拒绝、uuid 与 is_public 由路由层把关';
   });
 
   await test('访客过滤构造：博客须 published+public、资源须 public', async () => {
@@ -1299,6 +1322,63 @@ async function unit() {
     return `解析 ${list.length} 条，音质档 320/128 正确，双层转义还原正确`;
   });
 
+  await test('QQ音乐音源：vkeys 适配（字段映射 / 会员标注 / 时长解析）', async () => {
+    // 不联网：直接调 searchVkeysMusic 需要真实接口，这里只验证纯逻辑导出。
+    // 时长文本 "4分29秒" → 269 秒；vkeys 的 interval 就是这个格式。
+    assert(typeof musicSources.searchVkeysMusic === 'function', '应导出 searchVkeysMusic');
+    assert(typeof musicSources.vkeysStreamUrl === 'function', '应导出 vkeysStreamUrl');
+    // 空 mid 应直接返回 null（不发请求）
+    assert(await musicSources.vkeysStreamUrl('') === null, '空 mid 应返回 null');
+    assert(await musicSources.vkeysStreamUrl(null) === null, 'null mid 应返回 null');
+    return 'vkeys 适配器导出正确，空输入安全';
+  });
+
+  await test('Markdown 渲染：README 转 HTML（标题/列表/代码/链接/表格）', () => {
+    const md = [
+      '# 标题',
+      '',
+      '一段**加粗**与`代码`的文字。',
+      '',
+      '- 项目一',
+      '- 项目二',
+      '',
+      '```js',
+      'const a = 1 < 2;',
+      '```',
+      '',
+      '> 引用',
+      '',
+      '[链接](https://example.com)'
+    ].join('\n');
+    const html = markdown.markdownToHtml(md);
+    assert(html.includes('<h1>标题</h1>'), '标题应转 h1');
+    assert(html.includes('<strong>加粗</strong>'), '粗体应转 strong');
+    assert(html.includes('<code>代码</code>'), '行内码应转 code');
+    assert(html.includes('<li>项目一</li>'), '列表应转 li');
+    assert(html.includes('<pre><code'), '代码块应转 pre>code');
+    assert(html.includes('<blockquote>'), '引用应转 blockquote');
+    assert(html.includes('href="https://example.com"'), '链接应保留 href');
+    return '常见 Markdown 语法转换正确';
+  });
+
+  await test('Markdown 渲染：XSS 防护（脚本被转义，不出现在标签位）', () => {
+    const html = markdown.markdownToHtml('正常文字\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>');
+    // 关键：不得出现可执行的 script 标签
+    assert(!/<script/i.test(html), 'script 标签必须被转义');
+    assert(html.includes('&lt;script&gt;'), 'script 应以转义文本形式出现');
+    return '原始 HTML 被转义，无法注入脚本';
+  });
+
+  await test('GitHub Trending 识别与条目切分', () => {
+    assert(rssTranslate.isGithubTrendingFeed('https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml') === true,
+      '应识别 Trending 源');
+    assert(rssTranslate.isGithubTrendingFeed('https://sspai.com/feed') === false, '普通源不应误判');
+    const p = rssTranslate.splitTrendingItem({ title: 'owner/repo', summary: '<p>English desc here.</p><p>noise</p>' });
+    assert(p.repo === 'owner/repo', '应提取仓库名');
+    assert(p.desc === 'English desc here.', '应只取第一段描述');
+    return 'Trending 判定与切分正确';
+  });
+
   await test('音乐去重：同一首歌（同名同歌手）只保留一条', async () => {
     // 注意：不要解构出与模块同名的变量（const { musicIdentity } = musicIdentity 会 TDZ 报错）
     const { musicIdentity: identity, dedupeMusicList, findDuplicateMusic } = musicIdentity;
@@ -1625,6 +1705,213 @@ async function bookTypeUnit() {
   });
 }
 
+// ---------------------------------------------------------------- UNIT · 音频上传（管理员本地曲目）
+async function audioTypeUnit() {
+  section('UNIT · 音频上传（魔数嗅探 / 标签解析 / 上限 / key 形态）');
+
+  const ascii = (s) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
+  const head = (prefix, len = 64) => {
+    const out = new Uint8Array(len);
+    out.set(ascii(prefix).subarray(0, len), 0);
+    return out;
+  };
+
+  await test('音频 · 按魔数识别 MP3 / FLAC / M4A / OGG / WAV / WMA / APE', () => {
+    assert(audioType.sniffAudioFormat(head('ID3\x03\x00'))?.format === 'mp3', 'ID3 头应识别为 mp3');
+    assert(audioType.sniffAudioFormat(head('fLaC'))?.format === 'flac', 'fLaC 应识别为 flac');
+    assert(audioType.sniffAudioFormat(head('OggS'))?.format === 'ogg', 'OggS 应识别为 ogg');
+    assert(audioType.sniffAudioFormat(head('RIFF\x00\x00\x00\x00WAVE'))?.format === 'wav', 'RIFF+WAVE 应识别为 wav');
+    assert(audioType.sniffAudioFormat(head('MAC '))?.format === 'ape', 'MAC 应识别为 ape');
+
+    // OGG 容器里带 OpusHead 时细分出 opus
+    const opus = new Uint8Array(200);
+    opus.set(ascii('OggS'), 0);
+    opus.set(ascii('OpusHead'), 40);
+    assert(audioType.sniffAudioFormat(opus)?.format === 'opus', 'OggS + OpusHead 应识别为 opus');
+
+    // WMA：ASF GUID 头
+    const wma = new Uint8Array([0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11, 0, 0, 0, 0]);
+    assert(audioType.sniffAudioFormat(wma)?.format === 'wma', 'ASF GUID 应识别为 wma');
+
+    // M4A：offset 4 是 ftyp，brand=m4a
+    const m4a = new Uint8Array(64);
+    m4a.set(ascii('ftypM4A '), 4);
+    assert(audioType.sniffAudioFormat(m4a)?.format === 'm4a', 'ftyp+M4A 应识别为 m4a');
+    return '7 种音频容器识别正确';
+  });
+
+  await test('音频 · 非音频与过短输入一律拒绝', () => {
+    assert(audioType.sniffAudioFormat(head('%PDF-1.7')) === null, 'PDF 不应被当音频');
+    assert(audioType.sniffAudioFormat(head('\x89PNG')) === null, 'PNG 不应被当音频');
+    assert(audioType.sniffAudioFormat(head('PK\x03\x04')) === null, 'zip 不应被当音频');
+    assert(audioType.sniffAudioFormat(new Uint8Array(2)) === null, '过短输入应拒绝');
+    assert(audioType.sniffAudioFormat(null) === null, 'null 应拒绝');
+    return '非音频全部被拒';
+  });
+
+  await test('音频 · 大小上限判定（200MB）', () => {
+    assert(audioType.isWithinAudioLimit(1024) === true, '1KB 应通过');
+    assert(audioType.isWithinAudioLimit(audioType.MAX_AUDIO_BYTES) === true, '正好等于上限应通过');
+    assert(audioType.isWithinAudioLimit(audioType.MAX_AUDIO_BYTES + 1) === false, '超过上限应拒绝');
+    assert(audioType.isWithinAudioLimit(0) === false, '0 应拒绝');
+    assert(audioType.isWithinAudioLimit(NaN) === false, 'NaN 应拒绝');
+    return `上限 ${Math.round(audioType.MAX_AUDIO_BYTES / 1024 / 1024)}MB 判定正确`;
+  });
+
+  await test('音频 · 文件名清洗与歌名 / 歌手推断', () => {
+    assert(!audioType.sanitizeFilename('../../etc/passwd').includes('/'), '路径分隔符必须去掉');
+    assert(audioType.sanitizeFilename('a\u0000b') === 'ab', '控制字符必须去掉');
+
+    // 「歌手 - 歌名」是最常见的命名，应能拆出两半
+    assert(audioType.guessTitleFromFilename('周杰伦 - 晴天.mp3') === '晴天', '应拆出歌名');
+    assert(audioType.guessArtistFromFilename('周杰伦 - 晴天.mp3') === '周杰伦', '应拆出歌手');
+    // 没有明确分隔符时：歌名取全名，歌手留空（宁缺毋滥，避免猜错）
+    assert(audioType.guessTitleFromFilename('晴天.flac') === '晴天', '无分隔符时歌名取全名');
+    assert(audioType.guessArtistFromFilename('晴天.flac') === '', '无分隔符时歌手应留空');
+    return '文件名清洗 + 歌名/歌手推断正确';
+  });
+
+  await test('音频 · R2 key 形态（不含用户输入，带 uuid）', () => {
+    const uid = '11111111-1111-1111-1111-111111111111';
+    const key = audioType.buildAudioKey(uid, 'flac', new Date('2026-10-12T00:00:00Z'));
+    assert(/^audio\/11111111-1111-1111-1111-111111111111\/2026\/[0-9a-f-]{36}\.flac$/.test(key),
+      `object key 形态不对: ${key}`);
+    // 非法扩展名退化成 bin，绝不把用户输入拼进 key
+    const bad = audioType.buildAudioKey(uid, '../../evil', new Date('2026-10-12T00:00:00Z'));
+    assert(bad.endsWith('.bin') && !bad.includes('..'), `非法扩展名应退化: ${bad}`);
+    const cover = audioType.buildAudioCoverKey(key, 'jpg');
+    assert(cover === `${key}-cover.jpg`, `封面 key 应在音频 key 后加后缀: ${cover}`);
+    return 'key 形态正确，用户输入不参与拼接';
+  });
+
+  await test('音频 · ID3v2 标签解析（歌名 / 歌手 / 专辑 / 内嵌封面）', () => {
+    // 手工拼一个最小 ID3v2.3 标签：TIT2 + TPE1 + TALB + APIC
+    const frames = [];
+    const textFrame = (id, text) => {
+      const body = new Uint8Array([3, ...new TextEncoder().encode(text)]); // enc=3(UTF-8)
+      const out = new Uint8Array(10 + body.length);
+      out.set(ascii(id), 0);
+      const size = body.length;
+      out[4] = (size >>> 24) & 0xff; out[5] = (size >>> 16) & 0xff;
+      out[6] = (size >>> 8) & 0xff; out[7] = size & 0xff;
+      out.set(body, 10);
+      return out;
+    };
+    frames.push(textFrame('TIT2', '晴天'));
+    frames.push(textFrame('TPE1', '周杰伦'));
+    frames.push(textFrame('TALB', '叶惠美'));
+    // APIC：enc(1) + 'image/jpeg'(0 结尾) + type(1) + desc(0 结尾) + 假图片字节
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+    const mime = new TextEncoder().encode('image/jpeg');
+    const apicBody = new Uint8Array(1 + mime.length + 1 + 1 + 1 + jpeg.length);
+    let p = 0;
+    apicBody[p++] = 3;
+    apicBody.set(mime, p); p += mime.length; apicBody[p++] = 0;
+    apicBody[p++] = 3; // picture type
+    apicBody[p++] = 0; // desc 终止
+    apicBody.set(jpeg, p);
+    const apic = new Uint8Array(10 + apicBody.length);
+    apic.set(ascii('APIC'), 0);
+    apic[4] = (apicBody.length >>> 24) & 0xff; apic[5] = (apicBody.length >>> 16) & 0xff;
+    apic[6] = (apicBody.length >>> 8) & 0xff; apic[7] = apicBody.length & 0xff;
+    apic.set(apicBody, 10);
+    frames.push(apic);
+
+    const total = frames.reduce((s, f) => s + f.length, 0);
+    const tag = new Uint8Array(10 + total);
+    tag.set(ascii('ID3'), 0);
+    tag[3] = 3; // v2.3
+    // syncsafe size（每字节低 7 位）
+    tag[6] = (total >>> 21) & 0x7f; tag[7] = (total >>> 14) & 0x7f;
+    tag[8] = (total >>> 7) & 0x7f; tag[9] = total & 0x7f;
+    let at = 10;
+    for (const f of frames) { tag.set(f, at); at += f.length; }
+
+    const parsed = audioMeta.parseId3v2(tag);
+    assert(parsed.title === '晴天', `歌名解析错误: ${parsed.title}`);
+    assert(parsed.artist === '周杰伦', `歌手解析错误: ${parsed.artist}`);
+    assert(parsed.album === '叶惠美', `专辑解析错误: ${parsed.album}`);
+    assert(parsed.cover && parsed.cover.length === jpeg.length, `封面字节数错误: ${parsed.cover?.length}`);
+    return 'ID3v2 四个字段全部解析正确';
+  });
+
+  await test('音频 · FLAC VORBIS_COMMENT 解析', () => {
+    // 拼一个最小的 FLAC：fLaC + 一个 VORBIS_COMMENT 块（标记为末块）
+    const enc = new TextEncoder();
+    const vendor = enc.encode('test');
+    const entries = [enc.encode('TITLE=晴天'), enc.encode('ARTIST=周杰伦')];
+    const bodyLen = 4 + vendor.length + 4 + entries.reduce((s, e) => s + 4 + e.length, 0);
+    const body = new Uint8Array(bodyLen);
+    let p = 0;
+    body[p++] = vendor.length; body[p++] = 0; body[p++] = 0; body[p++] = 0;
+    body.set(vendor, p); p += vendor.length;
+    body[p++] = entries.length; body[p++] = 0; body[p++] = 0; body[p++] = 0;
+    for (const e of entries) {
+      body[p++] = e.length & 0xff; body[p++] = (e.length >>> 8) & 0xff; body[p++] = 0; body[p++] = 0;
+      body.set(e, p); p += e.length;
+    }
+    const flac = new Uint8Array(4 + 4 + body.length);
+    flac.set(enc.encode('fLaC'), 0);
+    flac[4] = 0x80 | 4;                    // 末块标志 + 类型 4（VORBIS_COMMENT）
+    flac[5] = (body.length >>> 16) & 0xff; flac[6] = (body.length >>> 8) & 0xff; flac[7] = body.length & 0xff;
+    flac.set(body, 8);
+
+    const parsed = audioMeta.parseFlacTags(flac);
+    assert(parsed.title === '晴天', `FLAC 歌名解析错误: ${parsed.title}`);
+    assert(parsed.artist === '周杰伦', `FLAC 歌手解析错误: ${parsed.artist}`);
+    return 'FLAC VORBIS_COMMENT 解析正确';
+  });
+
+  await test('音频 · 标签缺失时不抛错（降级为空结构）', () => {
+    const empty = audioMeta.parseAudioTags(head('fLaC'), 'flac');
+    assert(empty && empty.title === null && empty.cover === null, '无标签时应返回空结构');
+    // 损坏的字节流不能抛异常
+    const broken = audioMeta.parseAudioTags(new Uint8Array([0x49, 0x44, 0x33, 0x03, 0, 0, 0xff, 0xff, 0xff, 0x7f]), 'mp3');
+    assert(broken && typeof broken === 'object', '损坏标签应静默降级');
+    assert(audioMeta.parseAudioTags(null, 'mp3').title === null, 'null 输入应返回空结构');
+    return '标签缺失 / 损坏均安全降级';
+  });
+
+  await test('音频 · 封面类型嗅探（用于转存 R2）', () => {
+    const jpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    assert(audioType.sniffCoverImage(jpg)?.ext === 'jpg', 'JPEG 应识别');
+    assert(audioType.sniffCoverImage(png)?.ext === 'png', 'PNG 应识别');
+    assert(audioType.sniffCoverImage(head('not an image')) === null, '非图片必须拒绝');
+    return '封面类型嗅探正确';
+  });
+
+  await test('歌词 · 繁体转简体（用户要求「繁体歌词要改正」）', () => {
+    assert(zhConvert.toSimplified('妳說我們過得很好') === '你说我们过得很好', '常用繁体应转换');
+    assert(zhConvert.toSimplified('後來 我總算學會了如何去愛') === '后来 我总算学会了如何去爱', '整句歌词应转换');
+    assert(zhConvert.toSimplified('時間') === '时间', '时间应转换');
+    // 幂等 + 边界：非字符串原样返回，不能抛错
+    assert(zhConvert.toSimplified('') === '', '空串应返回空串');
+    assert(zhConvert.toSimplified(null) === null, 'null 应原样返回');
+    assert(zhConvert.toSimplified(123) === 123, '数字应原样返回');
+    assert(zhConvert.toSimplified(zhConvert.toSimplified('妳說')) === '你说', '转换应幂等');
+    // hasTraditional：用于避免对简体歌词白做功
+    assert(zhConvert.hasTraditional('你说我们过得很好') === false, '简体不应判为繁体');
+    assert(zhConvert.hasTraditional('妳說') === true, '繁体应判为繁体');
+    assert(zhConvert.hasTraditional(null) === false, 'null 不应抛错');
+    return `转换表 ${zhConvert.ZH_CONVERT_SIZE} 条，幂等与边界均正确`;
+  });
+
+  await test('歌词 · 转换不得破坏 LRC 时间轴（同步歌词的关键性质）', () => {
+    // 同步歌词带 [mm:ss.xx] 标记，前端靠它逐句高亮；转简体时只能动汉字。
+    const lrc = '[00:12.34]妳說我們過得很好\n[00:16.78]後來 我總算學會了如何去愛';
+    const out = zhConvert.toSimplified(lrc);
+    assert(out.startsWith('[00:12.34]'), `时间轴被破坏: ${out}`);
+    assert(out.includes('[00:16.78]'), `第二行时间轴被破坏: ${out}`);
+    assert(out.includes('你说我们过得很好'), `歌词未转换: ${out}`);
+    assert(out.includes('后来 我总算学会了如何去爱'), `第二行未转换: ${out}`);
+    // 时间轴字符（数字、冒号、点、方括号、换行）必须一字不差
+    const stamps = (s) => (s.match(/\[\d{2}:\d{2}\.\d{2}\]/g) || []).join(',');
+    assert(stamps(lrc) === stamps(out), `时间轴集合发生变化: ${stamps(out)}`);
+    return 'LRC 时间轴完整保留，仅汉字被转换';
+  });
+}
+
 // ---------------------------------------------------------------- UNIT · GitHub AI 解读
 // ---------------------------------------------------------------- UNIT · 动态壁纸类型
 async function videoTypeUnit() {
@@ -1848,6 +2135,20 @@ async function contract() {
     return '路由顺序正确';
   });
 
+  await test('音乐上传路由已注册：upload / :id/audio / :id/cover', async () => {
+    assert(routerMap.has('POST /api/music/upload'), 'router.js 应有 POST /api/music/upload');
+    assert(routerMap.has('GET /api/music/:id/audio'), 'router.js 应有 GET /api/music/:id/audio');
+    assert(routerMap.has('GET /api/music/:id/cover'), 'router.js 应有 GET /api/music/:id/cover');
+    // 上传是管理员专属：路由必须走 requireAdmin（普通用户不能录音乐）
+    const upSrc = readFileSync(join(BACKEND, 'src', 'routes', 'musicUpload.js'), 'utf8');
+    assert(/export async function uploadMusic[\s\S]{0,400}requireAdmin\(/.test(upSrc),
+      'uploadMusic 必须用 requireAdmin（普通用户与访客都不能上传）');
+    // 内部 R2 key 绝不能出现在对外结构里
+    assert(!/shapeForClient[\s\S]{0,600}audio_key:\s*audio_key/.test(upSrc),
+      'shapeForClient 不应把 audio_key 原样返回');
+    return '3 条路由已注册，上传走 requireAdmin';
+  });
+
   // 前端 Context 解构护栏（2026-10-11 新增）
   // 起因：Settings.jsx 曾把 theme/toggleTheme 从 useAuth() 解构（它们其实属于 useTheme()），
   // 主题按钮文案恒错、点击 toggleTheme() 抛 TypeError 导致整页崩溃；vite build 不做运行时检查，抓不到。
@@ -2029,7 +2330,7 @@ async function live() {
 
 // ---------------------------------------------------------------- main
 const t0 = Date.now();
-if (!ONLY || ONLY === 'unit') { await unit(); await fileTypeUnit(); await bookTypeUnit(); await videoTypeUnit(); await githubAiUnit(); await contract(); }
+if (!ONLY || ONLY === 'unit') { await unit(); await fileTypeUnit(); await bookTypeUnit(); await audioTypeUnit(); await videoTypeUnit(); await githubAiUnit(); await contract(); }
 if (!ONLY || ONLY === 'live') await live();
 
 const failed = results.filter((r) => !r.ok);

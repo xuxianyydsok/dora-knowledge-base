@@ -6,11 +6,11 @@
 import { HttpError } from './response.js';
 import {
   ensureVodSources, searchMaccms, detailMaccms, checkMaccms, curatedMaccms,
-  getAnimeClassIds, getAnimeClassIdsSync, titleRelevance
+  getAnimeClassIds, getAnimeClassIdsSync, titleRelevance, supportsKeywordSearch
 } from './maccms.js';
 import { cinemetaLookup, bangumiLookup, kitsuLookup } from './metadb.js';
 import { getMetingInstances, searchMetingMusic } from './meting.js';
-import { searchNeteaseMusic, searchKugouMusic, searchKuwoMusic } from './musicSources.js';
+import { searchNeteaseMusic, searchKugouMusic, searchKuwoMusic, searchVkeysMusic } from './musicSources.js';
 import { getSourceHealth, healthMap, rankSources, sourceHealthWeight } from './sourceHealth.js';
 
 const UA = 'knowledge-base-app/0.1 (+https://github.com/)';
@@ -589,7 +589,7 @@ const QUALITY_RANK = { lossless: 4, full: 3, preview: 1 };
 // netease / kugou 是官方接口（外链端点稳定、不过期），排在与 GD 同档；
 // kugou 略高是因为它的片库与 netease 互补（有原唱），能救「搜不出来」的场景。
 const PLATFORM_RANK = {
-  kuwo: 6, kugou: 5, netease: 5, gdstudio: 4, meting: 3, audius: 2, deezer: 1, itunes: 1
+  kuwo: 6, kugou: 5, netease: 5, qq: 5, gdstudio: 4, meting: 3, audius: 2, deezer: 1, itunes: 1
 };
 
 // 综合排序分 = 质量档 ×100 + 音源 ×10 + 是否已拿到直链。
@@ -636,6 +636,11 @@ export function musicScore(c, query, artistTally = null) {
   // 若与 Meting / GD 的完整音轨同分，搜索结果会被一堆试听片段占据。
   if (c.audio_url) s += 30;
   else if (c.preview_url) s += 8;
+
+  // 已知需要会员才能播（QQ 音乐 VIP 曲，vkeys 搜索带 pay=付费）：**降权但不剔除**。
+  // 用户明确说过「点了放不了的懒得看」，但完全删掉又会让「搜歌手只出来翻唱」——
+  // 因为 QQ 片库里的原唱大多是 VIP 曲。折中：沉到能直接播的结果后面，仍可被找到。
+  if (c.needs_member) s -= 60;
 
   if (nq) {
     // 搜歌手：歌手字段**原始字面**完全一致才算「本人」。
@@ -737,6 +742,8 @@ function mergeCandidate(prev, next) {
     preview_url: better.preview_url || null,
     // 合并后若仍没有完整直链（只有试听片段），保留 trial_only 标注
     trial_only: !(better.audio_url || other.audio_url) && !!(better.trial_only || other.trial_only),
+    // 会员标注：任一侧判定需会员就保留（QQ 音乐 VIP 曲）
+    needs_member: !!(better.needs_member || other.needs_member),
     // 合并后若已有直链，就不再是「待解析」
     needs_resolve: !(better.audio_url || other.audio_url)
   };
@@ -820,6 +827,9 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
     // 酷我（2026-10-12 新增）：完全独立的第三个片库，实测 8/8 搜索与取流都可用，
     // 直链是普通 CDN 地址（不签名、不过期），是目前可用性最好的一路。
     weightOf('kuwo') === null ? Promise.resolve(null) : searchKuwoMusic(q, perSource),
+    // QQ 音乐（2026-10-13 新增，经 vkeys 中转）：补上「原唱搜不出来」的缺口 ——
+    // 网易云对陈奕迅/周杰伦等原唱收录差，QQ 片库完整。见 lib/musicSources.js 的说明。
+    weightOf('qq') === null ? Promise.resolve(null) : searchVkeysMusic(q, perSource),
     weightOf('audius') === null ? Promise.resolve(null) : searchAudiusMusic(q, perSource),
     weightOf('itunes') === null ? Promise.resolve(null) : searchItunesMusic(q, perSource),
     weightOf('deezer') === null ? Promise.resolve(null) : searchDeezerMusic(q, perSource)
@@ -1256,12 +1266,23 @@ async function searchMaccmsAll(keyword, limit, env) {
   // 若把 limit 直接下传，去重后往往只剩几条 —— 这是「搜一部剧只有很少内容」的主因之一。
   const perSource = Math.max(limit, 20);
 
-  // ① 先确定各源的动漫类目 ID。
-  // 默认源表已硬编码 → getAnimeClassIdsSync 同步返回，**零网络往返**；
-  // 只有 VOD_SOURCES 自定义的未知源才需要一次 ac=list 发现（走下面的 await）。
+  // ① 先确定各源的动漫类目 ID，并挑出「支持关键词搜索」的源。
+  //
+  // ⚠ 这里是 2026-10-13 修掉「搜一部剧只有 3 条源」的关键位置。
+  //   动态源（LunaTV 订阅来的 40 多个）全都不在硬编码表里，早期实现会对
+  //   **每一个**源发一次 ac=list 发现类目 —— 43 个子请求直接把免费版
+  //   单次 50 的上限吃满，后面的关键词/类目搜索全部抛
+  //   「Too many subrequests」，整次搜索只剩少数几个先返回的源。
+  //
+  //   现在探测阶段（dynamicSources.probeSourceDeep）已经把 anime_class_ids
+  //   和 keyword_search 实测好并写进源记录，这里直接读，**零额外子请求**。
+  //   只有连探测数据都没有的源（手工 VOD_SOURCES / 首次冷启动）才回退到网络发现。
   const animeJobs = [];
   const unknownSources = [];
+  const kwSources = [];
   for (const s of sources) {
+    // 不支持关键词搜索的源直接不发起关键词请求（省下最稀缺的子请求）
+    if (supportsKeywordSearch(s) !== false) kwSources.push(s);
     const ids = getAnimeClassIdsSync(s);
     if (ids) {
       for (const t of ids) animeJobs.push({ source: s, type: t });
@@ -1269,7 +1290,10 @@ async function searchMaccmsAll(keyword, limit, env) {
       unknownSources.push(s);
     }
   }
-  if (unknownSources.length) {
+  // 兜底：只有「完全没探测过类目」的源才联网发现，且限制数量 ——
+  // 发现一个源要 1 个子请求，超过预算会让整次搜索失败，宁可不发现动漫类目。
+  const DISCOVER_LIMIT = 3;
+  if (unknownSources.length && unknownSources.length <= DISCOVER_LIMIT) {
     const discovered = await Promise.all(unknownSources.map((s) => getAnimeClassIds(s)
       .then((ids) => ({ source: s, ids }))));
     for (const d of discovered) {
@@ -1282,19 +1306,33 @@ async function searchMaccmsAll(keyword, limit, env) {
   // 类目 ID 硬编码后两段合并成一段，总耗时 = max(关键词, 动漫) 而不是两者之和。
   // 动漫类目这一步不能省：动漫正片在关键词搜索里几乎被真人剧、短剧和同名作品挤掉
   //（实测「凡人修仙传」关键词搜索只命中 1 条，按类目搜索合计命中 19 条）。
+  //
+  // ⚠ 子请求上限（2026-10-13）：Cloudflare 免费版单次调用上限 50，实测确认。
+  //   关键词搜索 = kwSources.length 个请求，动漫类目搜索 = animeJobs.length 个请求，
+  //   两者相加**必须**留出余量（健康缓存读取、元数据补全也要用）。
+  //   动态源有 40 多个、每个源最多 3 个动漫类目 → 光是类目搜索就能到 100+，
+  //   会直接把整次搜索打爆。因此这里硬性截断：
+  //     · 关键词源最多 34 个（34 个子请求）—— 关键词搜索才是主力，优先喂饱
+  //     · 动漫类目任务最多 6 个（6 个子请求）—— 只是「动漫正片被同名剧挤掉」时的补充
+  //   合计 40；元数据补全（海报/评分）最多再花 8 个，合计 48，卡在 50 以内。
+  //   宁可少补几张海报，也不能整次搜索失败。
+  const KW_SOURCE_LIMIT = 34;
+  const ANIME_JOB_LIMIT = 6;
+  const animeJobsLimited = animeJobs.slice(0, ANIME_JOB_LIMIT);
+  const kwSourcesLimited = kwSources.slice(0, KW_SOURCE_LIMIT);
   const [kwSettled, animeSettled] = await Promise.all([
-    Promise.all(sources.map((s) => withBudget(
+    Promise.all(kwSourcesLimited.map((s) => withBudget(
       searchMaccms(s, keyword, perSource, null, KW_CALL_TIMEOUT_MS),
       KW_BUDGET_MS, `${s.name} 搜索超时`
     ))),
-    Promise.all(animeJobs.map((j) => withBudget(
+    Promise.all(animeJobsLimited.map((j) => withBudget(
       searchMaccms(j.source, keyword, perSource, j.type, ANIME_CALL_TIMEOUT_MS),
       ANIME_BUDGET_MS, `${j.source.name} 动漫类目超时`
     )))
   ]);
 
   const settled = [...kwSettled, ...animeSettled];
-  const keys = [...sources.map((s) => s.key), ...animeJobs.map((j) => j.source.key)];
+  const keys = [...kwSourcesLimited.map((s) => s.key), ...animeJobsLimited.map((j) => j.source.key)];
 
   const sourcesUsed = [];
   const sourceNames = [];
