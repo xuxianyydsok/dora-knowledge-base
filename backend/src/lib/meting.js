@@ -56,8 +56,17 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
 //      空 HTML（200 text/html），拿不到可播地址 —— 且按「歌名+歌手」回查 netease 会
 //      命中翻唱（「晴天(深情版)|Lucky小爱」），会把翻唱冒充原唱，因此**不纳入**。
 //      目录排序上的优势改由 fetchers.js 的 musicScore 重排来补。
+// 2026-10-12 补充第二个实例 icodeq（与 qijieya 互备）：
+//   · qijieya 有**熔断**——连续约 37 次请求后开始返回空数组（之后会恢复）。
+//     单实例时这段时间内音乐搜索会整体退化成「只有官方接口那几路」，用户看到的就是
+//     「源变少了 / 搜不出来」。挂第二个实例后，一个熔断另一个照常出结果。
+//   · 两个实例都是标准 Meting 协议（type=search / type=url / type=lrc 通用），
+//     因此共用同一套 metingFetchJson / metingStreamUrl，无需额外适配代码。
+//   · icodeq 已在 Cloudflare 出口实测通过（搜索 + 取流 302→网易 mp3，4 个关键词全过）。
+//     注意它**不是** qijieya 的镜像：两者的取流端点与限流策略独立，故障也不会同时发生。
 export const DEFAULT_METING_INSTANCES = [
-  { key: 'qijieya', base: 'https://api.qijieya.cn/meting/', servers: ['netease', 'migu'] }
+  { key: 'qijieya', base: 'https://api.qijieya.cn/meting/', servers: ['netease', 'migu'] },
+  { key: 'icodeq', base: 'https://meting.icodeq.com/api', servers: ['netease'] }
 ];
 
 // 读取配置的 Meting 实例：优先 env.METING_INSTANCES，否则用默认池
