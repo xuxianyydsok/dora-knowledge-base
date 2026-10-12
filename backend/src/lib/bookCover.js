@@ -48,18 +48,6 @@ function matchAscii(bytes, offset, text) {
   return true;
 }
 
-function asciiAt(bytes, offset, length) {
-  if (offset < 0 || offset + length > bytes.length) return '';
-  let out = '';
-  for (let i = 0; i < length; i++) out += String.fromCharCode(bytes[offset + i]);
-  return out;
-}
-
-function u16be(bytes, offset) {
-  if (offset + 2 > bytes.length) return 0;
-  return (bytes[offset] << 8) | bytes[offset + 1];
-}
-
 function u32be(bytes, offset) {
   if (offset + 4 > bytes.length) return 0;
   return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
@@ -110,17 +98,13 @@ function latin1(bytes) {
 // 格式嗅探
 // ---------------------------------------------------------------------------
 
-// 只凭头部字节做初步判断。注意：PalmDB 容器可能是 MOBI 也可能是 AZW3，
-// 真正的版本要读记录 0 里的 MOBI header 才能确定，这里先统一返回 'mobi'。
+// 只凭头部字节做初步判断。只认 EPUB 与 PDF 两种可在线阅读的格式；
+// MOBI / AZW3（PalmDB 容器）明确不接受，返回 null。
 export function sniffBookFormat(head) {
   const bytes = toBytes(head);
   if (!bytes || bytes.length < 4) return null;
   if (matchAscii(bytes, 0, '%PDF-')) return 'pdf';
   if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) return 'epub';
-  if (bytes.length >= 78) {
-    const type = asciiAt(bytes, 60, 4);
-    if (type === 'BOOK' || type === 'TEXt') return 'mobi';
-  }
   return null;
 }
 
@@ -549,102 +533,6 @@ async function extractPdf(source) {
 }
 
 // ---------------------------------------------------------------------------
-// MOBI / AZW3（PalmDB）
-// ---------------------------------------------------------------------------
-
-function decodeMobiString(bytes, encoding) {
-  let end = bytes.length;
-  while (end > 0 && bytes[end - 1] === 0) end--;
-  const slice = bytes.subarray(0, end);
-  if (encoding === 1252) return latin1(slice).trim();
-  return decodeText(slice).replace(/\u0000/g, '').trim();
-}
-
-async function extractMobi(source, head) {
-  const recordCount = u16be(head, 76);
-  if (!recordCount || recordCount > 0xffff) return EMPTY_RESULT;
-  // PalmDB 头 78 字节 + 每条记录 8 字节
-  const tableBytes = await source.read(0, Math.min(78 + recordCount * 8, 128 * 1024));
-  if (tableBytes.length < 78 + recordCount * 8) return EMPTY_RESULT;
-
-  const offsets = [];
-  for (let i = 0; i < recordCount; i++) offsets.push(u32be(tableBytes, 78 + i * 8));
-  const recordSize = (i) => {
-    const start = offsets[i];
-    const end = i + 1 < recordCount ? offsets[i + 1] : source.size;
-    const size = end - start;
-    return Number.isFinite(size) && size > 0 ? size : 0;
-  };
-
-  const rec0Size = recordSize(0);
-  if (!rec0Size) return EMPTY_RESULT;
-  const rec0 = await source.read(offsets[0], Math.min(rec0Size, 1024 * 1024));
-  if (rec0.length < 32 || !matchAscii(rec0, 16, 'MOBI')) return EMPTY_RESULT;
-
-  // 记录 0 = PalmDOC header(16B) + MOBI header("MOBI" 签名在记录 0 偏移 16 处)。
-  // 注意：这些「文档里的 MOBI header 偏移」实际都是**相对记录 0 起点**的绝对偏移
-  // （已用真实 MOBI 文件核对），不要再加 16。只有 EXTH 的位置例外，
-  // 它是紧跟 MOBI header 之后，即记录 0 偏移 16 + headerLength。
-  const headerLength = u32be(rec0, 0x14);   // MOBI header 长度（相对 MOBI 签名）
-  const textEncoding = u32be(rec0, 0x1c);
-  const version = u32be(rec0, 0x24);
-  const fullNameOffset = u32be(rec0, 0x54); // 相对记录 0 起点
-  const fullNameLength = u32be(rec0, 0x58);
-  const firstImageIndex = u32be(rec0, 0x6c);
-  const exthFlags = u32be(rec0, 0x80);
-
-  const result = {
-    format: version === 8 ? 'azw3' : 'mobi',
-    title: null,
-    author: null,
-    cover: null,
-    coverMime: null
-  };
-
-  // 书名：MOBI full name
-  if (fullNameOffset > 0 && fullNameOffset + fullNameLength <= rec0.length) {
-    result.title = decodeMobiString(rec0.subarray(fullNameOffset, fullNameOffset + fullNameLength), textEncoding);
-  }
-
-  // EXTH：紧跟在 MOBI header 之后（记录 0 偏移 16 + headerLength）
-  const exthStart = 16 + headerLength;
-  if ((exthFlags & 0x40) && exthStart + 12 <= rec0.length && matchAscii(rec0, exthStart, 'EXTH')) {
-    const exthLength = u32be(rec0, exthStart + 4);
-    const exthCount = u32be(rec0, exthStart + 8);
-    let coverOffset = -1;
-    let p = exthStart + 12;
-    const limit = Math.min(rec0.length, exthStart + Math.max(exthLength, 12));
-    for (let i = 0; i < exthCount && p + 8 <= limit; i++) {
-      const type = u32be(rec0, p);
-      const len = u32be(rec0, p + 4);
-      if (len < 8 || p + len > limit) break;
-      const data = rec0.subarray(p + 8, p + len);
-      if (type === 201 && data.length >= 4) coverOffset = u32be(data, 0);
-      else if (type === 202 && coverOffset < 0 && data.length >= 4) coverOffset = u32be(data, 0);
-      else if (type === 100 && !result.author) result.author = decodeMobiString(data, textEncoding);
-      else if (type === 503 && !result.title) result.title = decodeMobiString(data, textEncoding);
-      p += len;
-    }
-
-    if (coverOffset >= 0 && firstImageIndex > 0 && firstImageIndex < recordCount) {
-      const idx = firstImageIndex + coverOffset;
-      if (idx < recordCount) {
-        const size = recordSize(idx);
-        if (size > 0 && size <= MAX_COVER_BYTES) {
-          const bytes = await source.read(offsets[idx], size);
-          const mime = imageMimeFromMagic(bytes);
-          if (mime) {
-            result.cover = bytes;
-            result.coverMime = mime;
-          }
-        }
-      }
-    }
-  }
-  return result;
-}
-
-// ---------------------------------------------------------------------------
 // 主入口
 // ---------------------------------------------------------------------------
 
@@ -652,7 +540,7 @@ async function extractMobi(source, head) {
  * 从电子书字节源里提取元数据与封面。永不抛异常（失败就返回 null 字段）。
  *
  * @param {{ size: number, read: (offset: number, length: number) => Promise<Uint8Array> }} source
- * @returns {Promise<{ format: 'pdf'|'epub'|'mobi'|'azw3'|null, title: string|null, author: string|null,
+ * @returns {Promise<{ format: 'pdf'|'epub'|null, title: string|null, author: string|null,
  *                     cover: Uint8Array|null, coverMime: 'image/jpeg'|'image/png'|'image/gif'|'image/webp'|null }>}
  */
 export async function extractBookMeta(source) {
@@ -665,7 +553,6 @@ export async function extractBookMeta(source) {
     const format = sniffBookFormat(head);
     if (format === 'epub') return await extractEpub(source, head);
     if (format === 'pdf') return await extractPdf(source);
-    if (format === 'mobi') return await extractMobi(source, head);
     return { ...EMPTY_RESULT };
   } catch {
     // 任何意外都退化成「没拿到元数据」，绝不让上传流程因为解析失败而崩掉

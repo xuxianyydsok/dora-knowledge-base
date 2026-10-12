@@ -7,6 +7,8 @@
 // - 分片 / 密钥：原样流式透传（支持 Range → 206），边缘长缓存
 // 纯代理、不涉及用户数据，故不走鉴权（访客可用）。
 // 安全：仅 http/https；拒绝 localhost / 内网 IP；仅允许已知影视 CDN 域名，或路径是媒体后缀。
+// 兼容：上游 302 到别的域名时逐跳重新校验（同样只放行已知域名 / 媒体后缀），
+// 既跟得上采集源换 CDN，又不会把代理变成任意跳板。
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const MAX_M3U8 = 2 * 1024 * 1024;   // m3u8 最大 2MB
@@ -20,10 +22,17 @@ const KNOWN_HOSTS = [
   'hhuus.com', 'hhwenjian.com', 'hhzyapi.com',
   'bfikuncdn.com', 'kkzycdn.com', 'ikunzyapi.com',
   'guoluche.com', '360zyzz.com', '360zy.com', 'maowushi.com',
-  // 魔都的分片域名带序号（modujx13 / modujx16 / …），用 modujx 前缀 + 数字一起匹配
-  'modujx13.com', 'mdzyapi.com'
+  // 360 备用源（zy360new / 360zy）的变体列表实测会把分片放到 vod.360zyx.vip，
+  // 旧白名单没有这个域名，只有「.ts 后缀兜底」能勉强放行；补进白名单让变体列表也能取到。
+  '360zyx.vip',
+  // 魔都的分片域名带序号（modujx13 / modujx16 / bf.modujx15 …），
+  // 用 modujx 前缀 + 数字一起匹配（见 isKnownHost）。
+  'modujx13.com', 'modujx15.com', 'modujx16.com', 'mdzyapi.com'
 ];
-const MEDIA_EXT = /\.(m3u8|m3u|ts|key|m4s|mp4|m4a|m4v|aac|vtt|webvtt|jpg|jpeg|png|gif|bmp|webp|image)$/i;
+// 通用媒体后缀兜底：命中这些后缀时，即使域名不在白名单也放行（仍受 isPrivateHost 限制）。
+// 实测采集源目前只用 m3u8 / ts / key，这里把常见的 HLS/DASH/原生媒体后缀一并补上，
+// 避免上游换成 .mpd（DASH）或 .flv/.mov 等时被误拒。
+const MEDIA_EXT = /\.(m3u8|m3u|ts|key|m4s|mp4|m4a|m4v|m4b|mpd|f4v|flv|mov|webm|mkv|mp3|wav|ogg|ogv|aac|vtt|webvtt|jpg|jpeg|png|gif|bmp|webp|image)$/i;
 // 播放页形态：/<...>/play/<id>（可带 /index.m3u8 后缀）。采集源常把播放页当线路地址给出，
 // 归一化后就是 <播放页>/index.m3u8，因此代理必须允许取这种路径（否则取不到 master playlist）。
 const PLAY_PAGE_RE = /\/play\/[A-Za-z0-9_-]+(\/index\.m3u8)?\/?$/i;
@@ -58,8 +67,9 @@ function isPrivateHost(host) {
 function isKnownHost(host) {
   const h = host.toLowerCase();
   if (KNOWN_HOSTS.some((d) => h === d || h.endsWith(`.${d}`))) return true;
-  // 魔都一类的序号域名：modujx16.com / modujx13.com …
-  if (/^modujx\d+\.com$/.test(h)) return true;
+  // 魔都一类的序号域名：modujx16.com / bf.modujx15.com …
+  // 用「.modujxN.com 结尾或本身」匹配，覆盖带子域的分片域名。
+  if (/(^|\.)modujx\d+\.com$/.test(h)) return true;
   return false;
 }
 
@@ -73,6 +83,29 @@ function checkTarget(raw) {
   // 放行三类：已知域名 / 媒体后缀 / 播放页形态（后者用于取 master playlist）
   if (!isKnownHost(u.hostname) && !MEDIA_EXT.test(u.pathname) && !PLAY_PAGE_RE.test(u.pathname)) return null;
   return u;
+}
+
+// 上游重定向最多跟几跳；超过就判定为环/异常，避免无限跟随。
+const MAX_REDIRECTS = 5;
+
+// 手动跟随重定向：每一跳都重新做一次 checkTarget（白名单 + 媒体后缀/播放页兜底 +
+// 拒绝内网/非 http(s)）。采集源经常 302 到另一个 CDN 域名，若继续用 fetch 的
+// redirect:'follow'，等于绕过了域名校验、把代理变成任意跳板；这里逐跳校验后
+// 才跟随，既兼容换 CDN，又保住安全边界。返回 { res, url } 或 { error, url }。
+async function fetchUpstream(startUrl, headers, cfOpts) {
+  let current = startUrl;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const res = await fetch(current, { headers, redirect: 'manual', cf: cfOpts });
+    const isRedirect = [301, 302, 303, 307, 308].includes(res.status);
+    const loc = isRedirect ? res.headers.get('Location') : null;
+    if (!loc) return { res, url: current };
+    let next;
+    try { next = new URL(loc, current); } catch { return { res, url: current }; }
+    const checked = checkTarget(next.toString());
+    if (!checked) return { error: 'blocked', url: next.toString() };
+    current = checked.toString();
+  }
+  return { error: 'loop', url: current };
 }
 
 function looksLikeM3u8(target, contentType) {
@@ -206,12 +239,14 @@ export async function vodProxy(request, env) {
 
   const guessM3u8 = /\.m3u8?$/i.test(target.pathname);
   let upstream;
+  let finalUrl = target.toString();
   try {
-    upstream = await fetch(target.toString(), {
-      headers,
-      redirect: 'follow',
-      cf: guessM3u8 ? { cacheTtl: M3U8_TTL, cacheEverything: true } : { cacheTtl: SEG_TTL, cacheEverything: true }
-    });
+    // 逐跳校验重定向（见 fetchUpstream 注释），不再用 redirect:'follow' 无脑跟随。
+    const r = await fetchUpstream(target.toString(), headers,
+      guessM3u8 ? { cacheTtl: M3U8_TTL, cacheEverything: true } : { cacheTtl: SEG_TTL, cacheEverything: true });
+    if (r.error) return err(403, `上游重定向到未授权地址（${r.error}）`);
+    upstream = r.res;
+    finalUrl = r.url;
   } catch (e) {
     return err(502, `上游连接失败：${e?.message || e}`);
   }
@@ -221,7 +256,10 @@ export async function vodProxy(request, env) {
 
   const ct = upstream.headers.get('content-type') || '';
   // 按 content-type / 后缀判断 m3u8；都不像但又不是明确的二进制类型时，嗅探开头是否 #EXTM3U
-  let isM3u8 = looksLikeM3u8(target, ct);
+  // 用最终地址判断播放列表：上游常 302 到不带 .m3u8 后缀的 CDN 路径，
+  // 只看初始 URL 会漏判（例如 /play/xxx → 实际返回 m3u8）。
+  const finalPath = (() => { try { return new URL(finalUrl).pathname; } catch { return target.pathname; } })();
+  let isM3u8 = looksLikeM3u8({ pathname: finalPath }, ct);
   if (!isM3u8 && !range && /^text\//i.test(ct)) {
     const len = Number(upstream.headers.get('content-length') || 0);
     if (len && len <= MAX_M3U8) {
@@ -237,8 +275,9 @@ export async function vodProxy(request, env) {
     if (buf.byteLength > MAX_M3U8) return err(413, '播放列表过大');
     const text = new TextDecoder().decode(buf);
     if (!text.trimStart().startsWith('#EXTM3U')) return err(502, '上游返回的不是 m3u8');
-    // 以最终地址（跟随重定向后）为相对路径基准
-    const base = upstream.url || target.toString();
+    // 以最终地址（逐跳校验后）为相对路径基准：相对路径 / // 协议相对 / 绝对 URL
+    // 三种都由 new URL(uri, base) 统一解析成绝对地址，再改写成经本接口的地址。
+    const base = finalUrl || upstream.url || target.toString();
     const { body, removed } = rewriteM3u8(text, base, proxyBase, clean);
     return new Response(body, {
       status: 200,
@@ -246,6 +285,8 @@ export async function vodProxy(request, env) {
         'content-type': 'application/vnd.apple.mpegurl',
         'cache-control': `public, max-age=${M3U8_TTL}`,
         'X-Dora-Ads-Removed': String(removed),
+        // 声明按 Accept-Encoding 变体，避免 CDN 把 gzip / br 变体缓存串味
+        Vary: 'Accept-Encoding',
         ...CORS
       }
     });
@@ -257,8 +298,12 @@ export async function vodProxy(request, env) {
     const v = upstream.headers.get(k);
     if (v) out.set(k, v);
   }
-    if (/\.ts$/i.test(target.pathname)) out.set('content-type', 'video/mp2t');
-  if (/\.key$/i.test(target.pathname)) out.set('content-type', 'application/octet-stream');
+  // 分片/密钥以「最终地址」后缀兜底修正 content-type：部分 CDN 用 302 跳到无后缀路径，
+  // 只按初始 target 判断会漏掉，导致浏览器拿不到正确的 video/mp2t 而无法解码。
+  if (/\.ts$/i.test(finalPath)) out.set('content-type', 'video/mp2t');
+  if (/\.key$/i.test(finalPath)) out.set('content-type', 'application/octet-stream');
+  // 分片/密钥按内容寻址、内容不变，长缓存；声明 Vary 避免 CDN 把压缩变体串味。
+  out.set('Vary', 'Accept-Encoding');
   out.set('cache-control', `public, max-age=${SEG_TTL}`);
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }

@@ -4,6 +4,10 @@
 // - 中间件（middleware/auth.js）只负责「能不能进」，真正的数据过滤必须在各路由的
 //   查询层完成（Worker 用 service_role 直连 PostgREST，RLS 不会替它过滤）；
 // - 纯函数可离线单测，锁定「公开/登录/管理员」三层边界的回归。
+//
+// 例外：/api/feedback 的 POST 是**访客可写**的（共创反馈是公开留言表单，匿名提交
+// 必须让未登录访客也能用），因此它出现在 PUBLIC_POST_PATHS 里；GET / PATCH / DELETE
+// 仍不放行，查看与管理只走 requireAdmin。详见 docs/coop.md。
 
 // 访客可只读的 GET 路径。
 // 注意：不含 favorites（收藏夹属个人数据），也不含 /progress（个人播放进度）。
@@ -13,7 +17,7 @@
 //   GET /api/files（列表）仍被 requireAdmin 挡住，不会因为放进白名单而泄露私人附件清单。
 // 含 books（图书）：书架面向读者，列出/正文/封面都对访客放行，但路由层只放行
 //   is_public=true 的书（私人书对访客一律按「不存在」处理）。
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline|moments|files|books)(\/|$)/;
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers)(\/|$)/;
 
 // 站长收藏（2026-10-11 用户要求）：站长收藏的影视 / 音乐对所有人可见可播。
 // 它是一条**精确路径**（不是前缀），因此单独判定 —— 不能塞进上面的前缀正则，
@@ -22,12 +26,15 @@ export const PUBLIC_EXACT_GET_PATHS = new Set(['/api/favorites/public']);
 
 // 访客可调用的「只读但用 POST」的检索接口。
 // 注意：不含 /api/github/analyze（消耗 Workers AI 额度，仅管理员可用）。
+// 含 /api/feedback（共创反馈）：这是唯一一个**访客可写**的 POST —— 反馈是公开留言表单，
+//   匿名提交必须让未登录访客也能用；但它只放行 POST，查看 / 改状态 / 删除仍要 requireAdmin。
 export const PUBLIC_POST_PATHS = new Set([
   '/api/movies/search',
   '/api/movies/source-detail',
   '/api/music/search',
   '/api/music/lyrics',
-  '/api/music/stream'
+  '/api/music/stream',
+  '/api/feedback'
 ]);
 
 // 判断访客（未登录）是否可以访问某方法 + 路径。

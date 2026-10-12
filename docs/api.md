@@ -626,9 +626,13 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 - `deletePost` 改为**先校验归属再清理** `post_resources` / `post_tags`，防止越权删除他人文章的关联数据。
 - MCP `findPost` / `link_resources` 收紧为仅本人数据。
 
-## 图片展览 Gallery（2026-10-10）
+## 图展 Gallery（2026-10-10，2026-10-12 加动态壁纸区）
 
 策展元数据表 `gallery_items` 引用 `assets.id`，二进制仍在 R2。详见 `docs/gallery-timeline.md`。
+
+> 2026-10-12：页面从「只有静态图片」扩展为**静态图片 + 动态壁纸两区**。
+> 动态壁纸是一套**完全独立**的表与 R2 前缀（见下一节），`/api/gallery` 本身未变。
+> 前端把图片按 3 / 2 / 1 列（桌面 / 平板 / 手机）折叠成 4 行展示，点「查看更多」展开全部。
 
 | 方法 | 路径 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
@@ -653,6 +657,49 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 > `alt` 取策展标题（缺失时用「展览图片」），不使用原始文件名。
 > `gallery_items.asset_id` 与 `user_id` 是**复合外键**（同 owner），数据库层强制。
 > `DELETE /api/assets/:id` 的引用保护已扩展：被展览引用的素材同样返回 409（`referenced_by` 里 `kind='gallery'`）。
+
+## 动态壁纸 Wallpapers（2026-10-12）
+
+图展的「动态壁纸」区：站长上传的短视频，访客在图展页静音循环播放。
+**与静态图片完全分开** —— 不同的表（`wallpapers`）、不同的 R2 前缀
+（`wallpapers/` 与图片素材的 `assets/`），删一边不会牵连另一边。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/api/wallpapers` | 管理员 | **原始请求体直传**（不是 multipart）：body = 视频字节，文件名走 `X-Wallpaper-Name` 头（`encodeURIComponent` 编码）。**仅 MP4 / WebM**（魔数嗅探），单个 ≤100MB |
+| GET | `/api/wallpapers` | **访客可读** | `?limit=`（默认 60，≤200）`&offset=`；访客只返回 `is_public=true` |
+| GET | `/api/wallpapers/:id` | **访客可读** | 单条元数据（JSON）；私人壁纸仅本人 |
+| GET | `/api/wallpapers/:id/file` | **访客可读** | 视频字节，**支持 `Range`**（供 `<video>` 流式播放）；带 CORS 头；`?download=1` 发 `Content-Disposition: attachment` |
+| PATCH | `/api/wallpapers/:id` | 管理员 | 改 `title` / `description` / `is_public` / `sort_order`；仅本人 |
+| DELETE | `/api/wallpapers/:id` | 管理员 | 仅本人；**同时删除 R2 上的视频对象** |
+
+返回结构（单条，**不含 `object_key` / `user_id`**）：
+
+```json
+{
+  "id": "<uuid>", "title": "夜景-性能车-汽车", "description": "",
+  "format": "mp4", "mime_type": "video/mp4", "size": 26420000,
+  "duration": 21.2, "width": 3840, "height": 2160,
+  "file_url": "…/api/wallpapers/<id>/file",
+  "is_public": false, "sort_order": 0,
+  "created_at": "…", "updated_at": "…"
+}
+```
+
+**默认私人**：`is_public` 默认 `false`（与 `assets` 默认 `true` 不同）——
+视频比图片更大更敏感，误公开代价高，站长要展出时在策展抽屉里显式打开「公开」。
+
+**为什么不用 multipart**：视频可达 100MB，而 Worker 内存上限 128MB，
+`request.formData()` 会整体读进内存直接爆掉。改为原始 body 流式直传 R2，
+全程只缓冲头部 **64KB** 用于魔数嗅探 + 解析 MP4 时长与分辨率。
+
+**MP4 元数据解析**（`backend/src/lib/videoType.js`，零依赖）：
+`moov → mvhd` 取时长（version 0/1 两种布局都支持）、`moov → trak → tkhd` 取宽高（16.16 定点）。
+解析失败（WebM，或 moov 在文件尾部的流式 MP4）返回 `null`，**绝不因此让上传失败**，
+前端只是不显示时长角标。
+
+> 头部缓冲取 **64KB** 是实测结论：4KB 时四个 4K 样本全部解析不到元数据，
+> 64KB 时全部成功（见 `docs/progress.md` 第九节）。
 
 ## 公开时间轴 Timeline（2026-10-10）
 
@@ -725,7 +772,7 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 
 | 方法 | 路径 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
-| POST | `/api/books` | 管理员 | **原始请求体直传**（不是 multipart）：body = 文件字节，文件名走 `X-Book-Name` 头（`encodeURIComponent` 编码）。仅 PDF / EPUB / MOBI / AZW3（魔数嗅探），单本 ≤100MB |
+| POST | `/api/books` | 管理员 | **原始请求体直传**（不是 multipart）：body = 文件字节，文件名走 `X-Book-Name` 头（`encodeURIComponent` 编码）。**仅 EPUB / PDF**（魔数嗅探），单本 ≤100MB |
 | GET | `/api/books` | **访客可读** | `?limit=`（默认 60，≤200）`&offset=` `&format=`；访客只返回 `is_public=true` |
 | GET | `/api/books/:id` | **访客可读** | 单本元数据（JSON）；私人书仅本人 |
 | GET | `/api/books/:id/file` | **访客可读** | 正文字节，**支持 `Range`**（PDF 内嵌翻页 / 阅读器按需取字节）；`?download=1` 发 `Content-Disposition: attachment` 强制下载 |
@@ -745,7 +792,8 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 ```
 
 `read_mode` 是后端给出的阅读能力位，前端据此决定按钮：
-`pdf → inline`（浏览器内嵌）、`epub → reader`（站内阅读器）、`mobi` / `azw3 → download`。
+`pdf → inline`（浏览器内嵌）、`epub → reader`（站内阅读器）。
+（2026-10-12 起本站只支持这两种格式；MOBI / AZW3 上传会被拒，前端也没有入口。）
 
 **为什么不用 multipart**：电子书可达 100MB，而 Worker 内存上限 128MB，
 `request.formData()` 会整体读进内存直接爆掉。改为原始 body 流式直传 R2，全程只缓冲头部 4KB 做魔数嗅探。
@@ -753,10 +801,39 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 **封面提取**（`backend/src/lib/bookCover.js`，零依赖，随机读取字节源）：
 - EPUB：最小 zip 中央目录解析 → `META-INF/container.xml` → OPF → `meta[name=cover]` / `properties=cover-image`；
 - PDF：扫描头部若干 MB 里的 `/Subtype /Image` + `/Filter /DCTDecode` 流，取第一张 >8KB 的 JPEG；
-- MOBI / AZW3：PalmDB 记录表 + MOBI header + EXTH（type 201 封面 / 100 作者 / 503 书名）。
 - 只按需 range 读取几段字节，**从不整本读进内存**（80MB EPUB 实测堆增量 ≈ 0.3MB）。
 
 **站内阅读**（`frontend/src/lib/epubReader.js`，零依赖）：
 EPUB 在浏览器里解压并按 spine 顺序渲染章节，带 nav / NCX 章节目录；
 资源（图片 / CSS）重写成 `blob:` URL，脚本 / 事件属性 / 外链一律清洗掉；
 用 `sandbox="allow-same-origin"` 的 `srcDoc` iframe 呈现。
+
+## 共创反馈 Feedback（2026-10-12）
+
+`/coop`（共创）页的留言接口：**公开可写、仅站长可读**，权限模型像「留言板 + 后台收件箱」。
+任何访客都能提交一条反馈，但只有站长能查看、改状态、写备注、删除。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/api/feedback` | **公开**（访客亦可） | 提交反馈；`{ content, category?, is_anonymous?, display_name?, contact?, page_url? }`。`content` 1~4000 字必填 |
+| GET | `/api/feedback` | 管理员 | `?status=`（`new`/`read`/`done`）`&category=`（`bug`/`improve`/`feature`/`other`）`&limit=`（默认 100，≤200）`&offset=` |
+| PATCH | `/api/feedback/:id` | 管理员 | 改 `status` / `admin_note` |
+| DELETE | `/api/feedback/:id` | 管理员 | 删除一条反馈 |
+
+返回结构（**不含 `user_id` / `user_agent`**）：
+
+```json
+{ "id": "<uuid>", "is_anonymous": true, "display_name": "匿名读者",
+  "contact": "", "category": "feature", "content": "希望增加……",
+  "page_url": "/coop", "status": "new", "admin_note": "",
+  "created_at": "…", "updated_at": "…" }
+```
+
+**匿名优先**：`is_anonymous` 默认 `true`。访客（`user.isGuest`）一律**强制匿名**，
+不接受实名；匿名条目**不落 `user_id`**、响应里也**绝不返回** `user_id` / 邮箱，
+`display_name` 统一回「匿名读者」。实名且未填称呼时，用邮箱 `@` 前的部分兜底。
+
+**提交后给站长插通知**：落库成功后写一条 `type='feedback'` 的通知（`link=/admin/feedback`），
+通知写入失败只 `console.error`，**绝不影响反馈本身的成功返回**（用 try/catch 包住）。
+
+POST 成功只回 `{ id, created_at }`，不回 `user_agent` / `user_id`。

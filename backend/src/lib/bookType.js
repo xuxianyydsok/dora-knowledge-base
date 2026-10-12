@@ -2,7 +2,9 @@
 //
 // 与 fileType.js / imageType.js 同一套原则：
 //   1. 只认「字节魔数」，不信任客户端声明的 Content-Type 或扩展名；
-//   2. 只允许**电子书**四类：PDF / EPUB / MOBI / AZW3；
+//   2. 只允许**可站内阅读**的两类：EPUB / PDF；
+//      （MOBI / AZW3 曾经收进来过，但浏览器无法渲染，只能下载；2026-10-12 用户决定
+//        本站只保留 EPUB 与 PDF，这两种格式连上传都直接拒绝，前端也不再出现。）
 //   3. 单本**不设业务上限**：大文件走 R2 分片上传（见 routes/books.js），
 //      前端把文件切成 8MiB 一片逐片 PUT，每片都是一个独立的小请求，
 //      因此不再受「Cloudflare Workers 单请求体约 100MB」这条平台硬上限的约束。
@@ -15,7 +17,7 @@
 //
 // 为什么单独一个文件而不是复用 fileType.js：
 //   fileType.js 面向「碎念附件」，白名单与上限都不同（PDF/Office/文本，20MB）；
-//   电子书需要认 PalmDB（MOBI/AZW3）这种 fileType.js 完全没有的容器，
+//   电子书需要认 ZIP 容器里的 EPUB 结构（fileType.js 只把 zip 当 OOXML），
 //   两者混在一起会让两边的白名单互相污染，因此刻意分开。
 
 // 一次性直传（POST /api/books，整个文件就是请求体）的保护上限：400MB。
@@ -42,12 +44,11 @@ export const MULTIPART_TICKET_TTL_MS = 6 * 60 * 60 * 1000;
 // 封面图上限：8MB（超过就放弃封面，不让一本书的封面把内存吃掉）
 export const MAX_COVER_BYTES = 8 * 1024 * 1024;
 
-// 格式 → 落盘扩展名 + MIME（白名单，其余一律拒绝）
+// 格式 → 落盘扩展名 + MIME（白名单，其余一律拒绝）。
+// 只有 EPUB 与 PDF：这两种浏览器能直接渲染，是本站在线阅读支持的格式。
 export const BOOK_FORMATS = {
   pdf: { ext: 'pdf', mime: 'application/pdf' },
-  epub: { ext: 'epub', mime: 'application/epub+zip' },
-  mobi: { ext: 'mobi', mime: 'application/x-mobipocket-ebook' },
-  azw3: { ext: 'azw3', mime: 'application/vnd.amazon.ebook' }
+  epub: { ext: 'epub', mime: 'application/epub+zip' }
 };
 
 export const ALLOWED_BOOK_EXTENSIONS = new Set(Object.values(BOOK_FORMATS).map((f) => f.ext));
@@ -84,32 +85,9 @@ function readUInt32BE(bytes, offset) {
   return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
 }
 
-// PalmDB（MOBI / AZW3 的容器）：文件头 78 字节 + 每记录 8 字节的记录表。
-//   offset 60..64 = type（MOBI 系一律 'BOOK'），64..68 = creator
-//   offset 76..78 = 记录数（大端 uint16）
-//   记录 0 的前 16 字节是 PalmDOC header，紧跟其后才是 MOBI header（签名 'MOBI'）。
-// MOBI header 偏移 0x24（相对 'MOBI' 起点）的 4 字节大端是 version：
-//   6 = 旧版 MOBI，8 = KF8 / AZW3。取不到就统一按 mobi 处理。
-function sniffPalmDb(bytes) {
-  if (bytes.length < 82) return null;
-  const isBook = matchAscii(bytes, 60, 'BOOK');
-  const isText = matchAscii(bytes, 60, 'TEXt');
-  if (!isBook && !isText) return null;
-
-  const record0 = readUInt32BE(bytes, 78);
-  if (record0 < 0) return null;
-  const mobiStart = record0 + 16;
-  if (matchAscii(bytes, mobiStart, 'MOBI')) {
-    const version = readUInt32BE(bytes, mobiStart + 0x24);
-    if (version === 8) return { format: 'azw3' };
-    return { format: 'mobi' };
-  }
-  // PalmDOC（.prc/.pdb 老格式）没有 MOBI 头，也当 mobi 收进来（内容仍可下载）
-  return { format: 'mobi' };
-}
-
 // 按魔数嗅探电子书格式；识别不出返回 null。
 // 只需要文件**头部**（4KB 足够）即可判定，因此上传时可以先读一小段再决定落盘扩展名。
+// 只认 EPUB 与 PDF；MOBI / AZW3（PalmDB 容器）明确不接受，返回 null 由路由给出提示。
 export function sniffBookFormat(input) {
   const bytes = toBytes(input);
   if (!bytes || bytes.length < 8) return null;
@@ -130,10 +108,7 @@ export function sniffBookFormat(input) {
     return null;
   }
 
-  // 3) MOBI / AZW3（PalmDB 容器）
-  const palm = sniffPalmDb(bytes);
-  if (palm) return palm;
-
+  // 3) 其余（含 MOBI / AZW3 的 PalmDB 容器）一律不接受
   return null;
 }
 

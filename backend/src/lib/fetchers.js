@@ -5,12 +5,12 @@
 
 import { HttpError } from './response.js';
 import {
-  getVodSources, searchMaccms, detailMaccms, checkMaccms, curatedMaccms,
+  ensureVodSources, searchMaccms, detailMaccms, checkMaccms, curatedMaccms,
   getAnimeClassIds, getAnimeClassIdsSync, titleRelevance
 } from './maccms.js';
 import { cinemetaLookup, bangumiLookup, kitsuLookup } from './metadb.js';
 import { getMetingInstances, searchMetingMusic } from './meting.js';
-import { searchNeteaseMusic, searchKugouMusic } from './musicSources.js';
+import { searchNeteaseMusic, searchKugouMusic, searchKuwoMusic } from './musicSources.js';
 import { getSourceHealth, healthMap, rankSources, sourceHealthWeight } from './sourceHealth.js';
 
 const UA = 'knowledge-base-app/0.1 (+https://github.com/)';
@@ -583,20 +583,28 @@ function dedupeKey(c) {
 // 但 GD 的直链是签名地址、会过期，且解析有「5 分钟 50 次」额度限制，
 // 因此**未解析出直链的 GD 仍然降档**（见 candidateRank 的 needs_resolve），
 // 不会把一堆「点了还要等解析」的条目顶到 Meting 的稳定结果前面。
-const QUALITY_RANK = { full: 3, preview: 1 };
+// 音质档（用户要求「尽量先是音质高的」）：无损 > 完整音轨 > 试听片段。
+const QUALITY_RANK = { lossless: 4, full: 3, preview: 1 };
 // 音源可信度：完整曲目且链路稳定 > 完整曲目（链路可能慢/挂） > 小众 > 试听。
 // netease / kugou 是官方接口（外链端点稳定、不过期），排在与 GD 同档；
 // kugou 略高是因为它的片库与 netease 互补（有原唱），能救「搜不出来」的场景。
 const PLATFORM_RANK = {
-  kugou: 5, netease: 5, gdstudio: 4, meting: 3, audius: 2, deezer: 1, itunes: 1
+  kuwo: 6, kugou: 5, netease: 5, gdstudio: 4, meting: 3, audius: 2, deezer: 1, itunes: 1
 };
 
 // 综合排序分 = 质量档 ×100 + 音源 ×10 + 是否已拿到直链。
 // 「待解析（GD 未取直链）」降一档但仍高于试听片段：它有完整曲目的潜力，
 // 且点播时会即时解析，不该被 30 秒试听挤到后面。
+//
+// 2026-10-12（用户要求「尽量先是音质高的」）：质量档主导排序（×100），
+// 所以无损 FLAC 一定排在 MP3 前面；同档内才看音源可信度（×10）。
+// 酷我排最高是因为它同时满足「可用性最好」与「能取到无损/320K」两个条件。
 function candidateRank(c) {
   const quality = c.needs_resolve ? 2 : (QUALITY_RANK[c.quality] || 0);
-  return quality * 100 + (PLATFORM_RANK[c.platform] || 0) * 10 + (c.audio_url ? 1 : 0);
+  // 探测判定「拿不到音频」（网易云版权受限外链等）→ 直接沉到最后一档。
+  // 用户明确说过「能播的排前面，点了放不了的懒得看」。
+  const playable = c.playable_probe_failed ? -1000 : 0;
+  return playable + quality * 100 + (PLATFORM_RANK[c.platform] || 0) * 10 + (c.audio_url ? 1 : 0);
 }
 
 // —— 音乐结果重排 ——
@@ -754,7 +762,13 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
   // 两者是**独立片库**：搜「周杰伦」，netease 首条是「布拉格广场」，joox 首条是「星晴」；
   // 且 joox 的 types=url 返回 br=999 的无损 FLAC（探活 206 audio/x-flac），
   // 与 netease 的 1619kbps 互为补充 —— 因此两个都查。
-  const gdSources = String(env.GD_MUSIC_SOURCES || 'netease,joox')
+  //
+  // ⚠ 2026-10-12：GD 音乐台实测**单源就要 9.8s**，而其余所有源都在 1s 内返回
+  //   （Meting 0.5s / Audius 0.7s / iTunes 0.8s / 网易云 0.3s / 酷狗 0.6s / 酷我 0.7s）。
+  //   在 7s 预算下它基本必被丢弃，却仍占着一次并发请求 —— 这就是「搜索要等 9 秒」的根源。
+  //   因此默认**不再查 GD**（改成空串 = 不启用）；需要它的无损 FLAC 时，
+  //   用环境变量 GD_MUSIC_SOURCES=netease,joox 显式打开即可。
+  const gdSources = String(env.GD_MUSIC_SOURCES || '')
     .split(',').map((s) => s.trim()).filter(Boolean)
     .filter((src) => weightOf(`gdstudio:${src}`) !== null);
 
@@ -769,6 +783,9 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
     ...gdSources.map((src) => searchGdstudioMusic(q, perSource, src)),
     weightOf('netease') === null ? Promise.resolve(null) : searchNeteaseMusic(q, perSource),
     weightOf('kugou') === null ? Promise.resolve(null) : searchKugouMusic(q, perSource),
+    // 酷我（2026-10-12 新增）：完全独立的第三个片库，实测 8/8 搜索与取流都可用，
+    // 直链是普通 CDN 地址（不签名、不过期），是目前可用性最好的一路。
+    weightOf('kuwo') === null ? Promise.resolve(null) : searchKuwoMusic(q, perSource),
     weightOf('audius') === null ? Promise.resolve(null) : searchAudiusMusic(q, perSource),
     weightOf('itunes') === null ? Promise.resolve(null) : searchItunesMusic(q, perSource),
     weightOf('deezer') === null ? Promise.resolve(null) : searchDeezerMusic(q, perSource)
@@ -1188,7 +1205,7 @@ const KW_CALL_TIMEOUT_MS = 2600;    // 单源关键词调用的超时（防止�
 const ANIME_CALL_TIMEOUT_MS = 3200;
 
 async function searchMaccmsAll(keyword, limit, env) {
-  const configured = getVodSources(env);
+  const configured = await ensureVodSources(env);
   // 接入源健康：读**已有**健康缓存（allowProbe=false，绝不在搜索里额外发起探测）。
   // - 已知 down 的源跳过；degraded 的源仍参与，但排到 ok 源之后。
   // - 没有健康数据（冷启动）时 healthMap 为空 → rankSources 不剔除任何源、不改顺序，
@@ -1435,7 +1452,7 @@ export async function fetchMovieMeta(query, limit = 24, env = {}) {
 // 改为按电影片 / 连续剧的子类型取候选，过滤掉预告片、电影解说、综艺、体育等内容。
 // sort=hot 按评分优先（默认，首页推荐）；sort=new 按年份优先（最新入库）。
 export async function fetchMovieLatest(limit = 24, env = {}, sort = 'hot') {
-  const sources = getVodSources(env);
+  const sources = await ensureVodSources(env);
   const perSource = Math.max(12, Math.ceil(limit / sources.length));
   const settled = await Promise.allSettled(
     sources.map((s) => curatedMaccms(s, perSource))
@@ -1480,14 +1497,14 @@ export async function fetchMovieLatest(limit = 24, env = {}, sort = 'hot') {
 
 // 采集源详情（选集用）：按 source key + 资源 ID 取完整线路
 export async function fetchMovieDetailBySource(sourceKey, id, env = {}) {
-  const source = getVodSources(env).find((s) => s.key === sourceKey);
+  const source = (await ensureVodSources(env)).find((s) => s.key === sourceKey);
   if (!source) throw new HttpError(404, `采集源不存在：${sourceKey}`);
   return detailMaccms(source, id);
 }
 
 // 采集源健康检查（设置页展示）
 export async function checkVodSources(env = {}) {
-  const sources = getVodSources(env);
+  const sources = await ensureVodSources(env);
   const results = await Promise.all(sources.map((s) => checkMaccms(s)));
   return { sources: results };
 }

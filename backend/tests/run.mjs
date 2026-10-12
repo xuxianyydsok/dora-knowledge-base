@@ -19,11 +19,14 @@ import * as fetchers from '../src/lib/fetchers.js';
 import * as imageType from '../src/lib/imageType.js';
 import * as fileType from '../src/lib/fileType.js';
 import * as bookType from '../src/lib/bookType.js';
+import * as videoType from '../src/lib/videoType.js';
 import * as sourceHealth from '../src/lib/sourceHealth.js';
 import * as publicScope from '../src/lib/publicScope.js';
 import * as timelineMerge from '../src/lib/timelineMerge.js';
 import * as timelineRoute from '../src/routes/timeline.js';
 import * as mediaUrl from '../src/lib/mediaUrl.js';
+import * as musicSources from '../src/lib/musicSources.js';
+import * as musicIdentity from '../src/lib/musicIdentity.js';
 import * as movies from '../src/routes/movies.js';
 import * as safeUrl from '../src/lib/safeUrl.js';
 import * as momentsRoute from '../src/routes/moments.js';
@@ -1063,11 +1066,94 @@ async function unit() {
     return 'MovieView / MoviePlayer 已统一走直链归一';
   });
 
-  await test('默认采集源：含 360zy、不含已下线源', async () => {
+  await test('酷我音源：伪 JSON 解析 + 音质档位', async () => {
+    // 酷我搜索接口返回单引号伪 JSON（值里带 &nbsp; 实体、\\uXXXX 转义），
+    // 直接 JSON.parse 会炸，因此这里固化解析口径。
+    const raw = "{'AARTIST':{'MUSICRID':'MUSIC_12345','NAME':'晴天&nbsp;(Live)','ARTIST':'周杰伦&周杰伦','"
+      + "ALBUM':'叶惠美','FORMATS':'MP3H,WMA96','DURATION':'269','web_albumpic_short':'120/37/x.jpg'},"
+      + "{'AARTIST':{'MUSICRID':'MUSIC_67890','NAME':'稻香','ARTIST':'周杰伦','ALBUM':'魔杰座','"
+      + "FORMATS':'WMA96','DURATION':'223','web_albumpic_short':''}";
+    const list = musicSources.parseKuwoSearch(raw);
+    assert(list.length === 2, `应解析出 2 条，实际 ${list.length}`);
+    assert(list[0].platform === 'kuwo', 'platform 应为 kuwo');
+    assert(list[0].external_id === '12345', `external_id 应去掉 MUSIC_ 前缀，实际 ${list[0].external_id}`);
+    assert(list[0].title === '晴天 (Live)', `&nbsp; 应还原成空格，实际「${list[0].title}」`);
+    assert(list[0].artist === '周杰伦/周杰伦', `多歌手用 / 连接，实际「${list[0].artist}」`);
+    assert(list[0].artwork_url === 'https://img1.kuwo.cn/star/albumcover/120/37/x.jpg', '封面 URL 应拼好');
+    // ⚠ 不按 FORMATS 标称音质：2026-10-12 实测「标了 MP3H 的曲目，逐档取流时
+    // 320kmp3 也拿不到，实际只有 mp3（≈128K）」—— 标称会虚高。
+    // 因此 bitrate 一律为 0，真实音质等取流成功后回填；FORMATS 只作为
+    // 「最高可能音质」的提示保留在 max_bitrate_hint 里。
+    assert(list[0].bitrate === 0, `未取流前不得标称音质，实际 ${list[0].bitrate}`);
+    assert(list[0].max_bitrate_hint === 320, `有 MP3H 时提示 320K，实际 ${list[0].max_bitrate_hint}`);
+    assert(list[1].max_bitrate_hint === 128, `无 MP3H 时提示 128K，实际 ${list[1].max_bitrate_hint}`);
+    assert(list[0].needs_resolve === true, '未取直链时应标 needs_resolve');
+    // ⚠ 上游把值做了**两层**转义：真实的 & 在响应里是 `\\\\u0026`（4 个反斜杠），
+    // 只做一次解码会残留反斜杠，多歌手就显示成「陈奕迅\\\/王菲」。
+    // 这条用真实抓到的原始片段固化（2026-10-12，「因为爱情」的 ARTIST）。
+    const esc = "{'AARTIST':{'MUSICRID':'MUSIC_1694640','NAME':'因为爱情-《将爱情进行到底》电影主题曲',"
+      + "'ARTIST':'陈奕迅\\\\\\\\u0026王菲','ALBUM':'A','FORMATS':'MP3128','DURATION':'218','web_albumpic_short':''}";
+    const escList = musicSources.parseKuwoSearch(esc);
+    assert(escList[0].artist === '陈奕迅/王菲',
+      `双层转义 & 应还原成多歌手分隔，实际「${escList[0].artist}」`);
+    // 脏数据不应产生条目
+    assert(musicSources.parseKuwoSearch('').length === 0, '空串应返回空数组');
+    assert(musicSources.parseKuwoSearch('garbage').length === 0, '非酷我格式应返回空数组');
+    return `解析 ${list.length} 条，音质档 320/128 正确，双层转义还原正确`;
+  });
+
+  await test('音乐去重：同一首歌（同名同歌手）只保留一条', async () => {
+    // 注意：不要解构出与模块同名的变量（const { musicIdentity } = musicIdentity 会 TDZ 报错）
+    const { musicIdentity: identity, dedupeMusicList, findDuplicateMusic } = musicIdentity;
+    // 归一化：大小写、空白、括号、分隔符全部忽略
+    assert(identity({ title: '晴天', artist: '周杰伦' }) === identity({ title: ' 晴天 ', artist: '周杰伦' }),
+      '空白差异应视为同一首');
+    assert(identity({ title: 'Hello', artist: 'Adele' }) === identity({ title: 'hello', artist: 'ADELE' }),
+      '大小写差异应视为同一首');
+    assert(identity({ title: '晴天 (Live)', artist: '周杰伦' }) === identity({ title: '晴天（Live）', artist: '周杰伦' }),
+      '中英文括号差异应视为同一首');
+    assert(identity({ title: '稻香', artist: '周杰伦' }) !== identity({ title: '稻香', artist: '其他' }),
+      '不同歌手不应合并');
+    assert(identity({ title: '', artist: '周杰伦' }) === null, '歌名为空时无法判定，应返回 null');
+    assert(identity({}) === null, '空对象应返回 null');
+
+    // 列表去重：保留最先出现（= created_at 最新）的那条
+    const items = [
+      { id: 'a', title: '晴天', track: { artist: '周杰伦' } },
+      { id: 'b', title: '晴天', track: { artist: '周杰伦' } },
+      { id: 'c', title: '稻香', track: { artist: '周杰伦' } },
+      { id: 'd', title: '晴天', track: { artist: '翻唱歌手' } }
+    ];
+    const deduped = dedupeMusicList(items);
+    assert(deduped.length === 3, `应去重到 3 条，实际 ${deduped.length}`);
+    assert(deduped[0].id === 'a', '应保留最先出现的那条');
+    assert(deduped.map((m) => m.id).join('') === 'acd', `顺序应为 a,c,d，实际 ${deduped.map((m) => m.id).join('')}`);
+    assert(dedupeMusicList(null).length === 0, '非数组应返回空数组');
+    assert(dedupeMusicList([{ id: 'x' }]).length === 1, '歌名为空时无法判定，一律保留');
+
+    // 入库查重：在已查到的曲目里按「歌名 + 歌手」找
+    const rows = [{ id: 'r1', title: '晴天' }, { id: 'r2', title: '稻香' }];
+    const tracks = { r1: { artist: '周杰伦' }, r2: { artist: '周杰伦' } };
+    assert(findDuplicateMusic(rows, tracks, { title: '晴天', artist: '周杰伦' })?.id === 'r1', '应命中已有条目');
+    assert(findDuplicateMusic(rows, tracks, { title: '晴天', artist: '林俊杰' }) === null, '歌手不同不应命中');
+    assert(findDuplicateMusic(rows, tracks, { title: '七里香', artist: '周杰伦' }) === null, '库里没有的歌不应命中');
+    assert(findDuplicateMusic(rows, tracks, { title: '', artist: '' }) === null, '空标题不应命中');
+    return '身份归一 6 组 + 列表去重 5 组 + 入库查重 4 组断言全过';
+  });
+
+  await test('默认采集源：含 360zy、不含实测不可用源', async () => {
     const keys = maccms.getVodSources({}).map((s) => s.key);
     assert(keys.includes('360zy'), `默认源应包含 360zy，实际：${keys.join(',')}`);
-    for (const dead of ['dytt', 'jszy', 'lzi', 'ffzy', 'zuid', 'ruyi']) {
+    // 2026-10-12 复测口径（用户要求「直接没效果的不要放进来」）：
+    //   · dytt / ffzy / lzi 在 2026-10-09 曾判不可用，2026-10-12 复测
+    //     （搜索 → m3u8 主清单 → 变体 → 首个 ts 分片 206）已全部恢复，**重新收录**；
+    //   · 仍在黑名单的是实测拿不到可播地址 / 连不上的源。
+    for (const dead of ['jszy', 'zuid', 'ruyi', 'wujin', 'bfzy', 'ikun', 'mdzy']) {
       assert(!keys.includes(dead), `默认源不应包含已下线/未采用的 ${dead}`);
+    }
+    // 复测恢复的三条源必须在列（用户特意指出旧项目里这三条当时能用）
+    for (const back of ['dytt', 'ffzy', 'lzi']) {
+      assert(keys.includes(back), `2026-10-12 复测恢复的源应包含 ${back}，实际：${keys.join(',')}`);
     }
     assert(maccms.getAnimeClassIdsSync({ key: '360zy' }) !== null, '360zy 应有硬编码动漫类目（可为空数组）');
     return `默认源 ${keys.length} 个：${keys.join(',')}`;
@@ -1227,7 +1313,7 @@ async function bookTypeUnit() {
     return 'PDF / EPUB 识别正确，非电子书 zip 被拒';
   });
 
-  await test('电子书 · PalmDB(MOBI/AZW3) 按 version 区分格式', () => {
+  await test('电子书 · MOBI / AZW3 明确被拒（本站只收 EPUB / PDF）', () => {
     const build = (version) => {
       const buf = new Uint8Array(200);
       buf.set(ascii('BOOK'), 60);
@@ -1238,9 +1324,11 @@ async function bookTypeUnit() {
       buf[v + 3] = version;
       return buf;
     };
-    assert(bookType.sniffBookFormat(build(6))?.format === 'mobi', 'version 6 应为 mobi');
-    assert(bookType.sniffBookFormat(build(8))?.format === 'azw3', 'version 8 应为 azw3');
-    return 'PalmDB 记录表 + MOBI version 判定通过';
+    assert(bookType.sniffBookFormat(build(6)) === null, 'MOBI（version 6）必须被拒');
+    assert(bookType.sniffBookFormat(build(8)) === null, 'AZW3（version 8）必须被拒');
+    assert(!Object.prototype.hasOwnProperty.call(bookType.BOOK_FORMATS, 'mobi'), '白名单不应再有 mobi');
+    assert(!Object.prototype.hasOwnProperty.call(bookType.BOOK_FORMATS, 'azw3'), '白名单不应再有 azw3');
+    return 'MOBI / AZW3 被拒，白名单只剩 EPUB / PDF';
   });
 
   await test('电子书 · 上限 100MB 与 object key 形态', () => {
@@ -1270,6 +1358,86 @@ async function bookTypeUnit() {
     assert(bookType.sniffCoverMime(head('RIFF0000WEBP'))?.ext === 'webp', 'WebP 应识别');
     assert(bookType.sniffCoverMime(ascii('not an image')) === null, '非图片必须拒绝');
     return 'JPEG / PNG / GIF / WebP 识别正确，非图片被拒';
+  });
+}
+
+// ---------------------------------------------------------------- UNIT · GitHub AI 解读
+// ---------------------------------------------------------------- UNIT · 动态壁纸类型
+async function videoTypeUnit() {
+  section('UNIT · 动态壁纸类型（魔数嗅探 / MP4 元数据 / 上限 / key 形态）');
+
+  const ascii = (s) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
+  const head = (prefix, len = 64) => {
+    const out = new Uint8Array(len);
+    out.set(ascii(prefix).subarray(0, len), 0);
+    return out;
+  };
+
+  await test('动态壁纸 · 按魔数识别 MP4 / WebM，其它容器被拒', () => {
+    const mp4 = new Uint8Array(64);
+    mp4.set([0, 0, 0, 0x20], 0);
+    mp4.set(ascii('ftypisom'), 4);
+    assert(videoType.sniffVideoFormat(mp4)?.format === 'mp4', 'MP4（ftyp）应识别');
+
+    const webm = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert(videoType.sniffVideoFormat(webm)?.format === 'webm', 'WebM（EBML）应识别');
+
+    // AVI（RIFF....AVI ）与 MKV 之外的随机头必须被拒
+    assert(videoType.sniffVideoFormat(head('RIFF0000AVI ')) === null, 'AVI 必须被拒');
+    assert(videoType.sniffVideoFormat(head('not a video at all')) === null, '非视频必须被拒');
+    assert(videoType.sniffVideoFormat(new Uint8Array(4)) === null, '过短的输入必须被拒');
+    return 'MP4 / WebM 识别正确，AVI 等被拒';
+  });
+
+  await test('动态壁纸 · MP4 时长与分辨率解析（mvhd / tkhd）', () => {
+    // 手工构造最小 moov：mvhd(version0, timescale=1000, duration=5000) + trak/tkhd(1920x1080)
+    const u32 = (arr, at, v) => { arr[at] = (v >>> 24) & 0xff; arr[at + 1] = (v >>> 16) & 0xff; arr[at + 2] = (v >>> 8) & 0xff; arr[at + 3] = v & 0xff; };
+    const mvhdPayload = 100;      // mvhd 载荷长度（够放下 timescale/duration）
+    const tkhdPayload = 92;       // tkhd 载荷长度（宽高在末尾 8 字节）
+    const moovPayload = (8 + mvhdPayload) + (8 + 8 + tkhdPayload);   // mvhd + trak(tkhd)
+    const buf = new Uint8Array(8 + moovPayload);
+    let p = 0;
+    u32(buf, p, 8 + moovPayload); buf.set(ascii('moov'), p + 4); p += 8;
+    u32(buf, p, 8 + mvhdPayload); buf.set(ascii('mvhd'), p + 4);
+    u32(buf, p + 8 + 12, 1000);       // timescale
+    u32(buf, p + 8 + 16, 5000);       // duration → 5 秒
+    p += 8 + mvhdPayload;
+    u32(buf, p, 8 + 8 + tkhdPayload); buf.set(ascii('trak'), p + 4); p += 8;
+    u32(buf, p, 8 + tkhdPayload); buf.set(ascii('tkhd'), p + 4);
+    u32(buf, p + 8 + tkhdPayload - 8, 1920 * 65536);   // width（16.16 定点）
+    u32(buf, p + 8 + tkhdPayload - 4, 1080 * 65536);   // height
+
+    const meta = videoType.parseMp4Meta(buf);
+    assert(Math.round(meta.duration) === 5, `时长应为 5 秒，实际 ${meta.duration}`);
+    assert(meta.width === 1920 && meta.height === 1080, `分辨率应为 1920x1080，实际 ${meta.width}x${meta.height}`);
+
+    // 没有 moov 的头部（moov 在文件尾部）必须安静返回 null，不能抛错
+    const noMoov = videoType.parseMp4Meta(head('ftypisom'));
+    assert(noMoov.duration === null && noMoov.width === null, '解析不出时应返回 null 而非抛错');
+    return `时长 ${meta.duration}s，${meta.width}x${meta.height}`;
+  });
+
+  await test('动态壁纸 · 上限 100MB 与 object key 形态（wallpapers/ 前缀）', () => {
+    assert(videoType.isWithinVideoLimit(videoType.MAX_VIDEO_BYTES), '等于上限应通过');
+    assert(!videoType.isWithinVideoLimit(videoType.MAX_VIDEO_BYTES + 1), '超过上限应拒绝');
+    assert(!videoType.isWithinVideoLimit(0), '空文件应拒绝');
+    assert(!Object.prototype.hasOwnProperty.call(videoType.VIDEO_FORMATS, 'avi'), '白名单不应有 avi');
+
+    const key = videoType.buildVideoKey('11111111-1111-1111-1111-111111111111', 'mp4', new Date('2026-10-12T00:00:00Z'));
+    assert(/^wallpapers\/11111111-1111-1111-1111-111111111111\/2026\/[0-9a-f-]{36}\.mp4$/.test(key), `object key 形态不对: ${key}`);
+    // 关键：动态壁纸与静态图片必须落在不同前缀，否则「动静分开」的要求就破了
+    assert(!key.startsWith('assets/'), '动态壁纸不得落在 assets/ 前缀下');
+    assert(!videoType.buildVideoKey('11111111-1111-1111-1111-111111111111', 'exe').endsWith('.exe'), '扩展名必须白名单化');
+    return `上限 ${Math.round(videoType.MAX_VIDEO_BYTES / 1024 / 1024)}MB，key=${key}`;
+  });
+
+  await test('动态壁纸 · 文件名清洗不含用户输入路径', () => {
+    assert(!videoType.sanitizeFilename('../../etc/passwd', 'mp4').includes('/'), '目录穿越片段必须去掉');
+    assert(!videoType.sanitizeFilename('..\\..\\win.ini', 'mp4').includes('\\'), '反斜杠必须去掉');
+    assert(videoType.sanitizeFilename('', 'mp4').endsWith('.mp4'), '空名要有兜底');
+    const long = videoType.sanitizeFilename('x'.repeat(400) + '.mp4', 'mp4');
+    assert(long.length <= 120 && long.endsWith('.mp4'), `超长名应截断并保留扩展名，实际 ${long.length}`);
+    return '文件名清洗通过';
   });
 }
 
@@ -1375,6 +1543,45 @@ async function contract() {
     }
     assert(missing.length === 0, `前端调了后端不存在的路由:\n    ${missing.join('\n    ')}`);
     return `${Object.keys(Object.fromEntries(routerMap)).length} 条后端路由`;
+  });
+
+  await test('音乐去重口径前后端一致（backend / frontend musicIdentity.js）', async () => {
+    // 前后端各存一份纯函数（本站既有约定，见 lib/mediaUrl.js）。
+    // 两套规则必须完全一致，否则会出现「后端拦住了、前端还显示两条」这类难查的错位。
+    const fe = await import(join(FRONTEND_SRC, 'lib', 'musicIdentity.js'));
+    const samples = [
+      { title: '晴天', artist: '周杰伦' },
+      { title: ' 晴天 ', artist: '周杰伦' },
+      { title: '晴天（Live）', artist: '周杰伦' },
+      { title: '晴天 (Live)', artist: '周杰伦' },
+      { title: 'Hello', artist: 'Adele' },
+      { title: 'hello', artist: 'ADELE' },
+      { title: '稻香', artist: '周杰伦' },
+      { title: '', artist: '周杰伦' },
+      { title: null, artist: null }
+    ];
+    for (const s of samples) {
+      assert(fe.musicIdentity(s) === musicIdentity.musicIdentity(s),
+        `身份键不一致：${JSON.stringify(s)} → 前端 ${fe.musicIdentity(s)} / 后端 ${musicIdentity.musicIdentity(s)}`);
+    }
+    const list = [
+      { id: 'a', title: '晴天', track: { artist: '周杰伦' } },
+      { id: 'b', title: ' 晴天', track: { artist: '周杰伦 ' } },
+      { id: 'c', title: '稻香', track: { artist: '周杰伦' } }
+    ];
+    assert(fe.dedupeMusicList(list).map((m) => m.id).join('') === musicIdentity.dedupeMusicList(list).map((m) => m.id).join(''),
+      '列表去重结果不一致');
+    return `${samples.length} 组身份键 + 列表去重结果一致`;
+  });
+
+  await test('播放历史路由 /api/music/history 排在 /api/music/:id 之前', async () => {
+    // 顺序错了会被 matchRoute 当成 id='history' 走详情接口，返回 404 而不是历史列表。
+    const histAt = routerSrc.indexOf("'/api/music/history'");
+    const detailAt = routerSrc.indexOf("['GET', '/api/music/:id'");
+    assert(histAt > 0, 'router.js 应有 /api/music/history 路由');
+    assert(detailAt > 0, 'router.js 应有 /api/music/:id 路由');
+    assert(histAt < detailAt, '/api/music/history 必须排在 /api/music/:id 之前');
+    return '路由顺序正确';
   });
 
   // 前端 Context 解构护栏（2026-10-11 新增）
@@ -1558,7 +1765,7 @@ async function live() {
 
 // ---------------------------------------------------------------- main
 const t0 = Date.now();
-if (!ONLY || ONLY === 'unit') { await unit(); await fileTypeUnit(); await bookTypeUnit(); await githubAiUnit(); await contract(); }
+if (!ONLY || ONLY === 'unit') { await unit(); await fileTypeUnit(); await bookTypeUnit(); await videoTypeUnit(); await githubAiUnit(); await contract(); }
 if (!ONLY || ONLY === 'live') await live();
 
 const failed = results.filter((r) => !r.ok);

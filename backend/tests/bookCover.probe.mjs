@@ -1,4 +1,5 @@
-// bookCover.js 的离线探针：用真实电子书 + 合成 MOBI 验证封面 / 元数据提取。
+// bookCover.js 的离线探针：用真实 EPUB / PDF 验证封面与元数据提取，
+// 并确认 MOBI / AZW3 已被明确拒绝（本站 2026-10-12 起只支持 EPUB / PDF）。
 // 用法：node tests/bookCover.probe.mjs
 // 设计：文件不存在时优雅跳过（打印 skip），不报错退出非 0；方便在没有样本的机器上跑。
 import { readFile, writeFile, readdir } from 'node:fs/promises';
@@ -51,64 +52,23 @@ async function probeFile(path) {
   return meta;
 }
 
-// 合成最小 MOBI：PalmDB + record0(PalmDOC+MOBI+EXTH) + 一张 JPEG 记录
-function buildSyntheticMobi({ title = 'Synthetic Book', author = 'Test Author', azw3 = false } = {}) {
-  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9]);
-
+// 合成最小 PalmDB（MOBI / AZW3 的容器）：只用来验证这两种格式已被拒绝，
+// 不再验证封面提取 —— 本站 2026-10-12 起只支持 EPUB / PDF。
+function buildSyntheticPalmDb({ azw3 = false } = {}) {
   const enc = new TextEncoder();
-  const titleBytes = enc.encode(title);
-  const authorBytes = enc.encode(author);
-
-  // EXTH：201（cover offset，相对 first image index）+ 100（作者）+ 503（书名）
-  const exthRecords = [];
-  const pushExth = (type, data) => {
-    const len = 8 + data.length;
-    const rec = new Uint8Array(len);
-    const dv = new DataView(rec.buffer);
-    dv.setUint32(0, type);
-    dv.setUint32(4, len);
-    rec.set(data, 8);
-    exthRecords.push(rec);
-  };
-  const coverOffset = new Uint8Array(4);
-  new DataView(coverOffset.buffer).setUint32(0, 0);
-  pushExth(201, coverOffset);
-  pushExth(100, authorBytes);
-  pushExth(503, titleBytes);
-
-  const exthBodyLen = exthRecords.reduce((n, r) => n + r.length, 0);
-  const exth = new Uint8Array(12 + exthBodyLen + 4);
-  exth.set(enc.encode('EXTH'), 0);
-  new DataView(exth.buffer).setUint32(4, exth.length);
-  new DataView(exth.buffer).setUint32(8, exthRecords.length);
-  let exthPos = 12;
-  for (const r of exthRecords) { exth.set(r, exthPos); exthPos += r.length; }
-
   const palmdoc = new Uint8Array(16);
   const mobi = new Uint8Array(232);
   mobi.set(enc.encode('MOBI'), 0);
   const mdv = new DataView(mobi.buffer);
-  // 解析器读的是「相对记录 0 起点」的偏移，MOBI 签名在记录 0 偏移 16，
-  // 所以这里写 mobi 数组时要减去 16。
   mdv.setUint32(0x14 - 16, mobi.length);   // MOBI header 长度
   mdv.setUint32(0x1c - 16, 65001);         // text encoding = UTF-8
   mdv.setUint32(0x24 - 16, azw3 ? 8 : 6);  // version：6=MOBI，8=AZW3/KF8
-  mdv.setUint32(0x6c - 16, 1);             // first image index = 记录 1
-  mdv.setUint32(0x80 - 16, 0x40);          // EXTH flags：bit 0x40 置位
 
-  const headerPart = new Uint8Array(palmdoc.length + mobi.length + exth.length);
-  headerPart.set(palmdoc, 0);
-  headerPart.set(mobi, palmdoc.length);
-  headerPart.set(exth, palmdoc.length + mobi.length);
+  const record0 = new Uint8Array(palmdoc.length + mobi.length);
+  record0.set(palmdoc, 0);
+  record0.set(mobi, palmdoc.length);
 
-  // full name 放在记录 0 尾部（UTF-8 + NUL），回填 offset/length
-  const record0 = new Uint8Array(headerPart.length + titleBytes.length + 1);
-  record0.set(headerPart, 0);
-  record0.set(titleBytes, headerPart.length);
-  new DataView(record0.buffer).setUint32(0x54, headerPart.length);
-  new DataView(record0.buffer).setUint32(0x58, titleBytes.length + 1);
-
-  const records = [record0, jpeg];
+  const records = [record0];
   const headerSize = 78 + records.length * 8;
   const total = headerSize + records.reduce((n, r) => n + r.length, 0);
   const out = new Uint8Array(total);
@@ -133,23 +93,28 @@ async function main() {
   const pdf1 = await probeFile('/mnt/d/books/图解微积分.pdf');
   if (pdf1) await saveCover(pdf1, '/tmp/cover-pdf');
 
-  // 真实 PDF / MOBI（文件名带一长串站点后缀，用关键词匹配）
+  // 真实 PDF（文件名带一长串站点后缀，用关键词匹配）
   const realPdf = await findSample('/mnt/d/books', '图解微积分', '.pdf');
   if (realPdf) {
     const meta = await probeFile(realPdf);
     if (meta) await saveCover(meta, '/tmp/cover-realpdf');
   }
-  const realMobi = await findSample('/mnt/d/books', '理工学霸', '.mobi');
-  if (realMobi) {
-    const meta = await probeFile(realMobi);
-    if (meta) await saveCover(meta, '/tmp/cover-realmobi');
-  }
 
-  console.log('\n--- 合成 MOBI / AZW3 ---');
-  const mobiMeta = await extractBookMeta(bufferSource(buildSyntheticMobi({ title: '合成测试书', author: '测试作者' })));
-  report('mobi ', mobiMeta);
-  const azw3Meta = await extractBookMeta(bufferSource(buildSyntheticMobi({ title: '合成 AZW3', author: '测试作者', azw3: true })));
-  report('azw3 ', azw3Meta);
+  console.log('\n--- MOBI / AZW3 应被拒绝（本站只支持 EPUB / PDF）---');
+  let rejectFail = 0;
+  for (const [label, buf] of [
+    ['mobi ', buildSyntheticPalmDb({ azw3: false })],
+    ['azw3 ', buildSyntheticPalmDb({ azw3: true })]
+  ]) {
+    const meta = await extractBookMeta(bufferSource(buf));
+    const okReject = meta.format === null;
+    if (!okReject) rejectFail += 1;
+    report(label, meta, okReject ? '  ✅ 已拒绝（format=null）' : '  ❌ 不应被接受');
+  }
+  if (rejectFail) {
+    console.error(`\n❌ ${rejectFail} 个 MOBI/AZW3 样本未被拒绝`);
+    process.exitCode = 1;
+  }
 
   console.log('\n--- 大文件内存检查（80MB EPUB）---');
   const bigPath = '/mnt/d/books/books2/三体 （典藏版·三册）.epub';

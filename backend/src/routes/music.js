@@ -8,7 +8,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchMusicMeta, fetchLyrics, resolveGdstudioUrl, GD_DEFAULT_SOURCE } from '../lib/fetchers.js';
 import { getMetingInstances, metingStreamUrl } from '../lib/meting.js';
-import { neteaseOuterUrl, kugouStreamUrl } from '../lib/musicSources.js';
+import { neteaseOuterUrl, kugouStreamUrl, kuwoStreamUrl } from '../lib/musicSources.js';
 import {
   requireString, optionalString, requireUuid, optionalInt, optionalBool
 } from '../lib/validate.js';
@@ -18,6 +18,7 @@ import {
 import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
 import { looksLikeAudioStream, isStaleAudioUrl, resolveAudioPlayback } from '../lib/mediaUrl.js';
 import { isAdminFavorited } from './favorites.js';
+import { dedupeMusicList, findDuplicateMusic, musicIdentity, normalizeMusicText } from '../lib/musicIdentity.js';
 
 const TABLE = 'resources';
 const EXT = 'music_tracks';
@@ -141,6 +142,21 @@ export async function resolveMusicStream(request, env) {
         quality: 'full'
       }, request, env);
     }
+    // 酷我：直链是普通 CDN 地址（不签名），但仍按 rid 重新取一条最新地址，
+    // 并按「高音质优先」逐档尝试（FLAC → 320K → 128K）。
+    if (platform === 'kuwo') {
+      const fresh = await kuwoStreamUrl(externalId, 999);
+      if (!fresh) throw new HttpError(404, '该曲目暂时拿不到播放地址，请稍后重试');
+      return ok({
+        platform,
+        external_id: externalId,
+        source: gdSource,
+        audio_url: fresh.url,
+        bitrate: fresh.bitrate,
+        file_size: null,
+        quality: fresh.bitrate >= 999 ? 'lossless' : 'full'
+      }, request, env);
+    }
     throw new HttpError(422, `该音源不支持重新解析：${platform || 'unknown'}`);
   }
   const info = await resolveGdstudioUrl(externalId, gdSource);
@@ -173,7 +189,9 @@ export async function listMusic(request, env) {
   }));
   const tagged = await withTags(db, rows);
   const withExt = await withTrack(db, tagged);
-  return ok(withExt, request, env);
+  // 同一首歌被重复收藏时（历史脏数据），列表层合并掉，只留最新那一条。
+  // 去重放在「扩展字段拼好之后」——歌手的唯一来源是 music_tracks.artist。
+  return ok(dedupeMusicList(withExt), request, env);
 }
 
 // GET /api/music/:id
@@ -240,6 +258,36 @@ export async function createMusic(request, env) {
     categoryId = await validateCategoryId(db, user.id, requireUuid(body.category_id, 'category_id'));
   }
   const tagIds = await validateTagIds(db, user.id, user.isAdmin, body.tag_ids);
+
+  // 查重（2026-10-12 用户反馈「同一首歌加了两次」）：
+  // 收藏是纯插入，同一首歌点两次就有两条记录。入库前先按「歌名 + 歌手」找一遍，
+  // 命中就把已有那条原样返回（HTTP 200，不是 201），前端据此提示「已经在音乐库里」。
+  //
+  // 性能：这里**只查标题列**（不取 '*'），先按归一化标题筛出候选，
+  // 再只为候选取一次歌手（music_tracks）。库里几百首时是一次很轻的查询，
+  // 不会因为每次收藏都拉全量扩展字段而变慢。
+  const mine = await db.select(TABLE, qs({
+    select: 'id,title',
+    type: `eq.${TYPE}`,
+    user_id: `eq.${user.id}`,
+    order: 'created_at.desc'
+  }));
+  if (mine.length) {
+    const key = musicIdentity({ title, artist });
+    // 先按标题粗筛（只有歌名相同才可能是同一首），再拉这些候选的歌手做精确判定
+    const titleMatched = mine.filter((r) => normalizeMusicText(r.title) === normalizeMusicText(title));
+    if (key && titleMatched.length) {
+      const candTracks = await loadTracks(db, titleMatched.map((r) => r.id));
+      const dup = findDuplicateMusic(titleMatched, candTracks, { title, artist });
+      if (dup) {
+        // 粗筛只取了 id/title，这里再取一次完整行，保证返回结构与正常创建一致
+        const full = await db.select(TABLE, qs({ select: '*', id: `eq.${dup.id}` }));
+        const [taggedDup] = await withTags(db, full.length ? full : [dup]);
+        const [withExtDup] = await withTrack(db, [taggedDup]);
+        return ok({ ...withExtDup, duplicate: true }, request, env, 200);
+      }
+    }
+  }
 
   // 主资源记录
   const rows = await db.insert(TABLE, {
@@ -427,4 +475,58 @@ export async function getMusicProgress(request, env, id) {
   requireUuid(id, 'id');
   const progress = await getProgress(db, user.id, id);
   return ok(progress || { resource_id: id, position: 0, progress: 0, completed: false }, request, env);
+}
+
+// GET /api/music/history  —— 播放历史（2026-10-12 用户要求「音乐库要有播放历史」）
+//
+// 数据来源：user_progress 里「本人 + 音乐类型」的记录，按 updated_at（= 上次听到哪一刻）
+// 倒序。前端每 5 秒上报一次进度（见 lib/player.jsx），所以 updated_at 就是真实的收听时间。
+//
+// 返回结构：与 listMusic 一致的条目（含 track），外加 progress 字段，
+// 前端可以直接拿它渲染成和音乐库一样的封面卡，点了就从上次的位置接着播。
+// 只返回**仍存在**的曲目：曲目被移除后 user_progress 会级联删除，但为稳妥仍做一次存在性过滤。
+export async function listMusicHistory(request, env) {
+  const { db, user } = await requireAuth(request, env);
+  const url = new URL(request.url);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 30, 1), 100);
+
+  const progressRows = await db.select('user_progress', qs({
+    select: 'resource_id,position,duration,progress,completed,updated_at',
+    user_id: `eq.${user.id}`,
+    order: 'updated_at.desc',
+    limit: String(limit * 2)
+  }));
+  if (!progressRows.length) return ok([], request, env);
+
+  const ids = [...new Set(progressRows.map((p) => p.resource_id))];
+  const rows = await db.select(TABLE, qs({
+    select: '*', type: `eq.${TYPE}`, user_id: `eq.${user.id}`, id: `in.(${ids.join(',')})`
+  }));
+  if (!rows.length) return ok([], request, env);
+
+  const tagged = await withTags(db, rows);
+  const withExt = await withTrack(db, tagged);
+  const byId = Object.fromEntries(withExt.map((m) => [m.id, m]));
+  const progressById = Object.fromEntries(progressRows.map((p) => [p.resource_id, p]));
+
+  // 按进度表的顺序（= 收听时间倒序）重排，并合并去重 —— 同一首歌听两次只算一条。
+  const seen = new Set();
+  const history = [];
+  for (const p of progressRows) {
+    const m = byId[p.resource_id];
+    if (!m || seen.has(m.id)) continue;
+    seen.add(m.id);
+    history.push({
+      ...m,
+      progress: {
+        position: p.position,
+        duration: p.duration,
+        progress: p.progress,
+        completed: p.completed,
+        updated_at: p.updated_at
+      }
+    });
+    if (history.length >= limit) break;
+  }
+  return ok(history, request, env);
 }

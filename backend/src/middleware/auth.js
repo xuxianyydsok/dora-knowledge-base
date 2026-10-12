@@ -19,7 +19,19 @@ import { isGuestAllowed } from '../lib/publicScope.js';
 function extractToken(request) {
   const header = request.headers.get('Authorization') || '';
   const match = header.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1].trim() : null;
+  if (match) return match[1].trim();
+  // 媒体直链（<video src> / <iframe src>）**没法带 Authorization 请求头** ——
+  // 浏览器对这类元素只发裸 GET。私人视频 / 私人图书 PDF 因此一直读不到
+  // （2026-10-12 用户反馈「图展的动态壁纸无法在线预览」的根因）。
+  // 这里额外接受查询串里的 ?token=<JWT>，但**只对 GET 生效**：
+  // 写操作（POST/PATCH/DELETE）永远不认查询串令牌，避免令牌被写进日志 / 被伪造提交。
+  if (request.method === 'GET') {
+    try {
+      const q = new URL(request.url).searchParams.get('token');
+      if (q) return q.trim();
+    } catch { /* URL 解析失败就当作没带令牌 */ }
+  }
+  return null;
 }
 
 let ownerCache = null;

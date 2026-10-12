@@ -1,7 +1,8 @@
 // 图书库（R2）接口 —— 电子书书架 + 站内阅读。
 //
-// 定位：站长上传电子书（PDF / EPUB / MOBI / AZW3）到 R2，读者在「图书」页浏览、
+// 定位：站长上传电子书（**只支持 EPUB / PDF**）到 R2，读者在「图书」页浏览、
 //       在线预览（PDF 内嵌 / EPUB 站内阅读）或下载。
+//       2026-10-12 用户决定：MOBI / AZW3 不再支持，上传直接拒绝，前端也不再出现。
 //
 // 与 files.js 的区别：
 //   files = 碎念附件（20MB，PDF/Office/文本，下载用）；
@@ -78,7 +79,7 @@ function requestOrigin(request, env) {
 
 // 组装对外结构（统一补上「这本书能不能在线读」的能力位，前端据此决定按钮）
 function shape(row) {
-  const caps = { pdf: 'inline', epub: 'reader', mobi: 'download', azw3: 'download' };
+  const caps = { pdf: 'inline', epub: 'reader' };
   return {
     id: row.id,
     title: row.title || stripExt(row.original_name),
@@ -93,7 +94,7 @@ function shape(row) {
     sort_order: row.sort_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    // 阅读能力：pdf 用浏览器内嵌，epub 用站内阅读器，mobi/azw3 只能下载
+    // 阅读能力：pdf 用浏览器内嵌，epub 用站内阅读器
     read_mode: caps[row.format] || 'download'
   };
 }
@@ -265,7 +266,7 @@ export async function uploadBook(request, env) {
   const { head, rest } = await takeHeadAndRest(request, HEAD_PROBE_BYTES);
   const sniffed = sniffBookFormat(head);
   if (!sniffed) {
-    throw new HttpError(415, '仅支持 PDF / EPUB / MOBI / AZW3 电子书，且文件内容需与格式一致');
+    throw new HttpError(415, '仅支持 EPUB / PDF 电子书，且文件内容需与格式一致');
   }
   const spec = BOOK_FORMATS[sniffed.format];
 
@@ -372,7 +373,7 @@ export async function createBookMultipart(request, env) {
   const head = decodeHeadProbe(body.head);
   const sniffed = sniffBookFormat(head);
   if (!sniffed) {
-    throw new HttpError(415, '仅支持 PDF / EPUB / MOBI / AZW3 电子书，且文件内容需与格式一致');
+    throw new HttpError(415, '仅支持 EPUB / PDF 电子书，且文件内容需与格式一致');
   }
   const spec = BOOK_FORMATS[sniffed.format];
 
@@ -699,4 +700,4 @@ export async function deleteBook(request, env, id) {
 }
 
 // 供前端 / 文档引用的能力位（避免前后端各写一份）
-export const BOOK_READ_MODES = { pdf: 'inline', epub: 'reader', mobi: 'download', azw3: 'download' };
+export const BOOK_READ_MODES = { pdf: 'inline', epub: 'reader' };
