@@ -577,10 +577,12 @@ async function unit() {
   await test('RSS 精选源：全部为国内站点，且数量与分组正确', async () => {
     const all = rssPresets.listPresets('all');
     assert(all.length >= 10, `精选源至少 10 个，实际 ${all.length}`);
-    // 用户要求「只涉及国内的」：不能出现已知的境外源
+    // 用户要求「只涉及国内的」：不能出现已知的境外源。
+    // 注意 YouTube 也在内 —— 用户后来明确「不要抓国外的」，中文频道同样不算国内站点
+    //（曾经把两个中文 YouTube 频道放进来过，已移除）。
     const foreign = ['openai.com', 'anthropic.com', 'huggingface.co', 'ycombinator.com', 'techcrunch.com',
       'theverge.com', 'arstechnica.com', 'technologyreview.com', 'dev.to', 'lobste.rs', 'github.blog',
-      'cloudflare.com'];
+      'cloudflare.com', 'youtube.com', 'youtu.be', 'x.com', 'twitter.com', 'reddit.com', 'medium.com'];
     for (const f of all) {
       for (const host of foreign) {
         assert(!f.feed_url.includes(host), `精选源不应包含境外源 ${host}：${f.feed_url}`);
@@ -593,7 +595,15 @@ async function unit() {
     assert(ai.length > 0 && ai.every((f) => f.group === 'ai'), 'group=ai 应只返回 AI 组');
     assert(ai.length < all.length, 'group 过滤应真的缩小范围');
     const keys = rssPresets.PRESET_GROUPS.map((g) => g.key).sort().join(',');
-    assert(keys === 'ai,dev,media', `分组应为 ai/dev/media，实际 ${keys}`);
+    assert(keys === 'ai,dev,github,media,mine', `分组应为 ai/dev/github/media/mine，实际 ${keys}`);
+    // GitHub 趋势组：用户点名要的（唯一一处用户明确要求保留的境外平台，
+    // 因为 GitHub Trending 本身就是 GitHub 的功能，没有国内替代品）。
+    const gh = rssPresets.listPresets('github');
+    assert(gh.length === 3, `GitHub 趋势组应为日/周/月 3 个源，实际 ${gh.length}`);
+    assert(gh.every((f) => f.feed_url.startsWith('https://mshibanami.github.io/')), 'GitHub 趋势组应全部来自实测可用的第三方源');
+    // 「我从 Folo 导出的」这一组必须非空，且同样不含境外站点
+    const mine = rssPresets.listPresets('mine');
+    assert(mine.length >= 8, `Folo 分组至少 8 个源，实际 ${mine.length}`);
     // 无重复地址
     const urls = all.map((f) => f.feed_url);
     assert(new Set(urls).size === urls.length, '精选源地址不应重复');
