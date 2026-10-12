@@ -792,7 +792,17 @@ export async function fetchMusicMeta(query, limit = 30, env = {}) {
   //   在 7s 预算下它基本必被丢弃，却仍占着一次并发请求 —— 这就是「搜索要等 9 秒」的根源。
   //   因此默认**不再查 GD**（改成空串 = 不启用）；需要它的无损 FLAC 时，
   //   用环境变量 GD_MUSIC_SOURCES=netease,joox 显式打开即可。
-  const gdSources = String(env.GD_MUSIC_SOURCES || '')
+  //
+  // ✅ 2026-10-12 晚修正（重要）：上面的「9.8s」是**本机走代理**测出来的假象。
+  //   用临时 Worker 从 **Cloudflare 出口**实测 GD 音乐台：
+  //     搜索 300~600ms（连测 5 次：610/393/318/416/323），取流 200ms，
+  //     且周璇《夜上海》、邓丽君《月亮代表我的心》、Beatles《Yesterday》
+  //     这些**老歌**全部能取到 320kbps 真音频（audio/mpeg，实测 Range 拉字节通过）。
+  //   也就是说：GD 不但不慢，还是唯一能稳定覆盖华语老歌的源。
+  //   它此前被默认关掉，正是用户反馈「音乐源变少了、三四十年代老歌搜不出来」的主因。
+  //   现在改为**默认开启 netease**（joox 仍按需，用 GD_MUSIC_SOURCES 可覆盖成
+  //   `netease,joox` 或空串关闭）。
+  const gdSources = String(env.GD_MUSIC_SOURCES ?? 'netease')
     .split(',').map((s) => s.trim()).filter(Boolean)
     .filter((src) => weightOf(`gdstudio:${src}`) !== null);
 
