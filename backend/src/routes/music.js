@@ -490,6 +490,12 @@ export async function listMusicHistory(request, env) {
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 30, 1), 100);
 
+  // 访客（未登录）一律拿不到播放历史 —— 那是站长的个人收听记录。
+  // 为什么必须在**这里**挡：/api/music 前缀在访客白名单里（PUBLIC_READ_RE），
+  // 而访客上下文的 user.id 就是站长 id，不额外判定就会把站长的历史原样发出去。
+  // 2026-10-12 实测：不带任何令牌 GET /api/music/history 能拿到站长完整历史，已修。
+  if (user.isGuest) return ok([], request, env);
+
   const progressRows = await db.select('user_progress', qs({
     select: 'resource_id,position,duration,progress,completed,updated_at',
     user_id: `eq.${user.id}`,
@@ -510,12 +516,18 @@ export async function listMusicHistory(request, env) {
   const progressById = Object.fromEntries(progressRows.map((p) => [p.resource_id, p]));
 
   // 按进度表的顺序（= 收听时间倒序）重排，并合并去重 —— 同一首歌听两次只算一条。
+  // 去重口径与音乐库一致：按「歌名 + 歌手」（musicIdentity），不是按 resource_id。
+  // 为什么不能只按 id：同一首歌从不同音源搜到、或历史上重复收藏过，库里就是两条
+  // 不同的资源记录，只比 id 两条都会留下（2026-10-12 用户反馈的「历史里重复」）。
   const seen = new Set();
   const history = [];
   for (const p of progressRows) {
     const m = byId[p.resource_id];
-    if (!m || seen.has(m.id)) continue;
-    seen.add(m.id);
+    if (!m) continue;
+    // musicIdentity 返回 null（歌名为空）时退化成按 id 去重，避免把无法判定的条目全合并。
+    const key = musicIdentity({ title: m.title, artist: m.track?.artist }) || `id:${m.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     history.push({
       ...m,
       progress: {

@@ -1141,6 +1141,31 @@ async function unit() {
     return '身份归一 6 组 + 列表去重 5 组 + 入库查重 4 组断言全过';
   });
 
+  await test('音乐排序：多词查询（歌名 + 歌手）时正片应压过翻唱 / 伴奏', async () => {
+    // 背景（2026-10-12 用户反馈「音乐源都变少了 / 搜出来看不了」）：
+    // 搜「周杰伦 晴天」这种两段式查询时，真歌《晴天》（歌手=周杰伦）在旧的整串匹配下
+    // 三个分支全不中、拿 0 分；而「周杰伦“晴天”Pop Beat」这类标题逐字包含整串的
+    // 翻唱 / 伴奏命中 includes(+8)，再叠多源确认(+20) 就霸榜。
+    const q = '周杰伦 晴天';
+    const real = fetchers.musicScore({ title: '晴天', artist: '周杰伦', audio_url: 'x', srcCount: 3 }, q);
+    const beat = fetchers.musicScore({ title: '周杰伦“晴天”Pop Beat', artist: '何洛林', audio_url: 'x', srcCount: 3 }, q);
+    const dj = fetchers.musicScore({ title: '周杰伦-晴天 (DJ苏天伦版)', artist: '苏天伦', audio_url: 'x', srcCount: 6 }, q);
+    assert(real > beat, `正片《晴天》应高于伴奏，实际 real=${real} beat=${beat}`);
+    assert(real > dj, `正片《晴天》应高于 DJ 版，实际 real=${real} dj=${dj}`);
+
+    // 顺序颠倒（歌手在前 / 歌名在前）都应识别出「两段各命中一次」
+    const swapped = fetchers.musicScore({ title: '晴天', artist: '周杰伦', audio_url: 'x' }, '晴天 周杰伦');
+    const onlyArtist = fetchers.musicScore({ title: '稻香', artist: '周杰伦', audio_url: 'x' }, '晴天 周杰伦');
+    assert(swapped > onlyArtist, '两段都命中应高于只命中歌手');
+
+    // 单词查询的既有行为不能被改坏：搜「周杰伦」时本人条目仍应领先翻唱。
+    const tally = new Map([['周杰伦', 40]]);
+    const self = fetchers.musicScore({ title: '稻香', artist: '周杰伦', audio_url: 'x' }, '周杰伦', tally);
+    const cover = fetchers.musicScore({ title: '稻香', artist: '其他歌手', audio_url: 'x' }, '周杰伦', tally);
+    assert(self > cover, '单词查询：本人应高于翻唱');
+    return `正片 ${real} > 伴奏 ${beat} / DJ ${dj}；两段命中 ${swapped} > 仅歌手 ${onlyArtist}`;
+  });
+
   await test('默认采集源：含 360zy、不含实测不可用源', async () => {
     const keys = maccms.getVodSources({}).map((s) => s.key);
     assert(keys.includes('360zy'), `默认源应包含 360zy，实际：${keys.join(',')}`);

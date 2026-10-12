@@ -623,7 +623,7 @@ const normKey = (s) => String(s || '')
   .replace(/[\s\-_.·・()（）\[\]【】「」《》"'’“”,，。!！?？]/g, '')
   .toLowerCase();
 
-function musicScore(c, query, artistTally = null) {
+export function musicScore(c, query, artistTally = null) {
   const title = String(c.title || '');
   const artist = String(c.artist || '');
   const nt = normKey(title);
@@ -660,6 +660,30 @@ function musicScore(c, query, artistTally = null) {
     if (nt === nq) s += 45;
     else if (nt.startsWith(nq)) s += 18;
     else if (nt.includes(nq)) s += 8;
+
+    // 多词查询（「歌名 歌手」/「歌手 歌名」）的分词加分。
+    // 为什么必须单独处理：上面的整串匹配要求「标题或歌手包含**整个**查询词」，
+    // 而「周杰伦 晴天」这种两段式查询在两边都不成立 —— 真歌《晴天》（歌手=周杰伦）
+    // 三个分支全不中，拿 0 分；反倒是「周杰伦“晴天”Pop Beat」这类标题里逐字包含
+    // 整串的翻唱 / 伴奏命中了 includes(+8)，再叠多源确认(+20) 就霸榜。
+    // 实测（2026-10-12）：搜「周杰伦 晴天」前 7 条全是 beat 和 DJ 版，正片一条不见。
+    // 做法：把查询按空白切成词，逐词判定「命中歌手」还是「命中歌名」，
+    // 两段都命中的直接给足权重 —— 这正是用户按页面提示「试试歌名 歌手」输入时的意图。
+    // 只在 ≥2 个词时启用，单词查询仍完全走上面那套已调好的逻辑，不改变既有行为。
+    const tokens = String(query || '').trim().split(/\s+/).filter((t) => normKey(t));
+    if (tokens.length >= 2) {
+      let artistHit = false;
+      let titleHit = false;
+      let partial = 0;
+      for (const tk of tokens.map(normKey)) {
+        if (na === tk) artistHit = true;
+        else if (nt === tk) titleHit = true;
+        else if (nt.includes(tk) || na.includes(tk)) partial += 1;
+      }
+      s += (artistHit ? 30 : 0) + (titleHit ? 30 : 0) + partial * 6;
+      // 歌手与歌名各命中一段：这条基本就是用户要找的那首，再补一档压过翻唱。
+      if (artistHit && titleHit) s += 30;
+    }
   }
 
   // 多源确认：同一首歌同时命中 Meting 与 GD 两个独立上游 → 更可能是正规条目。
