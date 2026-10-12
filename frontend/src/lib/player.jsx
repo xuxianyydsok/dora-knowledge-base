@@ -7,9 +7,12 @@
 import { createContext } from 'preact';
 import { useContext, useEffect, useRef, useState, useCallback, useMemo } from 'preact/hooks';
 import { api } from './api.js';
+import { buildOrder, stepIndex, nextRepeat } from './queueOrder.js';
 
 const PlayerContext = createContext(null);
 const VOLUME_KEY = 'kb-player-volume';
+const SHUFFLE_KEY = 'kb-player-shuffle';
+const REPEAT_KEY = 'kb-player-repeat';
 
 // 把列表项转成队列项（列表接口返回的是精简结构）
 function toQueueItem(m) {
@@ -48,6 +51,17 @@ export function PlayerProvider({ children }) {
     const v = Number(localStorage.getItem(VOLUME_KEY));
     return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 1;
   });
+  // 随机 / 循环：与音量一样是「本机使用习惯」，存 localStorage。
+  // 2026-10-12 用户要求（参考 Nacre 模板的播放条）：这两个开关直接做在底部播放条上，
+  // 点开就生效，不另开页面。
+  const [shuffle, setShuffleState] = useState(() => localStorage.getItem(SHUFFLE_KEY) === '1');
+  const [repeat, setRepeatState] = useState(() => {
+    const v = localStorage.getItem(REPEAT_KEY);
+    return v === 'all' || v === 'one' ? v : 'off';
+  });
+  // 播放顺序：随机开时是洗牌后的下标序列（当前曲目排在最前）。
+  // 队列或随机开关变化时重算 —— 这就是「上一首能回到刚才那首」的依据。
+  const [order, setOrder] = useState([]);
 
   const t = music?.track || {};
   // 候选音源：重新解析的新直链 → 主地址 → 备用节点 → 试听片段
@@ -113,13 +127,49 @@ export function PlayerProvider({ children }) {
     await load(keyOf(queue[nextIndex]));
   }, [queue, load]);
 
-  const next = useCallback(() => goTo(index + 1), [goTo, index]);
+  // 顺序表随「队列 / 随机开关」重算：随机时把当前曲目固定在最前，
+  // 开着随机点「下一首」不会立刻跳走。
+  // 依赖里**故意不放 index**：换歌不重排，否则「随机」会退化成
+  // 「每次点下一首随机抽一首」，「上一首」也回不到刚才那首。
+  // 但当前曲目又要用最新的值，所以从 ref 读。
+  const indexRef = useRef(index);
+  indexRef.current = index;
+  useEffect(() => {
+    setOrder(buildOrder(queue.length, { shuffle, current: indexRef.current }));
+  }, [queue, shuffle]);
+
+  const next = useCallback(() => {
+    const target = stepIndex(order, index, 1, repeat);
+    if (target < 0) { flash('已经是最后一首了'); return; }
+    goTo(target);
+  }, [order, index, repeat, goTo, flash]);
+
   const prev = useCallback(() => {
     // 播放超过 3 秒时，上一首先回到开头（与主流播放器一致）
     const el = audioRef.current;
     if (el && el.currentTime > 3) { el.currentTime = 0; setPosition(0); return; }
-    goTo(index - 1);
-  }, [goTo, index]);
+    const target = stepIndex(order, index, -1, repeat);
+    if (target < 0) { flash('已经是第一首了'); return; }
+    goTo(target);
+  }, [goTo, index, order, repeat, flash]);
+
+  const toggleShuffle = useCallback(() => {
+    setShuffleState((v) => {
+      const next_ = !v;
+      localStorage.setItem(SHUFFLE_KEY, next_ ? '1' : '0');
+      flash(next_ ? '随机播放已开启' : '随机播放已关闭', 1400);
+      return next_;
+    });
+  }, [flash]);
+
+  const cycleRepeat = useCallback(() => {
+    setRepeatState((v) => {
+      const next_ = nextRepeat(v);
+      localStorage.setItem(REPEAT_KEY, next_);
+      flash(next_ === 'off' ? '顺序播放' : next_ === 'all' ? '列表循环' : '单曲循环', 1400);
+      return next_;
+    });
+  }, [flash]);
 
   const seek = useCallback((sec) => {
     const el = audioRef.current;
@@ -231,16 +281,28 @@ export function PlayerProvider({ children }) {
   }
 
   function onEnded() {
-    setPlaying(false);
     saveProgress(true);
-    if (index >= 0 && index + 1 < queue.length) goTo(index + 1);
+    // 单曲循环：直接重播当前这首（不换曲目，也就不会重新解析音源）
+    if (repeat === 'one') {
+      const el = audioRef.current;
+      if (el) { el.currentTime = 0; el.play().catch(() => setPlaying(false)); }
+      return;
+    }
+    const target = stepIndex(order, index, 1, repeat);
+    if (target < 0) { setPlaying(false); return; }   // 顺序播放走到头：停下
+    goTo(target);
   }
 
   const value = {
     audioRef, music, track: t, queue, index, playing, position, duration,
     loading, error, notice, volume, activeSrc,
-    hasPrev: index > 0, hasNext: index >= 0 && index + 1 < queue.length,
-    playQueue, playOne, toggle, next, prev, seek, setVolume, stop, flash
+    // 顺序播放（repeat='off'）走到头时没有下一首，按钮要置灰；
+    // 列表循环 / 单曲循环则始终可点。
+    hasPrev: index >= 0 && (repeat !== 'off' || stepIndex(order, index, -1, repeat) >= 0),
+    hasNext: index >= 0 && (repeat !== 'off' || stepIndex(order, index, 1, repeat) >= 0),
+    shuffle, repeat, order,
+    playQueue, playOne, toggle, next, prev, seek, setVolume, stop, flash,
+    toggleShuffle, cycleRepeat
   };
 
   return (

@@ -16,6 +16,7 @@ import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { PointerGlow } from './components/PointerGlow.jsx';
 import { ClickFx } from './components/ClickFx.jsx';
 import { LiquidMetal } from './components/LiquidMetal.jsx';
+import { RouteProgress } from './components/RouteProgress.jsx';
 import { Home } from './routes/Home.jsx';
 import {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
@@ -23,7 +24,7 @@ import {
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline, Moments, Books, Changelog
+  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback
 } from './routes/routes.js';
 
 // 真正的 404：未匹配任何路由时显示，而不是静默回落到首页
@@ -84,6 +85,10 @@ function RouterView() {
       <ProtectedRoute guest path="/favorites"><Favorites /></ProtectedRoute>
       {/* 更新日志（2026-10-11 用户要求）：公开只读，记录每一轮加了什么功能 */}
       <ProtectedRoute guest path="/changelog"><Changelog /></ProtectedRoute>
+      {/* 共创（2026-10-12）：公开只读介绍 + 访客可提交的反馈表单 */}
+      <ProtectedRoute guest path="/coop"><Coop /></ProtectedRoute>
+      {/* 共创反馈管理：仅站长（不带 guest，未登录会被重定向到登录页） */}
+      <ProtectedRoute path="/admin/feedback"><AdminFeedback /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>
       <NotFound default />
@@ -110,6 +115,8 @@ export function App() {
             <PointerGlow />
             <ClickFx />
             <LiquidMetal />
+            {/* 页面加载进度条：贴在视口顶端，只在真的等的时候出现（详见组件注释） */}
+            <RouteProgress />
             <Layout>
               <Shell />
             </Layout>

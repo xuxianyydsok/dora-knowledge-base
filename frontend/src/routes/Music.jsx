@@ -23,6 +23,7 @@ import { MusicHome } from '../components/MusicHome.jsx';
 import { SearchHistory } from '../components/SearchHistory.jsx';
 import { pushHistory } from '../lib/searchHistory.js';
 import { hdCover, candidateToTrack } from '../lib/cover.js';
+import { dedupeMusicList } from '../lib/musicIdentity.js';
 import '../styles/now-settings.css';
 
 // 推荐搜索：给没有明确目标的场景一个起点
@@ -63,7 +64,8 @@ const QUALITY_FILTERS = [
 const GROUPS = [
   { key: 'recent', label: '最近添加' },
   { key: 'artist', label: '按歌手' },
-  { key: 'album', label: '按专辑' }
+  { key: 'album', label: '按专辑' },
+  { key: 'history', label: '播放历史' }
 ];
 
 function fmtDuration(sec) {
@@ -194,6 +196,8 @@ export function Music() {
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [group, setGroup] = useState('recent');
+  const [history, setHistory] = useState([]);        // 播放历史（按上次收听时间倒序）
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [quality, setQuality] = useState('all');
   const [pf, setPf] = useState('all');               // 搜索结果的音源筛选
   const [histKey, setHistKey] = useState(0);          // 搜索历史刷新信号
@@ -203,12 +207,26 @@ export function Music() {
     setLoading(true); setLoadError('');
     try {
       const list = await api.listMusic();
-      setItems(list || []);
-      return list || [];
+      // 同一首歌被重复收藏（历史脏数据）时列表层再兜一道去重
+      const clean = dedupeMusicList(list || []);
+      setItems(clean);
+      return clean;
     } catch (e) { setLoadError(e.message); return []; }
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
+
+  // 播放历史：只在切到「播放历史」分组时拉一次（访客没有个人进度，直接空态）
+  useEffect(() => {
+    if (group !== 'history' || !isAuthenticated) { setHistory([]); return; }
+    let active = true;
+    setHistoryLoading(true);
+    api.listMusicHistory(30)
+      .then((list) => { if (active) setHistory(list || []); })
+      .catch(() => { if (active) setHistory([]); })
+      .finally(() => { if (active) setHistoryLoading(false); });
+    return () => { active = false; };
+  }, [group, isAuthenticated, histKey]);
 
   async function runSearch(kw) {
     const q = (kw ?? query).trim();
@@ -291,7 +309,18 @@ export function Music() {
         file_size: candidate.file_size
       });
       const list = await load();
-      if (play && created?.id) {
+      // 后端命中「已经在库里」时返回已有条目并带 duplicate 标记（不再新建一条）。
+      // 此时如实提示，并把队列指到已有那条，而不是谎报「已加入」。
+      if (created?.duplicate) {
+        if (play && created?.id) {
+          const merged = [...(list || [])];
+          const idx = merged.findIndex((m) => m.id === created.id);
+          await playQueue(merged, idx >= 0 ? idx : 0);
+          route(`/music/${created.id}/play`);
+        } else {
+          toastInfo(`《${created.title || candidate.title}》已经在音乐库里了`);
+        }
+      } else if (play && created?.id) {
         const merged = [...(list || [])];
         const idx = merged.findIndex((m) => m.id === created.id);
         await playQueue(merged, idx >= 0 ? idx : 0);
@@ -319,8 +348,18 @@ export function Music() {
     [items, quality]
   );
 
+  // 播放历史是另一个数据源（user_progress），音质筛选要在它自己身上再算一遍
+  const historyFiltered = useMemo(
+    () => (quality === 'all' ? history : history.filter((m) => qualityOf(m.track || {}) === quality)),
+    [history, quality]
+  );
+  // 当前分组下「播放本组 / 全部播放 / 随机」该用的那批曲目
+  const visibleItems = group === 'history' ? historyFiltered : filtered;
+
   const shelves = useMemo(() => {
     if (group === 'recent') return [{ key: 'recent', title: '最近添加', items: filtered.slice(0, 60) }];
+    // 播放历史：条目自带 progress，按上次收听时间倒序（后端已排好），不再按歌手 / 专辑分桶。
+    if (group === 'history') return [{ key: 'history', title: '播放历史', items: historyFiltered }];
     const keyOf = (m) => {
       const t = m.track || {};
       const v = group === 'artist' ? (t.artist || '未知歌手') : (t.album || '未知专辑');
@@ -336,7 +375,7 @@ export function Music() {
       .sort((a, b) => b[1].length - a[1].length)
       .slice(0, 24)
       .map(([k, v]) => ({ key: k, title: k, items: v }));
-  }, [filtered, group]);
+  }, [filtered, group, historyFiltered]);
 
   // —— 搜索结果的音源筛选 ——
   const platforms = useMemo(() => {
@@ -399,25 +438,28 @@ export function Music() {
 
       {/* —— 常驻工具条：搜索 + 分组/音质 —— */}
       <div class="toolbar sticky">
-        <form class="toolbar-field" onSubmit={(e) => { e.preventDefault(); runSearch(); }}>
-          <Icon name="search" size={15} />
-          <input
-            placeholder="搜索歌曲、歌手或专辑"
-            value={query}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-          />
-          {query && (
-            <button type="button" class="field-clear" title="清空" onClick={() => setQuery('')}>
-              <Icon name="close" size={12} />
+        {/* 搜索框 + 它正下方的搜索历史（同影视页：包成一栏，历史才贴在搜索框下面） */}
+        <div class="toolbar-search">
+          <form class="toolbar-field" onSubmit={(e) => { e.preventDefault(); runSearch(); }}>
+            <Icon name="search" size={15} />
+            <input
+              placeholder="搜索歌曲、歌手或专辑"
+              value={query}
+              onInput={(e) => setQuery(e.currentTarget.value)}
+            />
+            {query && (
+              <button type="button" class="field-clear" title="清空" onClick={() => setQuery('')}>
+                <Icon name="close" size={12} />
+              </button>
+            )}
+            <button class="primary" type="submit" disabled={searching}>
+              {searching ? '搜索中…' : '搜索'}
             </button>
-          )}
-          <button class="primary" type="submit" disabled={searching}>
-            {searching ? '搜索中…' : '搜索'}
-          </button>
-        </form>
+          </form>
 
-        {/* 搜索历史：每条右侧 × 单独删，另有「一键清空」（用户要求） */}
-        <SearchHistory scope="music" refreshKey={histKey} onPick={runSearch} hidden={mode === 'queue'} />
+          {/* 搜索历史：每条右侧 × 单独删，另有「一键清空」（用户要求） */}
+          <SearchHistory scope="music" refreshKey={histKey} onPick={runSearch} hidden={mode === 'queue'} />
+        </div>
 
         {mode === 'library' && (
           <>
@@ -445,10 +487,10 @@ export function Music() {
 
         <span class="spacer" />
 
-        {mode === 'library' && filtered.length > 1 && (
+        {mode === 'library' && visibleItems.length > 1 && (
           <>
-            <button onClick={() => playQueue(filtered, 0)}><Icon name="play" size={14} /> 全部播放</button>
-            <button onClick={() => playQueue([...filtered].sort(() => Math.random() - 0.5), 0)}>
+            <button onClick={() => playQueue(visibleItems, 0)}><Icon name="play" size={14} /> 全部播放</button>
+            <button onClick={() => playQueue([...visibleItems].sort(() => Math.random() - 0.5), 0)}>
               <Icon name="shuffle" size={14} /> 随机
             </button>
           </>
@@ -485,13 +527,36 @@ export function Music() {
       {mode === 'library' && (
         loadError ? <ErrorState title="音乐库加载失败" message={loadError} onRetry={load} />
           : loading ? <LoadingState shape="album" count={12} />
-            : items.length === 0 ? (
+            : group === 'history' && !isAuthenticated ? (
+              <EmptyState
+                icon="clock"
+                title="登录后才能看到播放历史"
+                hint="播放历史记录的是你自己的收听进度，登录后这里会按最近收听时间列出听过的歌。"
+              />
+            ) : group === 'history' && historyLoading ? (
+              <LoadingState shape="album" count={8} />
+            ) : group === 'history' && visibleItems.length === 0 ? (
+              <EmptyState
+                icon="clock"
+                title={history.length === 0 ? '还没有播放历史' : '没有符合当前音质筛选的曲目'}
+                hint={history.length === 0
+                  ? '随便听一首歌，进度会自动记下来，这里就会按最近收听时间排出来。'
+                  : '换一个音质条件，或把筛选切回「全部音质」。'}
+                action={history.length === 0 ? (
+                  <button class="primary empty-action" onClick={() => setGroup('recent')}>
+                    <Icon name="music" size={14} /> 去音乐库看看
+                  </button>
+                ) : (
+                  <button class="primary empty-action" onClick={() => setQuality('all')}>显示全部音质</button>
+                )}
+              />
+            ) : group !== 'history' && items.length === 0 ? (
               <EmptyState
                 icon="music"
                 title="音乐库还是空的"
                 hint="在上方搜索歌曲或歌手，点一下就能收藏并播放；也可以直接点下面的推荐词。"
               />
-            ) : filtered.length === 0 ? (
+            ) : group !== 'history' && filtered.length === 0 ? (
               <EmptyState
                 icon="sliders"
                 title="没有符合当前音质筛选的曲目"
@@ -506,8 +571,13 @@ export function Music() {
                   <h2><span class="bar" />{shelf.title}</h2>
                   <span class="count">{shelf.items.length} 首</span>
                   <span class="spacer" />
-                  <button onClick={() => playQueue(shelf.items, 0)}><Icon name="play" size={13} /> 播放本组</button>
+                  {shelf.items.length > 0 && (
+                    <button onClick={() => playQueue(shelf.items, 0)}><Icon name="play" size={13} /> 播放本组</button>
+                  )}
                 </div>
+                {group === 'history' && (
+                  <p class="shelf-note">按最近收听时间排序，点一首就从上次听到的位置接着播。</p>
+                )}
                 <div class="album-grid">
                   {shelf.items.map((m) => (
                     <AlbumCard

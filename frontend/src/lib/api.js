@@ -7,7 +7,32 @@ async function authHeader() {
   if (!supabase) return {};
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;
+  setAuthToken(token);
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// ---------------------------------------------------------------
+// 媒体直链的令牌（2026-10-12）
+//
+// 背景：`<video src>` / `<iframe src>` 这类元素**没法带 Authorization 请求头**，
+// 浏览器只发裸 GET。私人视频 / 私人 PDF 因此一直读不到（站长反馈「图展的动态壁纸
+// 无法在线预览」的根因）。后端为此额外接受 `?token=<JWT>`（仅 GET 生效），
+// 这里负责把当前会话令牌拼到媒体地址上。
+//
+// 令牌缓存在模块变量里：authHeader() 每次取会话时顺带刷新，AuthProvider 也会主动
+// 推一次，所以登录 / 登出 / 刷新令牌后立刻生效。
+// ---------------------------------------------------------------
+let cachedToken = null;
+
+export function setAuthToken(token) {
+  cachedToken = token || null;
+}
+
+// 给媒体地址拼上当前令牌；没有令牌（访客）就原样返回，公开内容照常可读。
+export function withMediaToken(url) {
+  if (!url || !cachedToken) return url;
+  const sep = String(url).includes('?') ? '&' : '?';
+  return `${url}${sep}token=${encodeURIComponent(cachedToken)}`;
 }
 
 export class ApiError extends Error {
@@ -19,8 +44,9 @@ export class ApiError extends Error {
   }
 }
 
-// 访客模式下允许的只读 POST 检索接口（与后端 PUBLIC_POST 保持一致）
-const GUEST_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream']);
+// 访客模式下允许的 POST 接口（与后端 PUBLIC_POST_PATHS 保持一致）。
+// 前 5 条是只读检索；/api/feedback 是**访客可写**的共创反馈（公开留言表单）。
+const GUEST_POST = new Set(['/api/movies/search', '/api/movies/source-detail', '/api/music/search', '/api/music/lyrics', '/api/music/stream', '/api/feedback']);
 
 // ---------------------------------------------------------------
 // 读缓存 / 并发去重（2026-10-11 提速）
@@ -293,7 +319,7 @@ export async function uploadFile(file, { onProgress } = {}) {
   });
 }
 
-// 电子书上传（PDF / EPUB / MOBI / AZW3）：**不用 FormData**，直接把 File 当请求体发。
+// 电子书上传（只支持 EPUB / PDF）：**不用 FormData**，直接把 File 当请求体发。
 // 原因：电子书可以很大，multipart 在 Worker 侧要整体读进内存（上限 128MB）会爆；
 // 后端 /api/books 收的是原始字节流，文件名走 X-Book-Name 头（encodeURIComponent 编码）。
 // 进度条仍然可用：XHR 的 upload.onprogress 对原始 body 一样生效。
@@ -414,6 +440,56 @@ export async function uploadBook(file, { onProgress } = {}) {
   return uploadBookDirect(file, { onProgress, auth });
 }
 
+// 动态壁纸（视频）上传：与图书同款「原始请求体直传」，但**不分片**。
+// 视频上限 100MB（平台护栏，见后端 videoType.js），一次性直传即可，不做分片合并。
+// 文件名走 X-Wallpaper-Name 自定义头（后端已加进 CORS 预检的允许头）。
+export const WALLPAPER_MAX_BYTES = 100 * 1024 * 1024;   // 必须与后端 MAX_VIDEO_BYTES 一致
+
+function uploadWallpaperDirect(file, { onProgress, auth }) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}/api/wallpapers`);
+    xhr.timeout = 600000;   // 100MB 视频在慢网络下确实要很久，给足 10 分钟
+    xhr.setRequestHeader('Authorization', auth.Authorization);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('X-Wallpaper-Name', encodeURIComponent(file.name || 'wallpaper'));
+
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+
+    xhr.onload = () => {
+      let payload = null;
+      if (xhr.responseText) {
+        try {
+          payload = JSON.parse(xhr.responseText);
+        } catch {
+          reject(new ApiError(xhr.status, `服务返回了无法识别的响应 (${xhr.status})`, 'invalid_response'));
+          return;
+        }
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(payload?.data);
+      else reject(new ApiError(xhr.status, payload?.error || `上传失败 (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new ApiError(0, '网络连接失败，请检查网络后重试', 'network_error'));
+    xhr.ontimeout = () => reject(new ApiError(0, '上传超时（10 分钟）', 'timeout'));
+    xhr.onabort = () => reject(new ApiError(0, '上传已取消', 'aborted'));
+
+    xhr.send(file);
+  });
+}
+
+export async function uploadWallpaper(file, { onProgress } = {}) {
+  const auth = await authHeader();
+  if (!auth.Authorization) {
+    throw new ApiError(401, '上传动态壁纸需要站长登录');
+  }
+  if (file.size > WALLPAPER_MAX_BYTES) {
+    throw new ApiError(413, `视频过大，单个上限 ${Math.round(WALLPAPER_MAX_BYTES / 1024 / 1024)}MB`);
+  }
+  return uploadWallpaperDirect(file, { onProgress, auth });
+}
+
 export const api = {
   // 分类
   listCategories: (params = '') => request(`/api/categories${params}`),
@@ -525,11 +601,13 @@ export const api = {
   },
 
   // 正文 / 封面是公开 GET（私人书需登录本人），直接给 <img src> / <iframe src> / fetch 用
-  bookFileUrl: (id) => `${API_BASE_URL}/api/books/${id}/file`,
-  bookCoverUrl: (id) => `${API_BASE_URL}/api/books/${id}/cover`,
+  // 私人书 / 私人视频必须带上会话令牌 —— <iframe> 与 <video> 发不出 Authorization 头，
+  // 所以走 withMediaToken() 拼查询串（后端仅对 GET 认这个参数）。
+  bookFileUrl: (id) => withMediaToken(`${API_BASE_URL}/api/books/${id}/file`),
+  bookCoverUrl: (id) => withMediaToken(`${API_BASE_URL}/api/books/${id}/cover`),
   // 下载链接：?download=1 让后端发 Content-Disposition: attachment。
   // 跨域时 <a download> 会被浏览器忽略，下载必须靠后端这个参数。
-  bookDownloadUrl: (id) => `${API_BASE_URL}/api/books/${id}/file?download=1`,
+  bookDownloadUrl: (id) => withMediaToken(`${API_BASE_URL}/api/books/${id}/file?download=1`),
   // 取正文字节（EPUB 阅读器用）：带 Authorization，私人书也能在登录后读
   fetchBookFile: (id) => requestBinary(`/api/books/${id}/file`, { timeout: 120000 }),
 
@@ -539,11 +617,25 @@ export const api = {
   updateGalleryItem: (id, body) => request(`/api/gallery/${id}`, { method: 'PATCH', body }),
   deleteGalleryItem: (id) => request(`/api/gallery/${id}`, { method: 'DELETE' }),
 
+  // 动态壁纸（R2，图展的「动态壁纸」区）：与静态图片分开存（R2 前缀 wallpapers/）。
+  // 列出对访客只返回 is_public=true；视频按 id 公开可读（支持 Range，供 <video> 播放）。
+  listWallpapers: (params = '') => request(`/api/wallpapers${params}`),
+  getWallpaper: (id) => request(`/api/wallpapers/${id}`),
+  updateWallpaper: (id, body) => request(`/api/wallpapers/${id}`, { method: 'PATCH', body }),
+  deleteWallpaper: (id) => request(`/api/wallpapers/${id}`, { method: 'DELETE' }),
+  wallpaperFileUrl: (id) => withMediaToken(`${API_BASE_URL}/api/wallpapers/${id}/file`),
+
   // 碎念（朋友圈式短动态）
   listMoments: (params = '') => request(`/api/moments${params}`),
   createMoment: (body) => request('/api/moments', { method: 'POST', body }),
   updateMoment: (id, body) => request(`/api/moments/${id}`, { method: 'PATCH', body }),
   deleteMoment: (id) => request(`/api/moments/${id}`, { method: 'DELETE' }),
+
+  // 共创反馈：提交对所有人开放（含访客），查看 / 管理仅站长
+  submitFeedback: (body) => request('/api/feedback', { method: 'POST', body }),
+  listFeedback: (params = '') => request(`/api/feedback${params}`),
+  updateFeedback: (id, body) => request(`/api/feedback/${id}`, { method: 'PATCH', body }),
+  deleteFeedback: (id) => request(`/api/feedback/${id}`, { method: 'DELETE' }),
 
   // 音乐库
   listMusic: (params = '') => request(`/api/music${params}`),
@@ -557,6 +649,8 @@ export const api = {
   deleteMusic: (id) => request(`/api/music/${id}`, { method: 'DELETE' }),
   getMusicProgress: (id) => request(`/api/music/${id}/progress`),
   saveMusicProgress: (id, body) => request(`/api/music/${id}/progress`, { method: 'PUT', body }),
+  // 播放历史（按上次收听时间倒序，含进度；用于音乐库「播放历史」分组）
+  listMusicHistory: (limit = 30) => request(`/api/music/history?limit=${limit}`),
 
   // 影视库
   listMovies: (params = '') => request(`/api/movies${params}`),

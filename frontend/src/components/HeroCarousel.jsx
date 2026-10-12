@@ -7,9 +7,8 @@
 //      交叉淡出才看得到；其余 15 张完全不进 DOM，不白白占内存和流量。
 //   3) 每张图缓慢推近（Ken Burns），配合 1.2s 交叉淡入，观感是「镜头在动」而不是「PPT 翻页」。
 //   4) 尊重 prefers-reduced-motion：关掉推近与自动播放，只保留手动切换。
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon.jsx';
-import { charGradients, TITLE_GRADIENT } from '../lib/brandGradient.js';
 
 // 站长本地「图片1」文件夹里的 50 张壁纸，挑出 18 张最有冲击力的做开场。
 // label 用中文，是画面右下角的图注（用户不喜欢纯装饰的洋文标签）。
@@ -37,17 +36,13 @@ export const HERO_SLIDES = [
 const INTERVAL = 7000;   // 每张停留 7 秒
 const WINDOW = 1;        // 当前索引前后各保留 1 张在 DOM 里
 
-// 主标题两行（2026-10-12 用户要求改回上一版文案）：
-// 站名 Dora / Studio 已经挪到首页「此刻」区的品牌铁屑卡片上（见 HomeNow.jsx），
-// 这里回到之前那版「把散落的知识 / 收进一张星图」。
-// 逐字错峰升起沿用《余白 · 博客首页》模板的写法（每字一个 span，translateY(112%)
-// rotate(7deg) 起步，按 --d 错峰归位；hover 时单字上浮）。
-// ⚠ 渐变为什么逐字切片、而不是在 h1 上用一次 background-clip:text：
-//   每个字都要做 transform 动画（错峰升起），而 transform 会让这个字自成一层
-//   合成层；父元素的 background-clip:text 裁不到别的合成层里的字形，整行会直接
-//   变透明看不见。所以改成「按字在标题里的位置，算出它该分到的那一小段渐变」，
-//   拼起来仍是一条连续的渐变，且与 transform 动画互不干扰。
-const TITLE_LINES = ['把散落的知识', '收进一张星图'];
+// 2026-10-12 本轮改动（用户要求）：
+//   · 巨型标题「把散落的碎片 / 收进一张星图」**移出首屏**，改到首屏下方
+//     （见 LandingParts.jsx 的 TitleBand）——首屏只留大图、图注与两个按钮；
+//   · 删掉「个人知识库」那行 kicker；
+//   · 删掉首屏右上角的时钟与印章两个悬浮小组件（时钟移进 TitleBand）。
+// 这样首屏就是一张干净的大图，标题落在它正下方，视线顺序变成
+// 「先看到画面 → 再读到那句话 → 再往下读写在前面」。
 
 function usePrefersReducedMotion() {
   const [reduce, setReduce] = useState(false);
@@ -64,49 +59,12 @@ function usePrefersReducedMotion() {
 
 export function HeroCarousel() {
   const n = HERO_SLIDES.length;
-  // 渐变按字切片只算一次（两行共 10 个字），不随轮播重算
-  const gradients = useMemo(() => charGradients(TITLE_LINES, TITLE_GRADIENT), []);
   const [cur, setCur] = useState(0);
   const [paused, setPaused] = useState(false);
   const reduce = usePrefersReducedMotion();
   const timer = useRef(null);
-  const widgetRef = useRef(null);
-
-  // 悬浮小组件的实时时钟（每秒走一格，只有指针在动，代价极低）
-  useEffect(() => {
-    const el = widgetRef.current;
-    if (!el) return undefined;
-    const hh = el.querySelector('.ld-clk-hh');
-    const mh = el.querySelector('.ld-clk-mh');
-    const sh = el.querySelector('.ld-clk-sh');
-    const label = el.querySelector('.ld-hw-time');
-    if (!hh || !mh || !sh || !label) return undefined;
-    let raf = 0;
-    const tick = () => {
-      const d = new Date();
-      const s = d.getSeconds();
-      const m = d.getMinutes() + s / 60;
-      const h = (d.getHours() % 12) + m / 60;
-      // 12 小时制：每格 30°，以 (60,60) 为轴
-      hh.setAttribute('transform', `rotate(${h * 30} 60 60)`);
-      mh.setAttribute('transform', `rotate(${m * 6} 60 60)`);
-      sh.setAttribute('transform', `rotate(${s * 6} 60 60)`);
-      label.textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      raf = setTimeout(tick, 1000);
-    };
-    tick();
-    return () => clearTimeout(raf);
-  }, []);
 
   const go = (i) => setCur(((i % n) + n) % n);
-
-  // 逐字入场：进场 0.35s 后开始，每字 60ms 错峰（第二行整体晚 0.3s，和模板一致）。
-  // 只跑一次；reduced-motion 时用 CSS 直接给终态（见 home-landing.css）。
-  const [titled, setTitled] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setTitled(true), 350);
-    return () => clearTimeout(t);
-  }, []);
 
   // 自动播放：鼠标悬停 / 键盘聚焦 / 页面切到后台时暂停。
   useEffect(() => {
@@ -155,56 +113,12 @@ export function HeroCarousel() {
       </div>
 
       <div class="ld-hero-body">
-        <p class="ld-hero-kicker">个人知识库</p>
-        <h1 class={`ld-hero-title${titled ? ' is-in' : ''}`}>
-          {TITLE_LINES.map((line, li) => (
-            <span class="ld-hero-line" key={line}>
-              {[...line].map((ch, ci) => {
-                // 该字在整条渐变里的位置（0-based，跨两行连续）
-                const idx = li === 0 ? ci : TITLE_LINES[0].length + ci;
-                return (
-                  <span
-                    class="ld-hero-ch"
-                    style={{ '--d': `${li * 0.3 + ci * 0.06}s`, '--ld-grad': gradients[idx] }}
-                    key={`${li}-${ci}`}
-                  >{ch}</span>
-                );
-              })}
-            </span>
-          ))}
-          <span class="ld-hero-hl" aria-hidden="true" />
-        </h1>
         <p class="ld-hero-sub">
           博客 · GitHub 收藏 · 图展 · 音乐 · 影视 —— 一个可以慢慢逛的个人知识库。
         </p>
         <div class="ld-hero-actions">
           <a class="ld-hero-btn" href="/news">开始浏览</a>
           <a class="ld-hero-btn ghost" href="/graph/blog">打开图谱</a>
-        </div>
-      </div>
-
-      {/* 悬浮小组件（2026-10-11 新增，参考站长给的 blog-home-v2 模板）：
-          实时时钟 + 一枚可点的印章。窄屏（≤1040px）自动隐藏，避免压住主文案。 */}
-      <div class="ld-hero-widgets" ref={widgetRef} aria-hidden="true">
-        <div class="ld-hw ld-hw-clock" style="--d:12;--rot:-3deg">
-          <svg class="ld-clk" viewBox="0 0 120 120">
-            <circle class="ld-clk-face" cx="60" cy="60" r="57" />
-            <line class="ld-clk-hh" x1="60" y1="60" x2="60" y2="34" />
-            <line class="ld-clk-mh" x1="60" y1="60" x2="60" y2="20" />
-            <line class="ld-clk-sh" x1="60" y1="68" x2="60" y2="14" />
-            <circle class="ld-clk-pin" cx="60" cy="60" r="3.2" />
-          </svg>
-          <p class="ld-hw-cap"><b class="ld-hw-time">--:--</b> 此刻</p>
-        </div>
-        <div class="ld-hw ld-hw-seal" style="--d:34;--rot:-8deg">
-          <svg viewBox="0 0 80 80">
-            <rect x="4" y="4" width="72" height="72" rx="7" fill="var(--seal)" />
-            <rect x="9" y="9" width="62" height="62" rx="4" fill="none" stroke="#f5e9df" stroke-width="1.6" opacity=".7" />
-            <g fill="#f5e9df" font-family="'Newsreader', serif" font-weight="700" font-size="27" text-anchor="middle">
-              <text x="53" y="38">朵</text><text x="53" y="66">记</text>
-              <text x="26" y="38">慢</text><text x="26" y="66">写</text>
-            </g>
-          </svg>
         </div>
       </div>
 

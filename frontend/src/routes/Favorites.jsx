@@ -9,6 +9,13 @@
 //   ② 新增「站长收藏」分区：站长收藏的音乐 / 影视对所有访客可见可播，标「站长」角标、
 //      没有「移除」按钮（只能由站长本人管理）。它同样按音乐 / 影视分开。
 //
+// 2026-10-12 三次改版（用户要求）：
+//   **站长本人登录后不再重复渲染「站长收藏」分区** —— 那个分区的内容就是站长自己的
+//   收藏，站长看到「个人收藏 + 站长收藏」两份重复内容没有意义。现在：
+//     · 访客 / 普通用户 → 看到「站长收藏」分区（他们的个人收藏通常是空的）；
+//     · 站长本人       → 只看到自己那一份收藏（可移除），不再出现「站长收藏」。
+//   判据用 useAuth().isAdmin，与全站其它管理入口保持同一套鉴权口径。
+//
 // 数据来源：GET /api/favorites（个人数据，访客 403）+ GET /api/favorites/public（公开）。
 // 收藏按钮在音乐 / 影视详情页（components/FavoriteButton.jsx），点卡片进对应详情页。
 import { useEffect, useMemo, useState } from 'preact/hooks';
@@ -18,6 +25,7 @@ import { Icon } from '../components/Icon.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState, LoadingState, ErrorState } from '../components/StateView.jsx';
 import { toastError, toastSuccess } from '../lib/toast.jsx';
+import { useAuth } from '../lib/auth.jsx';
 import '../styles/now-settings.css';
 
 // 音乐 / 影视（含剧集）是收藏页的主角；其余类型归入「其它」
@@ -48,6 +56,7 @@ function coverRatio(kind) {
 }
 
 export function Favorites() {
+  const { isAdmin } = useAuth();
   const [items, setItems] = useState([]);
   // 站长收藏（公开只读）：未登录也能看到，点击即可听 / 看
   const [adminItems, setAdminItems] = useState([]);
@@ -179,9 +188,10 @@ export function Favorites() {
       });
   }
 
-  // 「站长收藏」分区：所有访客都能看到，标「站长收藏」，没有移除按钮。
-  // 它同样按 音乐 / 影视 分开（用户要求），因此内部再调一次 renderSections。
-  const adminSection = adminItems.length ? (
+  // 「站长收藏」分区：给**访客与普通用户**看（他们的个人收藏通常是空的）。
+  // 站长本人登录后不渲染 —— 这里的内容就是站长自己的收藏，再显示一遍是重复的
+  // （2026-10-12 用户要求：站长登录后收藏页只保留一份）。
+  const adminSection = !isAdmin && adminItems.length ? (
     <section class="fav-admin">
       <div class="fav-admin-head">
         <span class="fav-admin-badge"><Icon name="crown" size={13} />站长收藏</span>

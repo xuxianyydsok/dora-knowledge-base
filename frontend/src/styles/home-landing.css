@@ -119,6 +119,136 @@
   color: rgba(255, 255, 255, 0.78);
 }
 
+/* =============================================================
+   首屏标题带（2026-10-12 新增）
+   -------------------------------------------------------------
+   用户要求：巨型标题从首屏大图上挪到它**正下方**、「写在前面」之上，
+   文案改成「把散落的碎片 / 收进一张星图」，呈现方式参照
+   《blog-home-v2》首屏：巨型衬线字 + 逐字错峰升起 + 一条手绘下划线。
+   实时时钟也一并搬到这里（原先压在首屏图右上角，用户要求保留但换位置）。
+   ============================================================= */
+.tb {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: clamp(20px, 4vw, 56px);
+  /* 负边距把标题带顶到首屏大图下沿，视觉上两者是「一张图 + 一行字」的整体 */
+  margin: clamp(26px, 4.4vw, 56px) 0 clamp(30px, 5vw, 72px);
+}
+
+.tb-title {
+  position: relative;
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  /* 一行 6 个字，字号跟着视口走；上限收在 118px，宽屏不会顶到右侧时钟 */
+  font-size: clamp(40px, 8.6vw, 118px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  color: var(--ld-ed-ink);
+}
+
+.tb-line {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  /* 行盒加高再负边距还回去：汉字墨迹比 line-height 高，否则顶部笔画被裁
+     （与 .ld-hero-line 同一处坑，详见那边的注释）。 */
+  line-height: 1.08;
+  padding: 0.14em 0;
+  margin: -0.14em 0;
+}
+
+.tb-ch {
+  display: inline-block;
+  /* 渐变字：背景裁进字形，文字本身透明（--ld-grad 由 TitleBand 逐字传入）。
+     ⚠ 必须逐字切片，不能改成父元素统一 background-clip:text —— 详见
+     lib/brandGradient.js 顶部注释（transform 会让字自成合成层，父层裁不到）。 */
+  background-image: var(--ld-grad, linear-gradient(135deg, #3de6ff, #8b5cff, #ff5fd2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  transform-origin: 0 100%;
+  transform: translateY(115%) rotate(8deg);
+  transition: transform 1.5s var(--ease-out) var(--d, 0s);
+  will-change: transform;
+}
+.tb-title.is-in .tb-ch { transform: none; }
+/* 悬停单字：轻轻抬起并提亮（渐变字不能改 color，只能动 filter） */
+.tb-title.is-in .tb-ch:hover {
+  transform: translateY(-8px);
+  transition-delay: 0s;
+  transition-duration: 0.4s;
+  filter: brightness(1.18) saturate(1.1);
+}
+
+/* 手绘下划线：pathLength=1，靠 dashoffset 从 1 走到 0 划出来 */
+.tb-scribble {
+  position: absolute;
+  left: 0.02em;
+  bottom: -0.02em;
+  width: min(58%, 640px);
+  height: 0.2em;
+  overflow: visible;
+  pointer-events: none;
+}
+.tb-scribble path {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 1.8s var(--ease-out) 1.2s;
+}
+.tb-title.is-in .tb-scribble path { stroke-dashoffset: 0; }
+
+/* 右侧实时时钟：与标题带同底对齐，窄屏隐藏（空间不够） */
+.tb-side { display: flex; align-items: flex-end; }
+.tb-clock {
+  width: clamp(84px, 8vw, 116px);
+  padding: 10px;
+  border-radius: 20px;
+  border: 1px solid var(--ld-hair-strong);
+  background: color-mix(in srgb, var(--bg-elevated) 62%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+}
+.tb-clk { width: 100%; display: block; overflow: visible; }
+.tb-clk-face { fill: none; stroke: var(--ld-hair-strong); stroke-width: 1; }
+.tb-clk-hh,
+.tb-clk-mh { stroke: var(--ld-ink); stroke-linecap: round; }
+.tb-clk-hh { stroke-width: 3.2; }
+.tb-clk-mh { stroke-width: 2.2; }
+.tb-clk-sh { stroke: var(--primary); stroke-width: 1.3; stroke-linecap: round; }
+.tb-clk-pin { fill: var(--primary); }
+.tb-cap {
+  margin: 4px 0 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ld-ed-soft);
+}
+.tb-cap b {
+  display: block;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 17px;
+  color: var(--ld-ed-ink);
+}
+
+@media (max-width: 820px) {
+  .tb { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .tb-side { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-ch { transform: none; transition: none; }
+  .tb-scribble path { stroke-dashoffset: 0; transition: none; }
+}
+
 .ld-hero-title {
   margin: 0;
   font-family: var(--font-display);
@@ -268,10 +398,15 @@
 .ld-hero-dots { display: flex; align-items: center; gap: 7px; }
 
 .ld-hero-dot {
+  /* 可见的「进度条」只有 3px 高，但可点区域必须够大 ——
+     用透明边框把命中区撑到 44×22（移动端推荐的最小点击尺寸）。
+     光看外观还是原来那条细线，手指却点得中（2026-10-12 移动端适配）。 */
+  box-sizing: content-box;
+  border: 10px solid transparent;
+  background-clip: padding-box;
   width: 22px;
   height: 3px;
   padding: 0;
-  border: none;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.32);
   cursor: pointer;
@@ -343,8 +478,21 @@
   .ld-hero { height: clamp(320px, 56vh, 440px); }
   .ld-hero-actions { margin-top: var(--sp-6); }
   .ld-hero-btn { height: 42px; padding: 0 20px; }
-  .ld-hero-dot { width: 16px; }
-  .ld-hero-dot.on { width: 32px; }
+  /* 手机端：18 张图的进度点横排要 750px 宽，必然溢出（实测右侧越界 53px）。
+     这里直接**收起进度点**，只留「上一张 / 03 / 18 / 下一张」——
+     信息不丢，但不再有横向溢出，也不会让箭头被挤出屏幕。
+     底部进度条那一行同时收窄左右内边距，给箭头留出位置。 */
+  .ld-hero-dots { display: none; }
+  .ld-hero-bar { left: 16px; right: 16px; gap: var(--sp-4); }
+  .ld-hero-nav { margin-left: auto; }
+}
+
+/* 触屏设备：轮播箭头与首屏按钮放大到手指点得中的尺寸（2026-10-12 移动端适配）。
+   ⚠ 必须写在 home-landing.css 里：本文件随 Home 路由异步加载，
+   排在 global.css 之后，写到 global.css 会被这里的基础规则覆盖（实测过）。 */
+@media (hover: none) and (pointer: coarse) {
+  .ld-hero-arrow { width: 44px; height: 44px; }
+  .ld-hero-btn { min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -483,7 +631,9 @@
 
 .ld-canvas {
   width: 100%;
-  max-width: 620px;
+  /* 2026-10-12：620 → 700。viewBox 放大到 760 后，画布也跟着放大一档，
+     否则环外标签的字号会被整体缩小，反而更看不清（用户要求「醒目」）。 */
+  max-width: 700px;
   aspect-ratio: 1 / 1;
 }
 
@@ -502,14 +652,30 @@
 .ld-rotor {
   /* 显式锁定变换原点为 viewBox 坐标下的圆心，避免各浏览器对 SVG transform-origin 解释不一致 */
   transform-box: view-box;
-  transform-origin: 340px 340px;
-  animation: ld-spin 120s linear infinite;
+  /* 圆心坐标 = viewBox 的一半（760/2）。viewBox 一改，这里必须同步，
+     否则环会绕着一个偏心的点转。 */
+  transform-origin: 380px 380px;
+  /* 2026-10-12 用户要求「变化快一些、虚实相间，给人印象深」：
+     转速从 120s/圈提到 42s/圈（约 2.9 倍），再叠一层 5.6s 的呼吸明暗，
+     环看起来是活的，而不是「像乌龟一样」几乎不动。
+     悬停聚焦某一环时（.ld-canvas[data-active]）停掉呼吸，只留旋转 ——
+     此时读者在看具体数据，闪烁只会干扰。 */
+  animation: ld-spin 42s linear infinite, ld-breathe 5.6s ease-in-out infinite;
 }
 
 @keyframes ld-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* 环的呼吸明暗：整组环与点按 5.6s 周期在「实 → 虚 → 实」之间往复。
+   只做 opacity，不触发重排；用户要求的「虚实相间」观感就来自这里。 */
+@keyframes ld-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.62; }
+}
+
+.ld-canvas[data-active] .ld-rotor { animation: ld-spin 42s linear infinite; }
 
 /* 每个环：一道极细的环线 + 内侧刻度，入场时按环依次淡入 */
 .ld-ring {
@@ -525,7 +691,8 @@
 .ld-ring-band {
   fill: none;
   stroke: color-mix(in srgb, var(--ld-tone, var(--ld-tone-default)) 22%, transparent);
-  stroke-width: 4.5;
+  /* 2026-10-12 用户要求「线条也可以再粗一些」：4.5 → 6.5 */
+  stroke-width: 6.5;
 }
 
 .ld-ring-hair {
@@ -537,7 +704,7 @@
 .ld-ring-ticks {
   fill: none;
   stroke: color-mix(in srgb, var(--ld-tone, var(--ld-tone-default)) 46%, transparent);
-  stroke-width: 0.9;
+  stroke-width: 1.2;
 }
 
 /* 环上的点 = 条目 */
@@ -614,16 +781,20 @@
 
 .ld-label-name {
   font-family: var(--font-display);
-  font-size: 17px;
+  /* 2026-10-12 用户要求「周围的那些数字要醒目一些，你的这个太小了看都看不清楚」：
+     模块名与数字都放大加粗，浅色主题下也一眼能读出来。 */
+  font-size: 20px;
   font-weight: 500;
   letter-spacing: -0.01em;
   fill: var(--ld-ink);
 }
 .ld-label-meta {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11.5px;
+  font-weight: 600;
   letter-spacing: 0.12em;
-  fill: var(--ld-ink-soft);
+  /* 数字用正文墨色（不是 muted），保证「一眼看得清」 */
+  fill: var(--ld-ink);
 }
 
 .ld-figure-cap {
@@ -1714,12 +1885,12 @@
 .ld-seal .ld-seal-ring text { font-size: 14.5px; font-weight: 500; }
 .ld-seal .ld-seal-char { font-size: 70px; font-weight: 700; fill: var(--ld-ed-ink); }
 
-/* 开场白（2026-10-11）：原来放「最近写的」文章列表的位置，现在放一段站点简介。
-   动效是逐行「模糊揭幕」——从虚到实，进入视口就触发一次，播完即锁死为清晰状态。
-   ⚠ 用户明确要求「动效可以模糊，但一定要显示清楚」：所以
-     ① 模糊只在入场那 0.9s 内存在，终态是 filter:none（不是低对比的半透明灰）；
-     ② 用 IntersectionObserver 触发而不是跟随滚动进度 —— 跟随滚动时用户快速滑过
-        会停在「半模糊」的中间态，那正是他反感的效果。 */
+/* 开场白（标题「写在前面」，2026-10-11 新增 / 2026-10-12 改呈现方式）
+   用户要求参照《余白 · 博客首页111》「关于我」那段：向下滚动时**字一个个由虚到实**。
+   所以这里从「整行一次性揭幕」改成「逐字跟随滚动进度」：
+   未读到的字是虚的（blur + 低透明度），滚动读到就清晰。
+   ⚠ 用户同时要求「一定要显示清楚」：每个字一旦点亮就**锁死**为 filter:none /
+   opacity:1 的终态，不会因为继续滚动又变回去；只有还没读到的那部分才是虚的。 */
 .ld-intro {
   display: flex;
   flex-direction: column;
@@ -1734,27 +1905,26 @@
   line-height: 1.62;
   letter-spacing: -0.005em;
   color: var(--ld-ed-ink);
-  /* 入场前：略虚、略低、略淡 */
-  filter: blur(9px);
-  opacity: 0;
-  transform: translateY(12px);
-  transition:
-    filter 0.9s var(--ease-out),
-    opacity 0.9s var(--ease-out),
-    transform 0.9s var(--ease-out);
-  will-change: filter, opacity, transform;
 }
-.ld-intro-line.on {
+/* 逐字由虚到实：模糊 + 淡 → 清晰。
+   用 filter 而不是纯 opacity —— 纯透明度只是「淡」，模糊才是「虚」。 */
+.ld-i-ch {
+  filter: blur(6px);
+  opacity: 0.16;
+  transition:
+    filter 0.5s var(--ease-out),
+    opacity 0.5s var(--ease-out);
+}
+.ld-i-ch.on {
   filter: none;
   opacity: 1;
-  transform: none;
 }
 /* 第一行是「定调句」，稍微重一点，和后面两行拉开层级 */
 .ld-intro-line:first-child { color: var(--ld-ed-ink); }
 .ld-intro-line + .ld-intro-line { color: var(--ld-ed-soft); }
 
 @media (prefers-reduced-motion: reduce) {
-  .ld-intro-line { filter: none; opacity: 1; transform: none; transition: none; }
+  .ld-i-ch { filter: none; opacity: 1; transition: none; }
 }
 
 .ld-about-text {
@@ -1814,6 +1984,13 @@
   transition: transform 0.6s var(--ease-out);
 }
 .ld-foot-links a:hover::after { transform: scaleX(1); transform-origin: left; }
+/* 触屏设备：页脚链接命中区撑到 44px（2026-10-12 移动端适配，原来 28px）。
+   下划线是 ::after 贴底定位，加大内边距后要把它拉回文字下方。 */
+@media (hover: none) and (pointer: coarse) {
+  .ld-foot-links { gap: 4px 22px; }
+  .ld-foot-links a { padding: 13px 0; }
+  .ld-foot-links a::after { bottom: 10px; }
+}
 
 .ld-wm-wrap {
   position: relative;

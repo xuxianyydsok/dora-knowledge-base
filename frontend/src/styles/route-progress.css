@@ -1,0 +1,33 @@
+/* 路由切换进度条（2026-10-12）
+   贴在视口最顶端、导航栏之上的一条细进度条。
+   刻意做得克制：3px 高、只在真的等的时候出现、内容一到就收尾淡出。
+   颜色走主题变量，三套主题（纯净 / 素雅 / 天青）自动跟随。 */
+
+.route-progress {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  /* 必须高于导航栏（--z-sticky: 30），否则滚动后被顶栏盖住看不见 */
+  z-index: 200;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.22s ease;
+}
+.route-progress.is-done { opacity: 0; }
+
+.route-progress-bar {
+  display: block;
+  height: 100%;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--primary) 55%, transparent),
+    var(--primary),
+    color-mix(in srgb, var(--primary) 70%, #7dd3fc));
+  /* 一层柔光，让它看起来是「亮着的」而不是一根死线 */
+  box-shadow: 0 0 10px color-mix(in srgb, var(--primary) 55%, transparent);
+  transition: width 0.22s var(--ease-out, ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-progress, .route-progress-bar { transition: none; }
+}

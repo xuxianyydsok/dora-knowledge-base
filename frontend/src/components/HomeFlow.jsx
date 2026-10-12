@@ -158,7 +158,7 @@ function noise(x, y) {
 // 不改 home-landing.css（那个文件另一个人在改），按钮样式走主题变量，跟着主题自动变
 const CSS = `
 .ld-flow-btn{position:absolute;right:clamp(10px,2vw,24px);bottom:clamp(10px,2vw,20px);z-index:2;
-  display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 13px;white-space:nowrap;
+  display:inline-flex;align-items:center;gap:7px;height:28px;min-height:28px;padding:0 13px;white-space:nowrap;
   border-radius:var(--radius-pill,999px);border:1px solid var(--border);
   background:color-mix(in srgb,var(--bg-elevated) 80%,transparent);
   -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
@@ -169,6 +169,11 @@ const CSS = `
 .ld-flow-btn:active{transform:none;}
 .ld-flow-btn:focus-visible{outline:2px solid color-mix(in srgb,var(--primary) 60%,transparent);outline-offset:2px;}
 .ld-flow-btn i{width:8px;height:8px;border-radius:50%;background:var(--primary);flex:none;}
+/* 触屏设备：把命中区撑到 44px 高（外观不变，靠透明上下内边距）。
+   2026-10-12 移动端适配：原来只有 28px 高，手指点不中。 */
+@media (hover:none) and (pointer:coarse){
+  .ld-flow-btn{height:44px;min-height:44px;padding:0 16px;}
+}
 `;
 
 let cssInjected = false;

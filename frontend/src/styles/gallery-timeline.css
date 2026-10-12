@@ -7,7 +7,71 @@
 /* ---------------- 图片展览 ---------------- */
 .gl-page { display: block; }
 
-/* 错落 masonry：纯 CSS columns，不做均分网格 */
+/* 两个区（静态图片 / 动态壁纸）之间的分隔：留白 + 细线，不用大标题压场 */
+.gl-section { margin-top: var(--sp-6, 28px); }
+.gl-section:first-of-type { margin-top: var(--sp-4, 12px); }
+.gl-sec-head {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-bottom: var(--sp-4, 12px);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.gl-sec-head h2 {
+  margin: 0;
+  font-family: var(--font-display, serif);
+  font-size: 20px; font-weight: 600;
+  letter-spacing: var(--track-display, -.01em);
+  color: var(--text);
+}
+.gl-sec-count { font-size: 12.5px; color: var(--text-muted); }
+.gl-partial-error { margin: 0 0 12px; font-size: 12.5px; color: var(--danger); }
+
+/* 「查看更多 / 收起」：整行居中，不做成大按钮，保持展厅的安静 */
+.gl-more { display: flex; justify-content: center; margin: var(--sp-5, 16px) 0 4px; }
+.gl-more-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px;
+  font-size: 13px;
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius-pill, 999px);
+  background: var(--glass-bg, var(--bg-elevated));
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color var(--dur, .22s) ease, transform var(--dur, .22s) var(--ease-out, ease);
+}
+.gl-more-btn:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); transform: translateY(-1px); }
+.gl-more-btn:active { transform: translateY(0) scale(.98); }
+
+/* 静态图片：整齐等高行（justified rows）。
+   每一行图片等高、整行铺满容器宽度（宽度由 lib/justified.js 算好写进 --gl-w），
+   行与行之间用同一个 --gl-gap 间隙。这样宽高比差异再大也不会出现
+   「各列高低不齐、底部留大空档」的错落感（2026-10-12 用户反馈「很不协调」）。
+   容器宽度用 ResizeObserver 量，窗口变化会自动重排。 */
+.gl-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gl-gap, 12px);
+  margin-top: var(--sp-4, 12px);
+}
+.gl-row {
+  display: flex;
+  gap: var(--gl-gap, 12px);
+  /* 行高固定：图片区按这个高度撑满，标题 / 描述在图下方另占一行 */
+  align-items: flex-start;
+}
+.gl-rows .gl-item {
+  flex: 0 0 auto;
+  width: var(--gl-w, auto);
+  margin: 0;
+}
+.gl-rows .gl-figure { height: var(--gl-row-h, 240px); }
+.gl-rows .gl-figure img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 错落 masonry：保留给动态壁纸区的旧类名兜底（壁纸区实际走 .gl-wall-grid 网格） */
 .gl-masonry {
   columns: 3;
   column-gap: var(--sp-4, 12px);
@@ -19,6 +83,7 @@
   animation: gl-rise var(--dur-slow, .6s) var(--ease-out, ease) both;
   animation-delay: calc(var(--gl-i, 0) * 40ms);
 }
+.gl-rows .gl-item { margin: 0; break-inside: auto; }
 .gl-figure {
   display: block;
   width: 100%;
@@ -33,6 +98,67 @@
 }
 .gl-figure:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
 .gl-figure img { display: block; width: 100%; height: auto; object-fit: cover; }
+
+/* ---------------- 动态壁纸卡片 ---------------- */
+/* 视频卡片沿用图片卡片的框，只是内容换成 <video>：静音循环自动播放。 */
+/* 壁纸统一用网格而不是错落 masonry：视频都是 16:9 一类的规整画幅，
+   错落反而会让行高参差、看着不整齐。 */
+.gl-wall-grid {
+  columns: unset;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-4, 12px);
+}
+.gl-wall-grid .gl-item { margin: 0; }
+.gl-wall-figure { position: relative; cursor: zoom-in; }
+.gl-wall-video {
+  display: block; width: 100%; height: auto;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--text) 92%, transparent);
+}
+.gl-wall-fallback {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+/* 播放角标：悬停才显形，避免整页几十个三角一直在闪 */
+.gl-wall-play {
+  position: absolute; left: 50%; top: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 52px; height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: rgba(16, 18, 24, .5);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, .3);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  opacity: 0;
+  transform: scale(.86);
+  transition: opacity var(--dur, .22s) ease, transform var(--dur, .22s) var(--ease-out, ease);
+  pointer-events: none;
+}
+.gl-wall-figure:hover .gl-wall-play,
+.gl-wall-figure:focus-visible .gl-wall-play { opacity: 1; transform: scale(1); }
+/* 触屏没有 hover：角标常驻，但弱化 */
+@media (hover: none) {
+  .gl-wall-play { opacity: .82; transform: scale(.9); }
+}
+.gl-wall-time {
+  position: absolute; right: 10px; bottom: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(16, 18, 24, .62);
+  color: #fff;
+  letter-spacing: .02em;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
 .gl-cap {
   display: flex;
   flex-direction: column;
@@ -67,6 +193,27 @@
   border-radius: var(--radius, 16px);
   background: rgba(0, 0, 0, .35);
 }
+/* 动态壁纸灯箱：视频按原始比例铺满可用宽度，不裁切 */
+.gl-lb-video {
+  max-width: 100%; max-height: 74vh;
+  width: auto; height: auto;
+  border-radius: var(--radius, 16px);
+  background: #000;
+  display: block;
+}
+/* 「取消静音 / 静音」小按钮：混在 .gl-lb-meta 里，视觉上是一枚胶囊 */
+.gl-lb-sound {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 10px;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  cursor: pointer;
+  transition: background var(--dur, .18s) ease, border-color var(--dur, .18s) ease;
+}
+.gl-lb-sound:hover { background: rgba(255, 255, 255, .22); border-color: rgba(255, 255, 255, .5); }
 .gl-lb-caption {
   color: #fff;
   display: flex; flex-direction: column; gap: 4px;
@@ -129,7 +276,28 @@
 .gl-drawer-head strong { font-size: 16px; }
 .gl-drawer-head .gl-lb-close { position: static; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
 .gl-drawer-sec { display: flex; flex-direction: column; gap: 10px; }
-.gl-drawer-sec h4 { margin: 0; font-size: 13px; color: var(--text-muted); font-weight: 600; letter-spacing: .04em; }
+.gl-drawer-sec h4 {
+  margin: 0; font-size: 13px; color: var(--text-muted); font-weight: 600; letter-spacing: .04em;
+  /* 标题行里可能挂「一键公开全部」按钮：标题在左、按钮在右 */
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+/* 批量公开：贴在区标题右侧的小胶囊（2026-10-12 用户要求，不要一条条点） */
+.gl-bulk {
+  flex: 0 0 auto;
+  padding: 4px 11px;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+  font-size: 12px; font-weight: 500; letter-spacing: 0;
+  cursor: pointer;
+  transition: background var(--dur, .22s) ease, border-color var(--dur, .22s) ease;
+}
+.gl-bulk:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-color: var(--primary);
+}
+.gl-bulk:disabled { opacity: .55; cursor: default; }
 .gl-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
 .gl-asset {
   padding: 0; border: 1px solid var(--border); border-radius: 10px;
@@ -266,12 +434,13 @@
 .tl-more-error { color: var(--danger); }
 
 @media (max-width: 1024px) {
-  .gl-masonry { columns: 2; }
+  .gl-wall-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  .gl-masonry { columns: 1; }
+  .gl-wall-grid { grid-template-columns: 1fr; }
   .gl-lightbox { padding: 2vh 12px; }
   .gl-lb-img { max-height: 62vh; }
+  .gl-lb-video { max-height: 62vh; }
   .tl-track { padding-left: 20px; }
   .tl-dot { left: -19px; }
   .tl-card { grid-template-columns: auto 1fr; grid-template-areas: 'time badge' 'cover body'; }

@@ -15,7 +15,7 @@ import { PixelFlip } from '../components/PixelFlip.jsx';
 import { HomeFlow } from '../components/HomeFlow.jsx';
 import { HomeNow } from '../components/HomeNow.jsx';
 import {
-  AboutBlock, IntroBlock, Marquee, ProgressRing, Seal, SplitLines, useReveal
+  AboutBlock, IntroBlock, Marquee, ProgressRing, Seal, SplitLines, TitleBand, useReveal
 } from '../components/LandingParts.jsx';
 import '../styles/home-landing.css';
 
@@ -100,9 +100,12 @@ const CAP_GROUPS = [
 ];
 
 // ---------------------------------------------------------------
-// 径向图谱几何：viewBox 680×680，圆心 (340,340)
+// 径向图谱几何：viewBox 760×760，圆心 (380,380)
+// 2026-10-12：viewBox 从 680 放大到 760。用户要求环外标签的数字「醒目一些」，
+// 字号从 9px 提到 11.5px 后，右侧最长的标签（如「1,341 · GALLERY」）会顶到
+// 原来的 680 边界外被 SVG 裁掉 —— 半径全部保持不变，只把画布四周各留出 40px。
 // ---------------------------------------------------------------
-const VB = 680;
+const VB = 760;
 const CX = VB / 2;
 const CY = VB / 2;
 const RAD = Math.PI / 180;
@@ -296,21 +299,26 @@ function Landing() {
     <div class="ld-page ld-editorial" ref={revealRef}>
       <HeroCarousel />
 
+      {/* 巨型标题带（2026-10-12 用户要求）：从首屏大图上挪到它正下方、
+          「写在前面」之前。文案把「知识」改成「碎片」；实时时钟也一并搬到这里
+          （用户明确要求时钟不要删，只换位置）。呈现方式参照《blog-home-v2》首屏。 */}
+      <TitleBand />
+
       {/* 01 · 最近写的：文章列表整块移除（2026-10-11 用户要求），
           但**保留标题与那条手绘横线**，下面换成一段站点简介。
           原因：首页不该堆文章清单（浏览入口交给 /posts 与 /timeline），
           但这一节是整个落地页的「开场白」，空着会突兀。 */}
       <section class="ld-sec ld-intro-sec">
         <div class="ld-sec-h" data-reveal>
-          <SplitLines lines={['最近写的']} class="ld-sec-title" />
+          <SplitLines lines={['写在前面']} class="ld-sec-title" />
           <svg class="ld-rule" viewBox="0 0 1000 14" preserveAspectRatio="none" aria-hidden="true">
             <path d="M0 8C120 4 240 11 380 7S620 5 760 8 920 7 1000 7" />
           </svg>
         </div>
         <IntroBlock
           lines={[
-            '这里收着我这些年散落的东西：写过的长文与笔记、收藏的开源项目、拍下的照片、读过的书，还有反复听过的歌和看过的片。',
-            '它们原本各自待在不同的 App 里，互不相识。现在被放进同一张图谱，彼此连起来 —— 顺着一条线，就能从一篇文章走到一个项目、一段影像。',
+            '这里收着我这些年散落的东西：写过的长文与笔记、收藏的开源项目、拍下的照片、读过的书，还有反复听过的歌与看过的影视。',
+            '它们原本各自待在不同的 App 里，互不相识。现在被放进同一张图谱，彼此连起来 —— 顺着一条线，就能从一篇文章走到一个项目、一部作品。',
             '没有更新的焦虑，也不追热点。只是按自己的节奏慢慢攒，攒到某天回头看，发现它们已经长成了一张可以慢慢逛的星图。'
           ]}
         />

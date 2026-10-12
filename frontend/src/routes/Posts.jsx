@@ -127,7 +127,9 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
           {BANNERS.map((src, i) => <img key={src} src={src} alt="" class={i === bannerIdx ? 'on' : ''} />)}
         </div>
         <div class="cs-banner-inner">
-          <h1>Dora 的博客</h1>
+          {/* 横幅站名（2026-10-12 用户要求）：由「Dora 的博客」改成英文
+              「The Blog of Dora」——该大写的大写（标题大小写）。 */}
+          <h1>The Blog of Dora</h1>
           <p>记录学习、技术与生活 · 共 {posts.length} 篇文章</p>
           <label class="cs-search cs-search-lg">
             <Icon name="search" size={18} />

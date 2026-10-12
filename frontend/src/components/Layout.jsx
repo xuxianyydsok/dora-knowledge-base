@@ -18,7 +18,7 @@ const PRIMARY = [
   ['/music', '音乐'], ['/movies', '影视'],
   ['/books', '图书'],
   ['/gallery', '图展'], ['/timeline', '时间轴'], ['/moments', '碎念'],
-  ['/graph/blog', '图谱'], ['/favorites', '收藏'], ['/changelog', '更新']
+  ['/graph/blog', '图谱'], ['/favorites', '收藏'], ['/changelog', '更新'], ['/coop', '共创']
 ];
 
 // 「图谱」是一级导航（指向 /graph/blog）；两种图谱在页面内用标签切换（博客图谱 / 开源项目图谱）。
@@ -160,6 +160,7 @@ export function Layout({ children }) {
             <MenuLink href="/settings" icon="settings">设置</MenuLink>
             <MenuLink href="/backup" icon="backup">备份</MenuLink>
             {isAdmin && <MenuLink href="/admin/users" icon="crown">用户管理</MenuLink>}
+            {isAdmin && <MenuLink href="/admin/feedback" icon="heart">共创反馈</MenuLink>}
             {/* 源健康中心：仅管理员可见（原先挂在已删除的「更多」下拉里） */}
             {isAdmin && <MenuLink href="/sources" icon="wave">源状态</MenuLink>}
             <div class="menu-sep" />

@@ -1,0 +1,571 @@
+/* =============================================================
+   共创页（/coop）专用样式
+   约定：本文件只放 .coop-* 类，避免与 global.css 撞名；
+        颜色一律用 global.css 的主题变量（--text / --primary / --glass-bg …），
+        不写死主题色，跟随纯净 / 素雅 / 天青三套主题。
+   气质：上半部分是「一封信」——阅读型窄栏、衬线标题、宽松行高、暖色分隔线；
+        下半部分是表单与一个温暖的感谢弹窗。整体安静、亲切，不做模板感。
+   ============================================================= */
+
+.coop-page { display: block; }
+
+/* ---------------- 上半部分：介绍文案（一封信） ---------------- */
+/* 介绍区 = 左文案 + 右星体（2026-10-12 第二版）。
+   星体不再是段落下方居中的一块，而是贴在文字右侧、与这段文字齐高，
+   两者组成一栏版面；星体用 align-self: center 在栏内垂直居中。 */
+.coop-lead {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 4vw, 56px);
+  margin: var(--sp-7, 26px) 0 0;
+}
+.coop-intro {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: var(--content-read, 780px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5, 16px);
+}
+.coop-intro p {
+  margin: 0;
+  font-family: var(--font-display, serif);
+  font-size: clamp(15.5px, 1.15vw, 17.5px);
+  line-height: 2;
+  letter-spacing: 0.002em;
+  color: var(--text);
+}
+/* 首段稍大一号，作为开场；末段用弱化色收尾，语气更轻 */
+.coop-intro p:first-child { font-size: clamp(16.5px, 1.3vw, 19px); }
+.coop-intro p:last-child { color: color-mix(in srgb, var(--text) 78%, var(--text-muted)); }
+
+/* ---------------- 分隔线：细线 + 居中标签 ---------------- */
+.coop-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4, 12px);
+  margin: var(--sp-8, 34px) 0 var(--sp-6, 20px);
+  max-width: var(--content-read, 780px);
+}
+.coop-divider-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--primary) 40%, var(--border)),
+    transparent
+  );
+}
+.coop-divider-label {
+  flex: none;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-kicker, 11.5px);
+  letter-spacing: var(--track-mono, 0.06em);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* ---------------- 表单 ---------------- */
+.coop-form {
+  max-width: var(--content-read, 780px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6, 20px);
+  padding: var(--sp-6, 20px);
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg, var(--bg-elevated));
+  box-shadow: var(--shadow-md);
+  animation: coop-rise var(--dur-slow, 0.6s) var(--ease-out, ease) both;
+}
+.coop-field { display: flex; flex-direction: column; gap: var(--sp-3, 8px); }
+.coop-label {
+  font-size: var(--fs-sm, 13px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.coop-opt { font-weight: 400; color: var(--text-muted); }
+.coop-hint {
+  margin: 0;
+  font-size: var(--fs-caption, 12px);
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* 分类 chip：复用 .seg 的分段切换，窄屏自动换行 */
+.coop-cats { flex-wrap: wrap; }
+
+.coop-textarea {
+  min-height: 148px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body, 14.5px);
+  line-height: 1.75;
+}
+.coop-counter {
+  align-self: flex-end;
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: var(--track-mono, 0.06em);
+  font-variant-numeric: tabular-nums;
+}
+.coop-counter .over { color: var(--danger); }
+
+.coop-ident { align-self: flex-start; }
+.coop-name { max-width: 320px; }
+
+.coop-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4, 12px);
+  flex-wrap: wrap;
+  padding-top: var(--sp-4, 12px);
+  border-top: 1px solid var(--border);
+}
+.coop-submit { min-width: 132px; }
+.coop-actions-note { font-size: var(--fs-caption, 12px); color: var(--text-muted); }
+
+/* ---------------- 底部：已经改过的例子 ---------------- */
+.coop-done {
+  max-width: var(--content-read, 780px);
+  margin-top: var(--sp-8, 34px);
+  padding: var(--sp-5, 16px) var(--sp-6, 20px);
+  border: 1px dashed color-mix(in srgb, var(--primary) 30%, var(--border));
+  border-radius: var(--radius, 16px);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+.coop-done-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4, 12px);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4, 12px);
+}
+.coop-done-kicker {
+  font-family: var(--font-display, serif);
+  font-size: var(--fs-title, 17px);
+  font-weight: 500;
+  letter-spacing: var(--track-display, -0.012em);
+  color: var(--text);
+}
+.coop-done-meta {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  letter-spacing: var(--track-mono, 0.06em);
+  color: var(--text-muted);
+}
+.coop-done-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3, 8px);
+}
+.coop-done-item {
+  display: flex;
+  gap: var(--sp-3, 8px);
+  align-items: flex-start;
+  font-size: var(--fs-sm, 13.5px);
+  line-height: 1.72;
+  color: color-mix(in srgb, var(--text) 88%, var(--text-muted));
+}
+.coop-done-dot {
+  flex: none;
+  margin-top: 0.62em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.coop-done-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--sp-4, 12px);
+  font-size: var(--fs-caption, 12.5px);
+  color: var(--primary);
+  text-decoration: none;
+}
+.coop-done-more:hover { text-decoration: underline; }
+/* 触屏设备：把这条链接的命中区撑到 44px 高（2026-10-12 移动端适配，原来 19px）。 */
+@media (hover:none) and (pointer:coarse) {
+  .coop-done-more { padding: 12px 0; margin-top: 4px; }
+}
+
+/* ---------------- 感谢弹窗 ---------------- */
+.coop-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drawer, 60);
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5, 16px);
+  background: color-mix(in srgb, #0b0f18 42%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  backdrop-filter: blur(8px) saturate(120%);
+  animation: coop-fade var(--dur, 0.32s) var(--ease-out, ease) both;
+}
+.coop-modal {
+  position: relative;
+  width: min(440px, 100%);
+  padding: var(--sp-7, 26px) var(--sp-6, 20px) var(--sp-6, 20px);
+  text-align: center;
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius-lg, 24px);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  animation: coop-pop var(--dur, 0.34s) var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
+}
+/* 顶部一枚暖色圆标，承接「谢谢你」的情绪 */
+.coop-modal-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: var(--sp-4, 12px);
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(140deg, #f59e0b, #ec4899);
+  box-shadow: 0 10px 26px color-mix(in srgb, #ec4899 34%, transparent);
+}
+.coop-modal-title {
+  margin: 0 0 var(--sp-3, 8px);
+  font-family: var(--font-display, serif);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: var(--track-display, -0.012em);
+  color: var(--text);
+}
+.coop-modal-text {
+  margin: 0;
+  font-size: var(--fs-body, 14.5px);
+  line-height: 1.85;
+  color: color-mix(in srgb, var(--text) 86%, var(--text-muted));
+}
+.coop-modal-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: var(--sp-5, 16px) 0 0;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--bg-subtle);
+  font-size: var(--fs-caption, 12.5px);
+  color: var(--text-muted);
+}
+.coop-modal-note .icon { color: var(--primary); }
+.coop-modal-ok {
+  display: block;
+  width: 100%;
+  margin-top: var(--sp-5, 16px);
+}
+
+@keyframes coop-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes coop-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes coop-pop {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 640px) {
+  .coop-form { padding: var(--sp-5, 16px); }
+  .coop-intro p { line-height: 1.9; }
+  .coop-modal { padding: var(--sp-6, 20px) var(--sp-5, 16px) var(--sp-5, 16px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coop-form,
+  .coop-modal-mask,
+  .coop-modal { animation: none; }
+}
+
+/* =============================================================
+   共创反馈管理（/admin/feedback）——复用 .coop-* 前缀下的 .coop-adm-*
+   ============================================================= */
+.coop-adm { display: block; }
+.coop-adm-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4, 12px);
+  margin-top: var(--sp-5, 16px);
+  max-width: 860px;
+}
+.coop-adm-card {
+  padding: var(--sp-5, 16px);
+  border: 1px solid var(--glass-border, var(--border));
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg, var(--bg-elevated));
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3, 8px);
+}
+.coop-adm-card.is-done { border-left-color: color-mix(in srgb, var(--text-muted) 50%, transparent); opacity: 0.82; }
+
+.coop-adm-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 8px);
+  flex-wrap: wrap;
+}
+.coop-adm-cat {
+  padding: 2px 10px;
+  border-radius: var(--radius-pill, 999px);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary);
+}
+.coop-adm-cat.cat-bug { background: #dc2626; }
+.coop-adm-cat.cat-improve { background: #d97706; }
+.coop-adm-cat.cat-feature { background: #16a34a; }
+.coop-adm-cat.cat-other { background: color-mix(in srgb, var(--primary) 82%, #64748b); }
+.coop-adm-name { font-size: var(--fs-sm, 13.5px); font-weight: 600; color: var(--text); }
+.coop-adm-tag {
+  padding: 1px 8px;
+  border-radius: var(--radius-pill, 999px);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+.coop-adm-status {
+  font-size: 11.5px;
+  font-family: var(--font-mono, monospace);
+  letter-spacing: var(--track-mono, 0.06em);
+  color: var(--text-muted);
+}
+.coop-adm-status.st-new { color: #d97706; }
+.coop-adm-status.st-done { color: #16a34a; }
+
+.coop-adm-text {
+  margin: 0;
+  font-size: var(--fs-body, 14.5px);
+  line-height: 1.8;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.coop-adm-meta {
+  display: flex;
+  gap: var(--sp-4, 12px);
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.coop-adm-meta > span { display: inline-flex; align-items: center; gap: 4px; }
+
+.coop-adm-ops {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 8px);
+  flex-wrap: wrap;
+  padding-top: var(--sp-3, 8px);
+  border-top: 1px solid var(--border);
+}
+.coop-adm-seg { flex-wrap: wrap; }
+.coop-adm-note { display: flex; flex-direction: column; gap: var(--sp-2, 6px); }
+.coop-adm-note textarea { font-size: var(--fs-sm, 13.5px); }
+.coop-adm-note-ops { display: flex; align-items: center; gap: var(--sp-3, 8px); }
+.coop-adm-note-view {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--fs-caption, 12.5px);
+  line-height: 1.7;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .coop-adm-ops { align-items: stretch; }
+}
+
+/* =============================================================
+   迷你星体（2026-10-12）
+   把《LUMEN · 光之工作室112》模板里「A8 一个宇宙」那团 360 粒子的星体缩小，
+   放在介绍与表单之间当点缀，中间叠一行「欢迎加入共创」。
+   尺寸取 300px：小到不喧宾夺主，又够看清粒子与连线；
+   窄屏收到 200px，避免把表单挤到两屏之后。
+   ============================================================= */
+.coop-orb {
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
+  margin: 0;
+  /* 与左侧文字齐平：星体在栏内垂直居中，高度跟着段落走 */
+  align-self: center;
+}
+
+.muni {
+  position: relative;
+  /* 尺寸跟随右侧这一栏：与左侧介绍文字的高度大致齐平（2026-10-12 用户要求）。
+     用 clamp 给一个下限与上限 —— 窄一点的桌面不至于小到看不清，
+     大屏也不会把星体撑得比文字还高。 */
+  width: clamp(220px, 26vw, 340px);
+  height: clamp(220px, 26vw, 340px);
+  /* 星体本身就是圆的，给一层柔光晕让它在页面里「浮」起来，
+     而不是像一块方形的图贴在那儿 */
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%,
+    color-mix(in srgb, var(--primary) 10%, transparent),
+    transparent 68%);
+  /* 不拦指针以外的东西：内部指针事件只用于微调旋转，不阻挡页面滚动 */
+  touch-action: pan-y;
+}
+
+.muni-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.muni-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  /* 关键：文字层不拦指针，指针事件要落到 canvas 上驱动旋转 */
+  pointer-events: none;
+  padding: 0 18%;
+}
+
+.coop-orb-text {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(19px, 2.1vw, 24px);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  /* 渐变文字：与首页标题同一套语言，颜色走主题主色，不写死 */
+  background: linear-gradient(100deg,
+    var(--text),
+    color-mix(in srgb, var(--primary) 88%, var(--text)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.coop-orb-sub {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .muni { width: 200px; height: 200px; }
+  .coop-orb-text { font-size: 17px; }
+  .coop-orb-sub { font-size: 11px; }
+}
+
+/* 窄屏（≤900px）：左右并排放不下，星体落回文字下方居中 */
+@media (max-width: 900px) {
+  .coop-lead { flex-direction: column; align-items: stretch; gap: clamp(20px, 5vw, 32px); }
+  .coop-intro { max-width: none; }
+  .coop-orb { align-self: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 静态模式（组件里不建 canvas）下，光晕就是全部内容，收一点更干净 */
+  .muni { background: radial-gradient(circle at 50% 45%,
+    color-mix(in srgb, var(--primary) 14%, transparent), transparent 62%); }
+}
+
+/* =============================================================
+   页脚字标（2026-10-12）
+   复刻站长给的《LUMEN · 光之工作室112》模板第一屏：#hero 的巨型衬线字标
+   + 逐字错峰的 RGB 错位呼吸（模板里的 @keyframes ech）+ 下方一条渐变细线。
+   放在共创页最后，与首页结尾那整块 DoraStudio 水印首尾呼应。
+
+   与模板的差异（都是刻意的）：
+   · 模板是深墨字配浅米底；这里跟随站点主题，字色走 --text，
+     错位用的三色也从 --primary 派生，保证纯净 / 素雅 / 天青三套主题都协调。
+   · 模板字号 clamp(90px,24vw,400px) 是为 5 个字母的 Lumen 调的；
+     Dora Studio 更长（10 个字母 + 一个空格），因此上限收到 150px，
+     并允许在窄屏上自动换行（模板是单行居中，长词会溢出）。
+   ============================================================= */
+.coop-mark {
+  margin-top: clamp(48px, 9vw, 110px);
+  padding-top: clamp(32px, 6vw, 64px);
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.coop-mark-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0 clamp(10px, 2.4vw, 30px);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(52px, 11vw, 150px);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--text);
+  user-select: none;
+}
+.coop-mark-word { display: inline-flex; align-items: baseline; }
+
+/* 每个字母：overflow:hidden 的包裹层是为了让错位的「影子」被裁在字内，
+   这是模板 .m / .lc 两层结构的作用（模板里 .m 负责裁切、.lc 负责动画）。 */
+.coop-mark-glyph {
+  display: inline-block;
+  animation: coop-mark-echo 6s ease-in-out infinite;
+  /* 错峰：--i 由 JSX 按字母序号写入，与模板的 calc(var(--i)*.4s + 2s) 同节奏 */
+  animation-delay: calc(var(--i) * 0.4s + 2s);
+  will-change: text-shadow;
+}
+
+/* 模板的 ech：大部分时间是干净的，只在 14% / 30% 两处短暂炸开成
+   品红-青、橙-紫两组错位影子，像一次轻微的「对不上焦」。 */
+@keyframes coop-mark-echo {
+  0%, 50%, 100% {
+    text-shadow: 0 0 0 transparent, 0 0 0 transparent;
+  }
+  14% {
+    text-shadow:
+      -0.055em 0 0 color-mix(in srgb, var(--primary) 90%, transparent),
+      0.055em 0 0 color-mix(in srgb, var(--primary) 45%, #22d3ee);
+  }
+  30% {
+    text-shadow:
+      0.08em 0.02em 0 color-mix(in srgb, #f59e0b 85%, transparent),
+      -0.08em -0.02em 0 color-mix(in srgb, var(--primary) 85%, transparent);
+  }
+}
+
+/* 词间空隙：只占位，不参与动画 */
+.coop-mark-gap { display: inline-block; width: 0.24em; }
+
+/* 字标下方那条渐变细线（模板 .hl）：两端透明、中间实，收住整页视线 */
+.coop-mark-rule {
+  display: block;
+  width: min(46vw, 460px);
+  height: 1px;
+  margin: clamp(20px, 3.4vw, 34px) auto 0;
+  background: linear-gradient(90deg,
+    transparent,
+    color-mix(in srgb, var(--text) 55%, transparent),
+    transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coop-mark-glyph { animation: none; }
+}

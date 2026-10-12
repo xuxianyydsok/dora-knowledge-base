@@ -197,12 +197,13 @@ export function PostEdit({ id }) {
           ))}
         </div>
 
+        {/* HTML 源码编辑器：等宽便于对齐标签，走 --font-mono 以带上中文字形兜底 */}
         <textarea
           rows={14}
           placeholder="在此编写原生 HTML 正文，可插入 katex-inline / katex-block / mermaid-chart / chart-2d / three-scene 标签"
           value={form.content}
           onInput={(e) => set('content', e.currentTarget.value)}
-          style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px"
+          style="font-family:var(--font-mono);font-size:13px"
         />
 
         <div class="row">

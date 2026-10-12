@@ -3,6 +3,7 @@ import { createContext } from 'preact';
 import { useContext, useEffect, useState, useCallback } from 'preact/hooks';
 import { supabase } from './supabase.js';
 import { API_BASE_URL } from './config.js';
+import { setAuthToken } from './api.js';
 
 const AuthContext = createContext(null);
 
@@ -13,8 +14,11 @@ export function AuthProvider({ children }) {
 
   // 登录后从后端拉取真实角色（user_profiles.role），而非依赖 user_metadata
   const loadProfile = useCallback(async (token) => {
-    if (!token) { setProfile(null); return; }
+    if (!token) { setAuthToken(null); setProfile(null); return; }
     try {
+      // 顺带把令牌交给媒体直链助手：<video> / <iframe> 发不出 Authorization 头，
+      // 只能靠查询串带令牌（详见 lib/api.js 的 withMediaToken）。
+      setAuthToken(token);
       const res = await fetch(`${API_BASE_URL}/api/me`, {
         headers: { Authorization: `Bearer ${token}` }
       });

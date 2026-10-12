@@ -34,6 +34,8 @@ const Timeline = lazy(() => import('./Timeline.jsx').then((m) => ({ default: m.T
 const Moments = lazy(() => import('./Moments.jsx').then((m) => ({ default: m.Moments })));
 const Books = lazy(() => import('./Books.jsx').then((m) => ({ default: m.Books })));
 const Changelog = lazy(() => import('./Changelog.jsx').then((m) => ({ default: m.Changelog })));
+const Coop = lazy(() => import('./Coop.jsx').then((m) => ({ default: m.Coop })));
+const AdminFeedback = lazy(() => import('./AdminFeedback.jsx').then((m) => ({ default: m.AdminFeedback })));
 
 export {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
@@ -41,5 +43,5 @@ export {
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline, Moments, Books, Changelog
+  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback
 };

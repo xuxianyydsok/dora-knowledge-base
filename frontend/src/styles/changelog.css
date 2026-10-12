@@ -29,7 +29,7 @@
   padding: 9px 12px 9px 36px;
   border: 1px solid var(--border); border-radius: var(--radius-pill, 999px);
   background: var(--bg-elevated);
-  color: var(--text); font-family: inherit; font-size: var(--fs-sm, 13.5px);
+  color: var(--text); font-family: var(--font-ui); font-size: var(--fs-sm, 13.5px);
   transition: border-color var(--dur-fast, .18s) ease, box-shadow var(--dur-fast, .18s) ease;
 }
 .cl-search input:focus {
@@ -75,6 +75,10 @@
 }
 .cl-anchor-date {
   font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8;
+}
+/* 触屏设备：版本锚点胶囊撑到 44px 高（2026-10-12 移动端适配，原来 31px）。 */
+@media (hover:none) and (pointer:coarse) {
+  .cl-anchor { padding: 11px 14px; }
 }
 
 /* ---------------- 卡片列表 ---------------- */

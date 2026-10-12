@@ -1,6 +1,8 @@
-// 歌词页（沉浸式）
-// 设计取向：参考 Apple Music / QQ 音乐的歌词视图 —— 封面铺底、逐句高亮、
-// 当前行放大并带光晕，随播放自动居中滚动，点击任意行可跳转播放位置。
+// 歌词页（沉浸式 · 双栏）
+// 设计取向：左侧黑胶专辑图（播放时缓慢自转 + 光晕），右侧逐句歌词。
+// 歌词分三档：未唱（低对比灰）/ 已唱（越早唱过越淡，形成渐隐带）/ 当前行
+// （渐变文字 + 流动光带）。随播放自动居中滚动，点击任意行跳转播放位置。
+// 样式集中在 ../styles/lyrics.css（不改 global.css）。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
@@ -9,6 +11,20 @@ import { FavoriteButton } from '../components/FavoriteButton.jsx';
 import { usePlayer } from '../lib/player.jsx';
 
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
+import '../styles/lyrics.css';
+
+// 已唱行的「渐隐带」：越早唱过的越淡（40% 最淡，86% 最清晰），
+// 越靠近当前行越亮 —— 视线自然被引到当前行。
+// 整段都明显高于「未唱行」的 22%，保证「已唱 / 未唱」一眼可辨。
+// 注意：color-mix 的百分比必须带单位，所以这里直接返回 "40%" 这种字符串。
+const PASS_MIN = 40;
+const PASS_MAX = 86;
+function passOpacity(i, activeIndex) {
+  if (activeIndex <= 0) return `${PASS_MAX}%`;
+  const dist = (activeIndex - i) / activeIndex; // 0 = 紧邻当前行，1 = 最早唱过
+  const pct = Math.max(PASS_MIN, PASS_MAX - dist * (PASS_MAX - PASS_MIN));
+  return `${pct.toFixed(1)}%`;
+}
 // 解析 LRC：支持 [mm:ss.xx] 与 [mm:ss:xx]，一行多时间戳
 function parseLrc(raw) {
   if (!raw) return [];
@@ -137,16 +153,20 @@ export function MusicLyrics({ id }) {
         {/* 左：会转的黑胶封面 + 完整播放控制（用户要求：点击头像进来后这里要有收藏等按钮） */}
         <aside class="lyric-side">
           {/* 黑胶：转盘 + 中心封面。playing 时转动，暂停即停（保留角度，不闪回） */}
-          <div class={`vinyl lp${playing ? ' spinning' : ''}`}>
-            <div class="vinyl-disc">
-              <span class="vinyl-grooves" />
-              <div class="vinyl-cover">
-                {cover
-                  ? <img src={cover} alt={music.title} referrerpolicy="no-referrer" />
-                  : <span class="np-art-empty"><Icon name="music" size={32} /></span>}
+          <div class="lyr-art">
+            <div class={`vinyl lp${playing ? ' spinning' : ''}`}>
+              <div class="vinyl-disc">
+                <span class="vinyl-grooves" />
+                <div class="vinyl-cover">
+                  {cover
+                    ? <img src={cover} alt={music.title} referrerpolicy="no-referrer" />
+                    : <span class="np-art-empty"><Icon name="music" size={32} /></span>}
+                </div>
+                <span class="vinyl-hole" />
               </div>
-              <span class="vinyl-hole" />
             </div>
+            {/* 光晕放在唱片之后：用相邻兄弟选择器跟随 .spinning，无需 :has() */}
+            <span class="lyr-glow" aria-hidden="true" />
           </div>
           <div class="lyric-side-text">
             <strong>{music.title}</strong>
@@ -198,22 +218,31 @@ export function MusicLyrics({ id }) {
 
           {hasSynced && (
             <div class="lyrics-scroll tall" ref={boxRef} onWheel={onUserScroll} onTouchMove={onUserScroll}>
-              {lines.map((l, i) => (
-                <p
-                  key={`${l.time}-${i}`}
-                  ref={(el) => { lineRefs.current[i] = el; }}
-                  class={`lyric-line${i === activeIndex ? ' active' : ''}${i < activeIndex ? ' passed' : ''}`}
-                  onClick={() => seek(l.time)}
-                >
-                  {l.text || '♪'}
-                </p>
-              ))}
+              <div class="lyr-spacer" aria-hidden="true" />
+              {lines.map((l, i) => {
+                const passed = i < activeIndex;
+                return (
+                  <p
+                    key={`${l.time}-${i}`}
+                    ref={(el) => { lineRefs.current[i] = el; }}
+                    class={`lyric-line${i === activeIndex ? ' active' : ''}${passed ? ' passed' : ''}`}
+                    style={passed ? `--pass:${passOpacity(i, activeIndex)}` : undefined}
+                    onClick={() => seek(l.time)}
+                    title="点击跳转到这句"
+                  >
+                    <span class="lyr-text">{l.text || '♪'}</span>
+                  </p>
+                );
+              })}
+              <div class="lyr-spacer" aria-hidden="true" />
             </div>
           )}
 
           {!hasSynced && plain.length > 0 && (
             <div class="lyrics-scroll tall">
-              {plain.map((line, i) => <p key={i} class="lyric-line static">{line || '♪'}</p>)}
+              {plain.map((line, i) => (
+                <p key={i} class="lyric-line static"><span class="lyr-text">{line || '♪'}</span></p>
+              ))}
             </div>
           )}
 

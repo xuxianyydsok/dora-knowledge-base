@@ -144,6 +144,8 @@
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 36px; min-height: 36px; padding: 0 12px;
   border-radius: 999px; font-size: 13px; line-height: 1; white-space: nowrap;
+  /* 与 .login-link 同款字面（Satoshi 500 + 轻微负字距） */
+  font-family: var(--font-ui); font-weight: 500; letter-spacing: -0.01em;
 }
 
 * { box-sizing: border-box; }
@@ -247,6 +249,10 @@ details.glass {
 /* ---------------- 按钮 ---------------- */
 button, .btn {
   font: inherit;
+  /* 显式声明 UI 字体：不能只靠 inherit —— 按钮常被放进博客正文（衬线）、
+     歌词页等「局部改过字体」的容器里，inherit 会跟着变，观感就散了。
+     全站按钮统一 Satoshi（中文自动回退系统无衬线体）。 */
+  font-family: var(--font-ui);
   font-weight: 500;
   cursor: pointer;
   color: var(--text);
@@ -339,6 +345,9 @@ button:disabled::after { display: none; }
 /* ---------------- 表单控件 ---------------- */
 input, select, textarea {
   font: inherit;
+  /* 同上：表单控件不显式声明时，Windows 上会回退到系统默认（宋体 / 雅黑），
+     和旁边的 Satoshi 文字并排字面高矮不一，看着就脏。 */
+  font-family: var(--font-ui);
   color: var(--text);
   background: var(--glass-bg-strong);
   -webkit-backdrop-filter: blur(14px) saturate(160%);
@@ -362,6 +371,18 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.65; }
 input[type='color'] { padding: 2px; cursor: pointer; }
 input[type='range'] { padding: 0; background: transparent; border: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 input[type='checkbox'] { width: auto; accent-color: var(--primary); cursor: pointer; }
+
+/* ---------------- 全站字体收口（2026-10-12） ----------------
+   目标：凡是**没有显式声明字体**的元素一律落到 --font-ui（Satoshi + 中文兜底），
+   而不是浏览器默认的衬线 / 系统 UI 字体。
+   落点分布：
+     · body（含全站继承基线）—— 见上方 `html, body`；
+     · button / .btn          —— 见「按钮」一节；
+     · input / select / textarea —— 见「表单控件」一节；
+     · table / optgroup       —— 元素自带字体，只能在这里单独补。
+   注意：--font-display（Newsreader）与 --font-mono（等宽）的角色划分不变，
+   此规则优先级低于任何显式声明了这两种字体的选择器，不会互相干扰。 */
+table, optgroup { font-family: var(--font-ui); }
 
 /* ---------------- 细节质感：选区、滚动条、主题切换过渡 ---------------- */
 ::selection { background: color-mix(in srgb, var(--primary) 32%, transparent); }
@@ -401,6 +422,9 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   align-items: center;
   gap: 14px;
   padding: 10px 22px;
+  /* 顶栏是「工具区」：整条统一走 --font-ui（Satoshi），
+     避免里面零散元素（登录胶囊 / 图标按钮文字）落到浏览器默认字体。 */
+  font-family: var(--font-ui);
   flex-wrap: wrap;
   position: sticky;
   top: 0;
@@ -548,9 +572,14 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 .app-nav { display: flex; gap: 4px; margin-left: 4px; flex-wrap: wrap; align-items: center; }
 .app-nav a {
   position: relative;
+  /* 导航字体统一走 --font-ui（Satoshi）：与左侧品牌名「Dora Studio」同一套字，
+     字重 500、字距轻微收紧，读起来是同一套「工具感」的字面；
+     之前这里没显式声明，不同浏览器会回退到各自默认无衬线体，和品牌名对不上。 */
+  font-family: var(--font-ui);
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
+  letter-spacing: -0.01em;
   padding: 7px 12px;
   border-radius: var(--radius-pill);
   transition: color var(--dur-fast) var(--ease-out),
@@ -565,13 +594,25 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 }
 .app-nav a.active {
   color: var(--primary);
-  font-weight: 600;
+  /* 字重保持 500：Satoshi 只自托管 400 / 500 / 700，写 600 会触发浏览器合成粗体，
+     边缘发虚（同 --font-display 的注意事项）。选中态靠颜色 + 底 + 内描边区分即可。 */
+  font-weight: 500;
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 26%, transparent);
 }
 
 .app-header .spacer { flex: 1; }
 .app-header > .row { gap: 8px; }
+/* ⚠ 顶栏右侧的工具按钮（搜索 / 通知 / 主题 / 登录）一律**不许被压缩**。
+   2026-10-12 移动端实测：390px 视口下 flex 默认 flex-shrink:1，导航抢走空间后
+   搜索按钮从 38px 被挤成 20px、主题按钮从 52px 挤成 27px —— 又窄又难点。
+   这些是固定尺寸的控件，flex: none 才是它们的正确值。 */
+.app-header > a[title],
+.app-header > button,
+.app-header > .row,
+.app-header > .row > * {
+  flex: none;
+}
 /* 顶栏里的圆形图标按钮（全局搜索 / 通知等，宽高固定 38 圆形）。
    ⚠ 必须排除 .login-link：它也是 <a title=…>，但要求是**胶囊**（36 高、随文字宽度），
    不排除的话这条规则的 width/height/border-radius 会盖掉 .login-link，
@@ -606,8 +647,11 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  font-size: 14px;
+  /* 与 .app-nav a 同款字面：Satoshi 500 / 13.5px / 轻微负字距 */
+  font-family: var(--font-ui);
+  font-size: 13.5px;
   font-weight: 500;
+  letter-spacing: -0.01em;
   color: var(--text-muted);
   background: none;
   border: 1px solid transparent;
@@ -627,6 +671,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   position: absolute;
   top: calc(100% + 10px);
   z-index: 60;
+  font-family: var(--font-ui);
   min-width: 214px;
   display: flex;
   flex-direction: column;
@@ -654,8 +699,11 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   gap: 10px;
   width: 100%;
   padding: 9px 11px;
+  /* 下拉菜单项：与导航同套 Satoshi 500，字距略收紧 */
+  font-family: var(--font-ui);
   font-size: 13.5px;
   font-weight: 500;
+  letter-spacing: -0.01em;
   color: var(--text);
   text-align: left;
   background: none;
@@ -675,8 +723,11 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 .menu-item.danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 
 .menu-head { display: flex; align-items: center; gap: 11px; padding: 9px 11px 7px; }
+/* 字体已由 .menu-panel 统一声明；这里只管排版 */
 .menu-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.menu-head-text strong { font-size: 13.5px; font-weight: 620; }
+/* 原来写 620，会触发浏览器对 Satoshi 的合成加粗（只自托管 400/500/700），
+   边缘发虚；收口到真实存在的 700，层级不变但字面干净。 */
+.menu-head-text strong { font-size: 13.5px; font-weight: 700; letter-spacing: -0.01em; }
 .menu-head-text span {
   max-width: 190px;
   font-size: 12px;
@@ -712,6 +763,8 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 36px; min-height: 36px; padding: 0 12px;
   border-radius: 999px; font-size: 13px; line-height: 1; white-space: nowrap;
+  /* 与 .theme-toggle 同款字面（Satoshi 500 + 轻微负字距），两枚胶囊并排才齐 */
+  font-family: var(--font-ui); font-weight: 500; letter-spacing: -0.01em;
   background: var(--glass-bg-strong);
   -webkit-backdrop-filter: blur(14px) saturate(160%);
   backdrop-filter: blur(14px) saturate(160%);
@@ -927,6 +980,9 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 /* ---------------- 博客正文 ---------------- */
 .post-content-wrap {
   /* 博客正文使用衬线体（Claude 阅读体验的近似实现） */
+  /* ⚠ 这是全站**唯一**一处刻意绕过 --font-display 的硬编码字体栈（2026-10-12 复核后保留）：
+     博客正文的字体链比 --font-display 更长（多了 Noto Serif SC / 思源宋体 / PingFang SC），
+     是为了照顾长文的阅读观感，换回令牌反而会改变正文的既有观感，故保留原样。 */
   font-family: 'Newsreader', Georgia, 'Songti SC', 'Noto Serif SC', 'Source Han Serif SC',
     'PingFang SC', serif;
   line-height: 1.85;
@@ -934,7 +990,8 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 }
 .post-content { color: var(--text); }
 .post-content h1, .post-content h2, .post-content h3 {
-  font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'PingFang SC', system-ui, sans-serif;
+  /* 正文是衬线体，但小标题回到 UI 角色（Satoshi）——走令牌，避免与 --font-ui 漂移 */
+  font-family: var(--font-ui);
   line-height: 1.3;
   margin: 1.4em 0 0.6em;
 }
@@ -949,7 +1006,9 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   border-radius: var(--radius);
   overflow-x: auto;
 }
-.post-content code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.9em; }
+/* 代码走 --font-mono：比硬编码等宽栈多了中文字形兜底，
+   否则代码注释里的中文会回退到 NSimSun（新宋体）点阵字。 */
+.post-content code { font-family: var(--font-mono); font-size: 0.9em; }
 .post-content blockquote {
   margin: 1em 0; padding: 6px 16px;
   border-left: 3px solid var(--primary);
@@ -2186,10 +2245,16 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   position: absolute;
   top: 8px; right: 8px;
   z-index: 4;
-  width: 28px; height: 28px;
-  padding: 0;
-  border-radius: 8px;
-  display: grid; place-items: center;
+  /* 2026-10-12：从「纯 + 图标」改成带文字的胶囊。
+     之前只有一个 +，用户读成了「添加收藏」；现在直接写「加入影视库」，
+     一眼能看出它把片子收进本站影视库，而不是加个书签。 */
+  min-width: 28px; height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
   color: #fff;
   background: rgba(6, 8, 12, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -2202,6 +2267,32 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
 .vod-collect::after { display: none; }
 .vod-collect:hover { background: var(--primary); border-color: transparent; transform: none; box-shadow: none; }
 .vod-card:hover .vod-collect { opacity: 1; transform: none; }
+/* 处理中：按钮本身也变成一个小转圈，宽度收回到方形，不闪文字 */
+.vod-collect:disabled { opacity: 1; transform: none; }
+.vod-collect .spinner { width: 12px; height: 12px; border-width: 1.8px; border-top-color: #fff; }
+
+/* —— 卡片级加载遮罩（2026-10-12）——
+   点击卡片到详情页出内容之间有一段真实等待（建库 + 回源取线路，实测约 3~4s）。
+   用户要求「点击了就显示加载动画，加载出来马上消失，不设固定时长」：
+   因此它**没有** animation-delay 之外的任何计时，纯由 pending 状态驱动。
+   180ms 的淡入延迟是刻意留的 —— 命中缓存那种瞬时响应不会闪一下白。 */
+.vod-loading {
+  position: absolute; inset: 0;
+  z-index: 6;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: inherit;
+  background: rgba(8, 10, 16, 0.52);
+  -webkit-backdrop-filter: blur(2px) saturate(120%);
+  backdrop-filter: blur(2px) saturate(120%);
+  animation: vod-loading-in 0.18s var(--ease-out) both;
+  pointer-events: none;
+}
+.vod-loading .spinner { width: 22px; height: 22px; border-width: 2.4px; border-top-color: #fff; }
+.vod-card.is-pending { cursor: progress; }
+@keyframes vod-loading-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .vod-loading { animation: none; }
+}
 
 /* ⚠ 历史遗留：@keyframes skeletonSweep 从未被定义（下方的 v2 段落补上了），
    因此这块「骨架屏」其实一直是静止的灰块。`.skeleton-card` 保留为别名，
@@ -2634,12 +2725,27 @@ body.watch-mode .app-header { display: none; }
 .mini-player .mini-seek:hover::-moz-range-thumb { opacity: 1; }
 
 /* 左侧：封面 + 曲目信息（整块可点，展开沉浸页）*/
+.mini-cover-btn {
+  flex: 0 0 auto;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  cursor: pointer;
+}
+.mini-cover-btn::after { display: none; }
+.mini-cover-btn:hover { transform: none; box-shadow: none; border-color: transparent; }
+.mini-cover-btn:hover .mini-cover { box-shadow: var(--shadow-md); }
+
 .mini-meta {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
-  max-width: 320px;
+  max-width: 240px;
   padding: 0;
   color: var(--text);
   text-align: left;
@@ -2741,6 +2847,129 @@ body.watch-mode .app-header { display: none; }
   color: var(--primary-contrast);
   background: color-mix(in srgb, var(--primary) 88%, var(--text));
 }
+
+/* 播放条上的图标按钮：随机 / 收藏 / 循环 / 队列。
+   打开状态（随机开、循环非顺序、队列浮层开着）用主色 + 淡底，与「已收藏」同语言。 */
+.mini-icon {
+  position: relative;
+  width: 34px; height: 34px;
+  padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+}
+.mini-icon::after { display: none; }
+.mini-icon:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  transform: none;
+  box-shadow: none;
+}
+.mini-icon.on { color: var(--primary); }
+.mini-icon.on:hover { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.mini-icon:disabled { opacity: .35; cursor: not-allowed; }
+/* 收藏：与详情页一致，收藏后用危险色 + 实心 */
+.mini-icon.mini-fav.on { color: var(--danger); }
+.mini-icon.mini-fav.on .icon { fill: currentColor; }
+
+/* 角标：循环到「单曲」显示 1；队列按钮显示总首数 */
+.mini-badge {
+  position: absolute;
+  right: 1px; bottom: 1px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-contrast);
+  background: var(--primary);
+}
+
+/* ---- 播放队列浮层：从播放条上方弹出，就地查看 / 切歌，不跳页 ---- */
+.mini-queue-wrap { position: relative; display: inline-flex; }
+.mini-queue {
+  position: absolute;
+  right: 0;
+  /* 播放条本身有高度，浮层若只抬高 12px 会被条子的上半截压住。
+     这里抬到「按钮顶边再往上一个条高」，保证整块浮层都落在播放条上方。 */
+  bottom: calc(100% + 34px);
+  z-index: 70;
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(56vh, 480px);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-lg), inset 0 1px 0 var(--glass-highlight);
+  animation: fade-up var(--dur-fast) var(--ease-out) both;
+}
+.mini-queue-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; padding: 0 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.mini-queue-head strong { font-size: var(--fs-sm); }
+.mini-queue-head span { font-size: 11.5px; color: var(--text-muted); }
+.mini-queue-list {
+  /* flex 子项默认 min-height:auto，会撑破 max-height 而不出滚动条；
+     显式给 flex:1 + min-height:0 才是「超高就内部滚动」。 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mini-queue-row {
+  display: flex; align-items: center; gap: 9px;
+  /* 不参与 flex 收缩：否则队列很长时每一行会被压扁（实测被压到 8px），
+     而不是让列表出现滚动条。 */
+  flex: 0 0 auto;
+  width: 100%; padding: 6px 8px;
+  text-align: left;
+  border: none; border-radius: var(--radius-sm);
+  background: none; box-shadow: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.mini-queue-row::after { display: none; }
+.mini-queue-row:hover { background: color-mix(in srgb, var(--text) 7%, transparent); transform: none; box-shadow: none; }
+.mini-queue-row.on { background: color-mix(in srgb, var(--primary) 11%, transparent); }
+.mini-queue-row.on .mini-queue-text strong { color: var(--primary); }
+.mini-queue-n {
+  flex: 0 0 18px;
+  display: grid; place-items: center;
+  font-size: 11.5px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.mini-queue-art {
+  flex: 0 0 auto;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.mini-queue-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mini-queue-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.mini-queue-text strong { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-queue-text span { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-queue-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.mini-queue-eq i { width: 2px; background: var(--primary); border-radius: 1px; animation: mini-eq-bounce .9s ease-in-out infinite; }
+.mini-queue-eq i:nth-child(1) { height: 60%; }
+.mini-queue-eq i:nth-child(2) { height: 100%; animation-delay: .15s; }
+.mini-queue-eq i:nth-child(3) { height: 45%; animation-delay: .3s; }
 
 .mini-volume { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; color: var(--text-muted); }
 
@@ -3442,6 +3671,8 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
 }
 
 .shelf { display: flex; flex-direction: column; gap: 16px; }
+/* 分组说明（当前只用于「播放历史」）：一句话讲清这一组的排序口径 */
+.shelf-note { margin: -6px 0 0; font-size: 13px; color: var(--text-muted); }
 .shelf-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .shelf-head h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.015em; }
 .shelf-head .count {
@@ -4034,7 +4265,10 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 @media (max-width: 640px) {
   .mini-player { gap: 8px; padding: 8px 12px; }
   .mini-time, .mini-volume { display: none; }
-  .mini-meta { max-width: 46vw; }
+  .mini-meta { max-width: 34vw; }
+  /* 手机上按钮多，收一收间距，保证「随机 / 收藏 / 循环 / 队列」都在一行里 */
+  .mini-controls { gap: 0; }
+  .mini-icon { width: 30px; height: 30px; }
   body:has(.mini-player) .app-main { padding-bottom: 96px; }
 
   .album-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 16px 12px; }
@@ -4263,6 +4497,18 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   margin-bottom: var(--sp-7);
 }
 /* 工具条内的紧凑搜索框 */
+.toolbar-search {
+  /* 搜索框 + 正下方的搜索历史。用 column flex 而不是让历史当工具条的兄弟节点，
+     否则工具条的 flex-wrap 会把历史排到搜索框右边（2026-10-12 用户反馈）。 */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.toolbar-search .toolbar-field { flex: none; width: 100%; }
+.toolbar-search .sh-bar { width: 100%; box-sizing: border-box; }
+
 .toolbar-field {
   display: flex;
   align-items: center;
@@ -4919,6 +5165,11 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .mh-row-head h3 { margin: 0; font-size: 21px; font-weight: 750; }
 .mh-row-head .muted { font-size: 13px; }
 .mh-row-head .icon-btn { align-self: center; padding: 6px; line-height: 0; border-radius: var(--radius-pill); }
+/* 触屏设备：海报墙每行的左右箭头撑到 44px（2026-10-12 移动端适配，原来 30px）。
+   ⚠ 这条必须紧跟在上面那条基础规则之后 —— global.css 内部同权重按源码顺序生效。 */
+@media (hover: none) and (pointer: coarse) {
+  .mh-row-head .icon-btn { padding: 13px; }
+}
 .mh-more { align-self: center; font-size: 13px; padding: 6px 14px; border-radius: var(--radius-pill); }
 .mh-row-error { padding: 18px 0; font-size: 13px; }
 
@@ -5322,7 +5573,8 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .cs-month li a { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 10px; color: var(--text); text-decoration: none; }
 .cs-month li a:hover { background: var(--cs-soft); }
 .cs-month li a:hover .cs-tl-title { color: var(--cs); }
-.cs-month time { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: var(--text-muted); flex: none; }
+/* 时间戳走 --font-mono（等宽栈带中文字形兜底；原先硬编码 ui-monospace, Menlo 少了兜底） */
+.cs-month time { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-muted); flex: none; }
 .cs-tl-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cs-tl-cat { flex: none; font-size: 12px; color: var(--cs); background: var(--cs-soft); padding: 2px 8px; border-radius: 6px; }
 
@@ -5672,4 +5924,53 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 @media (prefers-reduced-motion: reduce) {
   .app-main > * { animation: none; }
   .app-header .brand-name { animation: none; }
+}
+
+/* =============================================================
+   移动端触屏适配（2026-10-12 新增）
+   -------------------------------------------------------------
+   用户要求：「你没有针对手机移动端做一个适配吗，适配一下」。
+
+   实测（390×844 无头 Chrome，逐页扫描所有 button / a / [role=button]）暴露两类问题：
+
+   ① **顶栏控件被 flex 压扁**：导航抢空间后，搜索按钮从 38px 挤成 20px、
+      主题按钮从 52px 挤成 27px。已在 .app-header > a[title] 那一节用
+      `flex: none` 修掉（固定尺寸的控件不该参与收缩）。
+
+   ② **一批按钮的命中区小于 44px**（移动端推荐最小值）：
+      首页轮播进度点 3px、轮播箭头 36px、影视/音乐大按钮 28px、
+      「查看更多」25px、更新日志版本锚点 31px、共创页底部链接 19px。
+      这些都在各自样式文件里用 `@media (hover:none) and (pointer:coarse)`
+      单独放大了 —— 只在**触屏设备**上生效，桌面鼠标环境的外观一点不变。
+
+   为什么用 `(hover:none) and (pointer:coarse)` 而不是宽度断点：
+   窗口窄不等于触摸屏（桌面把窗口拉窄仍然用鼠标），
+   而 44px 命中区是**手指**的需求，跟视口宽度无关。两者分开判断才不会误伤桌面。
+
+   下面这一段兜底：凡是页面里「没被上面点到」的小按钮，在触屏上一律补到 40px，
+   避免以后新加的功能又漏掉。
+   ============================================================= */
+@media (hover: none) and (pointer: coarse) {
+  /* 通用兜底：顶栏以外的裸按钮，最小高度 40px（不影响已有显式尺寸的按钮） */
+  .app-main button:not(.ld-hero-dot):not(.field-clear):not(.icon-btn):not(.card-close),
+  .app-main [role='button'] {
+    min-height: 40px;
+  }
+  /* ⚠ 轮播箭头（.ld-hero-arrow）的放大写在 home-landing.css 里 ——
+     那个文件随 Home 路由异步加载，排在 global.css 之后，
+     在这里写会被它的基础规则覆盖（实测过：写了 44px 仍是 36px）。 */
+  /* 影视 / 音乐首屏大按钮：高度补到 44 */
+  .mh-hero-actions button,
+  .am-hero-actions button { min-height: 44px; }
+  /* 搜索结果行的收藏按钮等小圆钮 */
+  .am-track-add,
+  .mh-card-add { min-width: 40px; min-height: 40px; }
+  /* 顶栏右侧控件：搜索圆钮 / 主题胶囊 / 登录胶囊一律 40px。
+     ⚠ 主题与登录必须**同时**改，两者高度宽度要始终一致（用户明确要求）。 */
+  .app-header > a[title]:not(.login-link) { width: 40px; height: 40px; }
+  .theme-toggle,
+  .login-link { height: 40px; min-height: 40px; }
+  /* 顶栏品牌与一级导航：命中区补到 40px（外观不变，靠上下内边距撑开） */
+  .app-header .brand { padding-top: 5px; padding-bottom: 5px; }
+  .app-nav a { padding-top: 12px; padding-bottom: 12px; }
 }

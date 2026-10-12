@@ -137,6 +137,8 @@
 .gc-loading span { width: 60%; height: 2px; background: linear-gradient(90deg, transparent, #3ee6a8, transparent); animation: gc-scan 1.4s infinite; }
 .gc-loading span:nth-child(2) { animation-delay: 0.2s; width: 45%; } .gc-loading span:nth-child(3) { animation-delay: 0.4s; width: 30%; }
 @keyframes gc-scan { 0% { opacity: 0.1; } 50% { opacity: 1; } 100% { opacity: 0.1; } }
+/* 经典视图容器：`inherit` 是**故意**的 —— 父级 .gc 已声明 --gc-mono（带中文字形兜底），
+   这里跟着走同一套等宽，保持控制台的 HUD 观感，不是漏改。（2026-10-12 字体收口复核） */
 .gc-classic { background: var(--bg-elevated, #fff); border-radius: 12px; padding: 8px; color: var(--text, #222); font-family: inherit; }
 
 @media (max-width: 1100px) {

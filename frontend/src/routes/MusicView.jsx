@@ -85,11 +85,19 @@ export function MusicView({ id }) {
         {cover && <div class="song-backdrop" style={`background-image:url(${cover})`} />}
         <div class="song-veil" />
         <div class="song-body">
-          <div class={`song-art${isCurrent && playing ? ' playing' : ''}`}>
+          {/* 封面即入口：点封面直达歌词页，与底部迷你播放条「点头像展开歌词」一致 */}
+          <button
+            type="button"
+            class={`song-art tappable${isCurrent && playing ? ' playing' : ''}`}
+            onClick={() => route(`/music/${music.id}/lyrics`)}
+            title="打开歌词"
+            aria-label={`打开 ${music.title} 的歌词`}
+          >
             {cover
               ? <img src={cover} alt={music.title} />
               : <span class="np-art-empty"><Icon name="music" size={44} /></span>}
-          </div>
+            <span class="song-art-hint"><Icon name="lyrics" size={14} /> 歌词</span>
+          </button>
 
           <div class="song-info">
             <span class="song-kicker">{t.album ? '专辑曲目' : '单曲'}</span>

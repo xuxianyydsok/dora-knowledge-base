@@ -25,7 +25,7 @@
   border: none; outline: none; resize: vertical;
   background: transparent;
   color: var(--text);
-  font-family: inherit;
+  font-family: var(--font-ui);
   font-size: var(--fs-body, 15px);
   line-height: 1.65;
   min-height: 76px;
@@ -508,16 +508,25 @@
    用户要求：搜索过的词留成历史，每条右侧 × 单独删，另有一键清空。
    ============================================================ */
 .sh-bar {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  margin-top: 10px; padding: 8px 12px;
+  /* 2026-10-12 用户要求：搜索历史要**紧贴搜索框下方**，而且「一键清空」不能和
+     历史词挤在同一行。做法：整体改成网格 —— 第一行是「搜索历史 + 词条」，
+     第二行只有靠右的「一键清空」。 */
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: 'label list' 'clear clear';
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 0;
+  padding: 8px 12px;
   border: 1px dashed var(--border); border-radius: var(--radius-sm, 10px);
   background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 .sh-label {
+  grid-area: label;
   display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
   font-size: 12px; color: var(--text-muted); letter-spacing: .02em;
 }
-.sh-list { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.sh-list { grid-area: list; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .sh-chip {
   display: inline-flex; align-items: center;
   border: 1px solid var(--border); border-radius: 999px;
@@ -541,7 +550,9 @@
 .sh-x::after { display: none; }
 .sh-x:hover { transform: none; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .sh-clear {
-  flex: 0 0 auto; padding: 4px 12px; border-radius: 999px;
+  /* 单独占一行、靠右 —— 不再和历史词混排 */
+  grid-area: clear; justify-self: end;
+  padding: 3px 12px; border-radius: 999px;
   border: 1px solid var(--border); background: none; box-shadow: none;
   color: var(--text-muted); font-size: 12px; cursor: pointer;
 }

@@ -8,6 +8,7 @@
 //       不写死色值，这样三套主题（纯净 / 素雅 / 天青）都能直接生效。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { genCover, pickCover } from '../lib/genCover.js';
+import { charGradients, TITLE_GRADIENT } from '../lib/brandGradient.js';
 
 // 字符串 → 32 位整数种子（FNV-1a）。确定性：同一个 id 永远同一张封面。
 function hashSeed(str) {
@@ -111,6 +112,98 @@ export function useReveal(deps = []) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return ref;
+}
+
+// 首屏标题带（2026-10-12 新增，用户要求）
+// ------------------------------------------------------------------
+// 用户要求：巨型标题不再压在首屏大图上，而是挪到首屏**正下方**，
+// 「写在前面」那一段的上方；文案把「知识」改成「碎片」——
+//   「把散落的碎片 / 收进一张星图」
+// 呈现方式参照站长给的《blog-home-v2》第一个页面（hero headline）：
+//   巨型衬线字 + 逐字错峰升起（每字 translateY(115%) rotate(8deg) 起步）+
+//   一条手绘下划线（stroke-dashoffset 从 1 走到 0，像有人随手划了一道）。
+// 同时把原先压在首屏图上的实时时钟挪到这里（用户明确要求时钟不要删，只是换位置）。
+//
+// ⚠ 渐变仍按字切片（--ld-grad 由 brandGradient 传入）：每个字都要做 transform
+//   动画，transform 会让它自成合成层，父元素统一的 background-clip:text 裁不到，
+//   整行会直接变透明 —— 原因详见 lib/brandGradient.js 顶部注释。
+const TITLE_LINES = ['把散落的碎片', '收进一张星图'];
+
+export function TitleBand() {
+  const grads = useMemo(() => charGradients(TITLE_LINES, TITLE_GRADIENT), []);
+  const ref = useRef(null);
+  const clockRef = useRef(null);
+  const [titled, setTitled] = useState(false);
+
+  // 逐字入场：进场后每字错峰 70ms（第二行整体再晚 0.3s）
+  useEffect(() => {
+    const t = setTimeout(() => setTitled(true), 220);
+    return () => clearTimeout(t);
+  }, []);
+
+  // 实时时钟（秒针每秒走一格，只有指针在动，代价极低）
+  useEffect(() => {
+    const el = clockRef.current;
+    if (!el) return undefined;
+    const hh = el.querySelector('.tb-clk-hh');
+    const mh = el.querySelector('.tb-clk-mh');
+    const sh = el.querySelector('.tb-clk-sh');
+    const label = el.querySelector('.tb-time');
+    if (!hh || !mh || !sh || !label) return undefined;
+    let timer = 0;
+    const tick = () => {
+      const d = new Date();
+      const s = d.getSeconds();
+      const m = d.getMinutes() + s / 60;
+      const h = (d.getHours() % 12) + m / 60;
+      hh.setAttribute('transform', `rotate(${h * 30} 60 60)`);
+      mh.setAttribute('transform', `rotate(${m * 6} 60 60)`);
+      sh.setAttribute('transform', `rotate(${s * 6} 60 60)`);
+      label.textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      timer = setTimeout(tick, 1000);
+    };
+    tick();
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <section class="tb" ref={ref} aria-label="站点主张">
+      <h1 class={`tb-title${titled ? ' is-in' : ''}`}>
+        {TITLE_LINES.map((line, li) => (
+          <span class="tb-line" key={line}>
+            {[...line].map((ch, ci) => {
+              // 该字在整条渐变里的位置（0-based，跨两行连续）
+              const idx = li === 0 ? ci : TITLE_LINES[0].length + ci;
+              return (
+                <span
+                  class="tb-ch"
+                  style={{ '--d': `${li * 0.3 + ci * 0.07}s`, '--ld-grad': grads[idx] }}
+                  key={`${li}-${ci}`}
+                >{ch}</span>
+              );
+            })}
+          </span>
+        ))}
+        {/* 手绘下划线：pathLength=1 后用 stroke-dashoffset 从 1 走到 0 */}
+        <svg class="tb-scribble" viewBox="0 0 800 24" preserveAspectRatio="none" aria-hidden="true">
+          <path pathLength="1" d="M4 14C60 2 90 22 150 12S250 4 310 14 420 22 480 10 590 6 650 15 740 18 796 8" />
+        </svg>
+      </h1>
+
+      <div class="tb-side">
+        <div class="tb-clock" ref={clockRef}>
+          <svg class="tb-clk" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="tb-clk-face" cx="60" cy="60" r="57" />
+            <line class="tb-clk-hh" x1="60" y1="60" x2="60" y2="34" />
+            <line class="tb-clk-mh" x1="60" y1="60" x2="60" y2="20" />
+            <line class="tb-clk-sh" x1="60" y1="68" x2="60" y2="14" />
+            <circle class="tb-clk-pin" cx="60" cy="60" r="3.2" />
+          </svg>
+          <p class="tb-cap"><b class="tb-time">--:--</b> 此刻</p>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 // 日期 → 2026.10.11（模板里的斜体拉丁数字就是这个格式）
@@ -272,41 +365,67 @@ export function Seal({ ring = '', char = '知', class: cls = '' }) {
   );
 }
 
-// 开场白（2026-10-11 用户要求）：原来的「最近写的」文章列表整块下架，
-// 标题与手绘横线保留，下面换成一段站点简介。
-// 与 AboutBlock 的区别：这段在首屏之后不远，属于「导读」，所以用**逐行模糊揭幕**
-// 而不是逐字点亮 —— 逐字点亮需要读者滚动配合，放在这里会显得拖沓。
+// 开场白（2026-10-11 新增，2026-10-12 改成滚动驱动）
+//
+// 用户要求（2026-10-12）：这一段（标题「写在前面」，正文是站点简介）要参照
+// 站长给的《余白 · 博客首页111》里「关于我」那段的呈现方式 ——
+// **向下滚动时，字一个一个由虚到实**（未读到的字模糊、读到即清晰），
+// 而不是「整行一次性揭幕」。
+//
+// 实现：把正文逐字拆成 span，滚动时按阅读进度算出一个「已经读到第几个字」的
+// 边界，边界之前的字清晰、之后的字模糊。用 rAF 节流，读进度与滚动位置挂钩
+// （而不是 IntersectionObserver 的一次性触发），这样慢慢滚能看到字一个个变清楚。
 export function IntroBlock({ lines = [] }) {
   const ref = useRef(null);
+  // 逐字展开后的总字数：用来把滚动进度换算成「读到第几个字」
+  const total = useMemo(() => lines.reduce((a, l) => a + [...String(l)].length, 0), [lines]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
-    const rows = [...el.querySelectorAll('.ld-intro-line')];
-    if (!rows.length) return undefined;
+    const chars = [...el.querySelectorAll('.ld-i-ch')];
+    if (!chars.length) return undefined;
 
-    // 用 IntersectionObserver 逐行触发，进入视口即揭幕，不跟滚动位置死绑：
-    // 这样无论用户是快滑还是慢看，每一行都能完整看清（用户明确要求「一定要显示清楚」）。
-    if (typeof IntersectionObserver !== 'function') {
-      rows.forEach((r) => r.classList.add('on'));
+    // 尊重用户的「减少动态效果」偏好：直接全部清晰，不做滚动跟随
+    if (typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      chars.forEach((c) => c.classList.add('on'));
       return undefined;
     }
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach((e) => {
-        if (e.isIntersecting) {
-          e.target.classList.add('on');
-          io.unobserve(e.target);
-        }
-      });
-    }, { threshold: 0.35, rootMargin: '0px 0px -8% 0px' });
-    rows.forEach((r) => io.observe(r));
-    return () => io.disconnect();
-  }, [lines.length]);
+
+    let lit = -1;
+    let raf = 0;
+    const paint = () => {
+      raf = 0;
+      const r = el.getBoundingClientRect();
+      const vh = window.innerHeight;
+      // 进度口径：元素顶部进入视口 85% 处开始、元素底部到视口 35% 处结束。
+      // 起点用 0.85 而不是 1.0 —— 文字刚露头就开始变清楚，不会「先模糊半天」。
+      const p = Math.min(1, Math.max(0, (vh * 0.85 - r.top) / (r.height + vh * 0.45)));
+      const next = Math.round(p * chars.length * 1.06);
+      if (next === lit) return;
+      lit = next;
+      chars.forEach((c, i) => c.classList.toggle('on', i < next));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(paint); };
+    paint();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [total]);
 
   return (
     <div class="ld-intro" ref={ref}>
       {lines.map((line, i) => (
-        <p class="ld-intro-line" key={i} style={{ '--i': i }}>{line}</p>
+        <p class="ld-intro-line" key={i}>
+          {[...String(line)].map((ch, k) => (
+            <span class="ld-i-ch" key={k}>{ch}</span>
+          ))}
+        </p>
       ))}
     </div>
   );

@@ -546,6 +546,9 @@ body {
   word-wrap: break-word;
   overflow-wrap: break-word;
   -webkit-text-size-adjust: 100%;
+  /* 触屏手势：纵向滚动交还给浏览器（读者正常上下读），横向不交给浏览器，
+     这样阅读器里的「左滑下一章 / 右滑上一章」才不会被系统的横滑手势吃掉。 */
+  touch-action: pan-y;
 }
 /* 双页模式：正文按 CSS 多栏排版（两栏并排，像摊开的书）。
    滚动方向仍然是纵向，所以触屏 / 滚轮 / 方向键的行为和单栏完全一致。

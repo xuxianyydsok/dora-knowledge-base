@@ -157,15 +157,22 @@ export function buildFilings({ width, height, step = 20, edgeCells = 2, inside =
  * 覆盖率天然带一点抗锯齿，笔画的粗细、拐角、字母的闭合腔都能保住。
  *
  * 返回的每个点带 cov 字段（0~1），组件用它决定线段长度。
+ *
+ * 另外还返回 halo —— **字形外面环绕的一圈散铁屑**。
+ * 用户 2026-10-12 的要求：「Dora Studio 那个框，除了名字之外，它的周围应该也还有铁屑，
+ * 就是那些铁屑把它整个包围起来」。所以字形之外还要有一圈「自由铁屑」，
+ * 它们不拼字、只负责把字围住（指向磁极，像被磁场吸住的铁屑场）。
+ * 半径与密度都可调；超出半径的地方一个点都不画，避免退化成模板那种「铺满整块」。
  */
 export function classifyCells({
-  cols, rows, step, cov, insideMin = 0.34, edgeMin = 0.08
+  cols, rows, step, cov, insideMin = 0.34, edgeMin = 0.08,
+  haloRadius = 0, haloDensity = 0.55
 }) {
   const C = Math.max(0, Math.floor(Number(cols) || 0));
   const R = Math.max(0, Math.floor(Number(rows) || 0));
   const s = Number(step) > 0 ? Number(step) : 20;
   const data = cov && cov.length >= C * R ? cov : null;
-  if (!C || !R || !data) return { inside: [], edge: [], all: [], cols: C, rows: R, step: s };
+  if (!C || !R || !data) return { inside: [], edge: [], halo: [], all: [], cols: C, rows: R, step: s };
 
   const at = (c, r) => (c < 0 || r < 0 || c >= C || r >= R ? 0 : data[r * C + c]);
   const inside = [];
@@ -195,7 +202,48 @@ export function classifyCells({
       if (edge[i].inside) edge.splice(i, 1);
     }
   }
-  return { inside, edge, all, cols: C, rows: R, step: s };
+
+  // —— 环绕铁屑（halo）——
+  // 在字形（含毛边）之外，取一圈**环形区域**内的网格点当作自由铁屑。
+  // 密度用确定性伪随机控制（不是 Math.random，保证重绘稳定）：
+  //   · 越靠近字形越密（离字近的铁屑被吸住的感觉），越往外越稀；
+  //   · 只保留 haloRadius 格以内的点，外面彻底留白，不会变成铺满整块。
+  const halo = [];
+  const HR = Math.max(0, Math.floor(Number(haloRadius) || 0));
+  const dens = Math.max(0, Math.min(1, Number(haloDensity) || 0));
+  if (HR > 0 && dens > 0 && inside.length) {
+    // 先标记「字形 + 毛边」占据的格子，halo 只画它们之外的点
+    const taken = new Set();
+    for (const p of all) taken.add(`${Math.floor(p.x / s)}:${Math.floor(p.y / s)}`);
+
+    for (let r = 0; r < R; r += 1) {
+      for (let c = 0; c < C; c += 1) {
+        if (taken.has(`${c}:${r}`)) continue;
+        // 到最近「字形/毛边格子」的切比雪夫距离（用方形邻域，和毛边判定口径一致）
+        let near = Infinity;
+        for (let dr = -HR; dr <= HR && near > 1; dr += 1) {
+          for (let dc = -HR; dc <= HR; dc += 1) {
+            if (taken.has(`${c + dc}:${r + dr}`)) {
+              const d = Math.max(Math.abs(dc), Math.abs(dr));
+              if (d < near) near = d;
+            }
+          }
+        }
+        if (near > HR) continue;
+        // 距离衰减：紧贴字形处概率 1，到最外圈降到 0.25 —— 形成由内向外散开的过渡
+        const falloff = 1 - (near - 1) / Math.max(1, HR);
+        const prob = dens * (0.25 + 0.75 * falloff);
+        const h = Math.sin((c * 127.1 + r * 311.7) * 0.017) * 43758.5453;
+        if ((h - Math.floor(h)) > prob) continue;
+        halo.push({
+          x: c * s + s / 2, y: r * s + s / 2,
+          cov: 0, inside: false, halo: true, ring: near
+        });
+      }
+    }
+  }
+
+  return { inside, edge, halo, all, cols: C, rows: R, step: s };
 }
 
 /**
@@ -541,7 +589,13 @@ export function BrandFilings({ text = 'DoraStudio', height = 400, ariaLabel = 'D
 
       let picked;
       if (cov) {
-        picked = classifyCells({ cols, rows, step, cov });
+        // haloRadius：字形之外再铺几格环绕铁屑（把字「围起来」）。
+        // ⚠ 必须按**像素**反推格数，不能写死格数：网格步长是跟着笔画宽度走的
+        //   （实测这块卡片上 step 只有 6px），写死 3 格只有 18px，环绕带细得看不见。
+        //   这里定成「字外一圈约 40px 宽的铁屑带」，无论字号 / 容器多大观感一致。
+        const haloPx = Math.max(24, Math.min(64, Math.round(fs * 0.5)));
+        const haloRadius = Math.max(2, Math.round(haloPx / step));
+        picked = classifyCells({ cols, rows, step, cov, haloRadius, haloDensity: 0.62 });
         restDirectionsFromCoverage(picked.all, { cols, rows, cov, step, radius: 1 });
       } else {
         // 兜底：采样失败时用一个椭圆当字形，退化成「一团纯几何的铁屑场」（不拼字）
@@ -554,9 +608,14 @@ export function BrandFilings({ text = 'DoraStudio', height = 400, ariaLabel = 'D
         computeNormals(picked.inside, picked.edge);
       }
 
-      const list = picked.all && picked.all.length
+      // 画的对象 = 字形 + 毛边 + 环绕铁屑。
+      // ⚠ halo 点不在 picked.all 里（它是按覆盖率筛过的那批），必须单独并进来，
+      //   否则「包围」永远画不出来。
+      const glyph = picked.all && picked.all.length
         ? [...picked.all]
         : [...picked.inside, ...picked.edge];
+      const halo = picked.halo || [];
+      const list = [...glyph, ...halo];
       for (const p of list) { if (p.step === undefined) p.step = step; }
       // 每根线一个固定相位，让抖动不同步；否则整片铁屑会像一块板子一起晃
       // 同时给每根线一个**固定的**角度/位置扰动（用确定性伪随机，同一根线每帧一致）：
@@ -572,7 +631,12 @@ export function BrandFilings({ text = 'DoraStudio', height = 400, ariaLabel = 'D
         p.oy = (frac(Math.sin(i * 39.425) * 24634.6345) - 0.5) * 0.5;    // 纵向 ±0.25 格
       }
 
-      scene = { W, H, step, list, insideCount: picked.inside.length, edgeCount: picked.edge.length };
+      scene = {
+        W, H, step, list,
+        insideCount: picked.inside.length,
+        edgeCount: picked.edge.length,
+        haloCount: halo.length
+      };
       pole.x = pole.sx = W / 2;
       pole.y = pole.sy = H * 0.46;
       return true;
@@ -611,6 +675,29 @@ export function BrandFilings({ text = 'DoraStudio', height = 400, ariaLabel = 'D
         const kk = k * k;
         const poleA = Math.atan2(dy, dx);
         const restA = p.hasN ? Math.atan2(p.ny, p.nx) : poleA;
+
+        // 环绕铁屑（halo）：不拼字，只负责「把字围起来」。
+        // 它们没有字形切向（hasN 为假），所以默认就指向磁极 ——
+        // 正是模板里铁屑被磁场吸住的观感；长度比毛边更短、透明度更低，
+        // 这样近看是一圈散铁屑，远看不会把字糊住。
+        if (p.halo) {
+          const step = scene.step;
+          const ringK = Math.max(0.3, 1 - (p.ring - 1) / 4);
+          const len = step * (0.30 + k * 0.5) * ringK * boost;
+          const half = len / 2;
+          const px = p.x + p.ox * step;
+          const py = p.y + p.oy * step;
+          const a = poleA + p.jit + Math.sin(t * 1.05 + p.ph) * (hover ? 0.10 : 0.05);
+          const cx = Math.cos(a) * half;
+          const cy = Math.sin(a) * half;
+          const alpha = (0.16 + k * 0.42) * ringK * (hover ? 1.15 : 1);
+          ctx.strokeStyle = palette[colorIndex(k * 0.75)][alphaIndex(alpha)];
+          ctx.beginPath();
+          ctx.moveTo(px - cx, py - cy);
+          ctx.lineTo(px + cx, py + cy);
+          ctx.stroke();
+          continue;
+        }
 
         // restA 现在是**笔画切向**。铁屑默认顺着笔画躺，磁极把附近的一小撮拧过来。
         // 权重上限压得很低：主体 0.30 / 毛边 0.22 —— 铁屑的意义是「被磁力轻轻拨动」，
