@@ -176,6 +176,35 @@ const TOOLS = [
     }
   },
   {
+    name: 'list_posts',
+    description: '列出已有博客文章（标题 / slug / 分类 / 状态 / 日期），用于写作前查重与确认序号。'
+      + 'AI 写新文章前应先调用本工具，避免写出重复的标题序号（如已有「软件工程（八）」就不能再写八）',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', description: '按分类名或 slug 过滤（可选，如「软件工程」或 software-engineering）' },
+        status: { type: 'string', enum: ['draft', 'published'], description: '按状态过滤（可选）' },
+        keyword: { type: 'string', description: '按标题关键词过滤（可选）' },
+        limit: { type: 'number', default: 50, description: '返回条数，上限 200' }
+      }
+    }
+  },
+  {
+    name: 'list_categories',
+    description: '列出全部分类及每类的文章数，用于判断新文章该归入哪个分类',
+    inputSchema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'list_tags',
+    description: '列出已有标签（含 id、名称、文章数）。写文章要挂标签时，先用本工具把标签名换成 tag_id',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keyword: { type: 'string', description: '按名称关键词过滤（可选）' }
+      }
+    }
+  },
+  {
     name: 'set_post_cover',
     description: '把某个素材设为某篇文章的封面（写入 posts.cover_path）',
     inputSchema: {
@@ -454,6 +483,109 @@ const handlers = {
       limit: String(Math.min(Number(args.limit) || 20, 100))
     }));
     return { items: rows, count: rows.length };
+  },
+
+  // 列出已有文章 —— AI 写作前查重、确认序号用。
+  //
+  // 为什么必须给 AI 这个工具（2026-10-13 用户提出）：
+  //   「他不知道没有历史数据知道我写了哪些文章，然后这个文章的规格是什么样的」
+  //   AI 是无状态的，不查就不知道「软件工程」已经写到第八篇，
+  //   必然会写出重复的序号、或者撞已有标题。
+  //
+  // 只返回标题级字段（不含 content）：315 篇文章的正文有几十 MB，
+  // 全带出来既慢又没必要 —— AI 要的是「有哪些、叫什么叫什么、什么分类」。
+  async list_posts(db, user, args) {
+    // ⚠ 关键：**过滤必须下推到 SQL**，不能先取 N 条再在内存里筛。
+    //   踩过的坑（2026-10-13 实测）：原先写成「取最新 50 条 → 内存里按分类过滤」，
+    //   结果「软件工程」明明有 8 篇，接口只返回 1 篇 ——
+    //   因为 8 篇里只有 1 篇落在最新 50 条内，其余被 limit 截掉了。
+    //   AI 拿到错误结果就会误判「这个分类只写到第一篇」，直接写出重复序号。
+    //
+    //   所以：分类先解析成 category_id 并下推；关键词也下推（ilike）。
+    const filters = {
+      select: 'id,title,slug,status,is_public,category_id,published_at,created_at',
+      user_id: `eq.${user.id}`,
+      order: 'created_at.desc',
+      limit: String(Math.min(Number(args.limit) || 50, 500))
+    };
+    if (args.status) filters.status = `eq.${args.status}`;
+
+    // 分类名 / slug → category_id（先查分类表，再按 id 过滤）
+    let catFilter = null;
+    if (args.category) {
+      const cats = await db.select('categories', qs({ select: 'id,name,slug' }));
+      const want = String(args.category).trim().toLowerCase();
+      catFilter = cats.find((c) => String(c.name).toLowerCase() === want
+        || String(c.slug).toLowerCase() === want) || null;
+      if (!catFilter) return { items: [], count: 0, note: `没有名为「${args.category}」的分类` };
+      filters.category_id = `eq.${catFilter.id}`;
+    }
+    // 关键词下推（Supabase 的 ilike 用 * 作通配符）
+    if (args.keyword) {
+      const kw = String(args.keyword).trim().replace(/[%,()*]/g, ' ');
+      filters.title = `ilike.*${kw}*`;
+    }
+
+    const rows = await db.select('posts', qs(filters));
+
+    // 分类：把 category_id 换成人能读的分类名（AI 也需要读得懂）
+    const cats = await db.select('categories', qs({ select: 'id,name,slug' }));
+    const catById = new Map(cats.map((c) => [c.id, c]));
+
+    const items = rows.map((r) => {
+      const c = catById.get(r.category_id);
+      return {
+        id: r.id,
+        title: r.title,
+        slug: r.slug,
+        status: r.status,
+        is_public: r.is_public,
+        category: c ? c.name : null,
+        category_slug: c ? c.slug : null,
+        created_at: r.created_at
+      };
+    });
+
+    return { items, count: items.length };
+  },
+
+  // 列出分类与每类文章数 —— AI 判断「新文章该归哪类、这类写到第几篇了」。
+  async list_categories(db, user) {
+    const [cats, posts] = await Promise.all([
+      db.select('categories', qs({ select: 'id,name,slug,description', order: 'name' })),
+      db.select('posts', qs({ select: 'category_id', user_id: `eq.${user.id}` }))
+    ]);
+    const tally = new Map();
+    for (const p of posts) tally.set(p.category_id, (tally.get(p.category_id) || 0) + 1);
+    return {
+      items: cats.map((c) => ({
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        description: c.description || null,
+        post_count: tally.get(c.id) || 0
+      })),
+      count: cats.length
+    };
+  },
+
+  // 列出标签（含 id）—— AI 挂标签前需要把「名字」换成「UUID」。
+  //
+  // 为什么必须给这个工具：create_post 的 tag_ids 只接受 UUID
+  //（后端 validateTagIds 按 id 查询），而 AI 只知道标签的中文名。
+  // 没有这个工具，AI 就只能瞎编 UUID，标签必然挂不上。
+  async list_tags(db, user, args) {
+    const rows = await db.select('tags', qs({
+      select: 'id,name,slug',
+      user_id: `eq.${user.id}`,
+      order: 'name'
+    }));
+    let items = rows.map((t) => ({ id: t.id, name: t.name, slug: t.slug }));
+    if (args.keyword) {
+      const kw = String(args.keyword).trim().toLowerCase();
+      items = items.filter((t) => String(t.name).toLowerCase().includes(kw));
+    }
+    return { items, count: items.length };
   },
 
   async set_post_cover(db, user, args) {

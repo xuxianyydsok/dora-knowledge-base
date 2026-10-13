@@ -51,3 +51,9 @@ coverage/
 
 # ---- 工具产物（herdr 终端把粘贴的临时文件放在这里） ----
 .herdr-web-ui/
+
+# ---- MCP 登录凭据（tools/mcp-login.mjs 用）----
+# .env.local 存站长邮箱密码；.mcp-token 存登录后的 JWT。
+# 两者都绝不允许入库（tools/ 下的脚本会自动读它们）。
+.env.local
+.mcp-token
