@@ -1783,6 +1783,63 @@ async function videoTypeUnit() {
     assert(long.length <= 120 && long.endsWith('.mp4'), `超长名应截断并保留扩展名，实际 ${long.length}`);
     return '文件名清洗通过';
   });
+
+  // ---- 首页轮播素材（2026-10-13） ----
+  // 用户要求：管理端可把图展的图片 / 视频挑到首页轮播，视频静音循环且可开关。
+  await test('首页轮播 · 路由顺序（/order 必须排在 /:id 之前）与写权限', () => {
+    const src = readFileSync(join(BACKEND, 'src', 'router.js'), 'utf8');
+    const orderAt = src.indexOf("'/api/hero/slides/order'");
+    const idAt = src.indexOf("'/api/hero/slides/:id'");
+    assert(orderAt > 0, 'router.js 应有 PUT /api/hero/slides/order');
+    assert(idAt > 0, 'router.js 应有 /api/hero/slides/:id');
+    // 顺序反了的话 PUT /order 会被当成「改 id=order 的项」，永远 404。
+    assert(orderAt < idAt, '/api/hero/slides/order 必须排在 /api/hero/slides/:id 之前');
+
+    const hero = readFileSync(join(BACKEND, 'src', 'routes', 'heroSlides.js'), 'utf8');
+    // 读对访客开放、写必须管理员：数一遍 requireAdmin 出现次数（4 个写接口）
+    const adminCalls = (hero.match(/requireAdmin\(/g) || []).length;
+    assert(adminCalls >= 4, `4 个写接口都应 requireAdmin，实际 ${adminCalls} 处`);
+    assert(/export async function listHeroSlides[\s\S]{0,300}requireAuth\(/.test(hero),
+      'listHeroSlides 应走 requireAuth（访客可读）');
+    // 访客过滤必须在查询层（Worker 是 service_role，RLS 不替它过滤）
+    assert(/user\.isGuest\)\s*filters\.is_active\s*=\s*'eq\.true'/.test(hero),
+      '访客必须在查询层叠加 is_active=eq.true');
+    return `order 在 :id 之前，${adminCalls} 处 requireAdmin，访客过滤下推查询层`;
+  });
+
+  await test('首页轮播 · 访客白名单放行只读、拒绝写；私人素材不下发给访客', () => {
+    const { isGuestAllowed } = publicScope;
+    assert(isGuestAllowed('GET', '/api/hero/slides'), '访客应可读首页轮播列表（首页要显示）');
+    assert(!isGuestAllowed('POST', '/api/hero/slides'), '访客不应能新增轮播项');
+    assert(!isGuestAllowed('PUT', '/api/hero/slides/order'), '访客不应能重排');
+    assert(!isGuestAllowed('PATCH', '/api/hero/slides/x'), '访客不应能改');
+    assert(!isGuestAllowed('DELETE', '/api/hero/slides/x'), '访客不应能删');
+
+    // 视频素材（动态壁纸）默认私人：挂在首页也播不出来，必须对访客隐藏，
+    // 否则首页会出现「轮播到这一条就是一片空白」。
+    const hero = readFileSync(join(BACKEND, 'src', 'routes', 'heroSlides.js'), 'utf8');
+    assert(/media_public/.test(hero), '应透出素材是否公开（media_public）供管理端提示');
+    assert(/user\.isAdmin\s*\|\|\s*s\.media_public/.test(hero),
+      '访客必须过滤掉「底层素材未公开」的轮播项');
+    return 'GET 放行 / 写 4 条拒绝 + 私人素材不下发';
+  });
+
+  await test('首页轮播 · 素材引用完整性由外键 cascade 兜底（不重复存文件）', () => {
+    const sql = readFileSync(join(BACKEND, '..', 'supabase', 'migrations',
+      '20261013000027_hero_slides.sql'), 'utf8');
+    const flat = sql.replace(/\s+/g, ' ');
+    // 只存引用：两张素材表都要 cascade，删素材时首页引用自动消失，
+    // 不会留下「首页挂着一条指向已删对象的死引用」。
+    assert(/asset_id\s+uuid\s+references\s+public\.assets\(id\)\s+on delete cascade/.test(flat),
+      'asset_id 应 references assets(id) on delete cascade');
+    assert(/wallpaper_id\s+uuid\s+references\s+public\.wallpapers\(id\)\s+on delete cascade/.test(flat),
+      'wallpaper_id 应 references wallpapers(id) on delete cascade');
+    // 来源与引用必须一致：否则会出现 source=asset 但只填了 wallpaper_id 的脏数据
+    assert(/hero_slides_ref_check/.test(flat), '应有来源与引用一致性的 check 约束');
+    // 绝不存文件字节：表里不该出现 object_key / size 这类「存了文件」的列
+    assert(!/object_key/.test(flat), 'hero_slides 只存引用，不该有 object_key');
+    return '两张素材表均 cascade，来源一致性有约束，不存文件字节';
+  });
 }
 
 // ---------------------------------------------------------------- UNIT · GitHub AI 解读

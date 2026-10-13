@@ -68,10 +68,12 @@
    `/api/gallery` 与 `/api/timeline` 都在查询里显式叠加 `is_public=eq.true`。
    前端拿到的就是已过滤的数据。
 3. **响应不含内部字段。**
-   展览响应只给 `id/title/description/captured_at/sort_order/is_public/时间戳 + image{url,width,height,mime_type,alt}`；
+   展览响应只给 `id/asset_id/title/description/captured_at/sort_order/is_public/时间戳 + image{url,width,height,mime_type,alt}`；
    时间轴每条只给 `id/type/title/summary/date/url/cover/source_id`。
    `object_key`、`sha256`、`user_id`、`metadata`、`content` 一律不外传。
    此外**不返回 `original_name`**（原始文件名属内部信息），`alt` 一律用策展标题或通用文案。
+   （`asset_id` 是 2026-10-13 为「首页轮播从图展挑素材」加的：公开地址 `/api/assets/<id>`
+   本身就含这个 id，不构成额外泄露。）
 4. **读素材必须同时限定 owner。**
    `decorate()` 无论访客还是站长，都用 `user_id = 当前用户` 过滤 `assets`，
    访客再叠加 `is_public`。Worker 用 `service_role` 直连、RLS 不生效，这一步是必需的。
@@ -125,3 +127,15 @@
 - 后端：`backend/src/routes/gallery.js`、`backend/src/routes/timeline.js`、`backend/src/lib/timelineMerge.js`
 - 前端：`frontend/src/routes/Gallery.jsx`、`frontend/src/routes/Timeline.jsx`、`frontend/src/styles/gallery-timeline.css`
 - 单测：`backend/tests/run.mjs` 的「UNIT · 图片展览与公开时间轴」小节
+
+## 7. 首页轮播复用图展素材（2026-10-13）
+
+首页首屏轮播（`components/HeroCarousel.jsx`）**不再写死在代码里**，
+改由站长在图展页的「首页轮播」抽屉里配置：从图展已有的图片 / 动态壁纸里挑，
+排序、开关启用、给视频设静音、写图注。表结构与接口见 `docs/api.md` 的
+「首页轮播 Hero Slides」一节；**只存引用、不重复存文件**，删图展素材时引用
+由外键 cascade 自动清掉。
+
+对图展侧的唯一改动：`GET /api/gallery` 的每条多返回一个 `asset_id`
+（轮播要用它建立引用）。其余不变量（访客过滤下推查询层、响应不含内部字段、
+读素材限定 owner）一条都没动。

@@ -11,6 +11,95 @@
 
 ---
 
+## 2.36 首页轮播可由站长配置（2026-10-13，分支 feat/now-settings）
+
+### 用户需求
+
+> 「首页它不是有那些图片吗？我想实现能够在管理员端上传图片，或者说一些视频
+>  来进行轮播图的替换」「存在数据库里吧，就新建一个数据库表」「可以复用图展的素材」
+>  「视频的话要静音循环。当然，可以开启个开关吧，就是说可以静音，也可以播放那个音乐」
+>  「体积的话暂时不限制吧」
+
+> ⚠ 本轮是**上一轮对话被上下文超限打断后接续完成的**。中断时的进度：
+> 后端路由 / 迁移 / 前端 api / HeroCarousel 数据获取已写完，但
+> **管理端 UI 完全没做**，HeroCarousel 的静音开关也只加了状态没加按钮。
+
+### 方案：只存引用，不重复存文件
+
+新表 `hero_slides`（迁移 `20261013000027_hero_slides.sql`）**只存对图展素材的引用**：
+
+| `source` | 指向 | 形态 |
+| --- | --- | --- |
+| `asset` | `assets` 表 | 图片 |
+| `wallpaper` | `wallpapers` 表 | 视频 |
+
+**为什么不在首页再传一遍文件**：图展已有完整的上传 + R2 + 策展流程，
+首页只是「挑几张出来展示」。复制文件会导致「同一张图存两遍」「删了图展首页还挂着破图」。
+两张素材表都设 `on delete cascade` —— 删图展素材时首页引用自动消失，不留死引用。
+
+### 本轮完成内容
+
+**后端**（`backend/src/routes/heroSlides.js`，新增）
+
+| 接口 | 鉴权 | 作用 |
+| --- | --- | --- |
+| GET `/api/hero/slides` | 访客可读 | 列出；访客只看 `is_active=true` **且素材已公开**的项 |
+| POST `/api/hero/slides` | 管理员 | 从图展挑一个素材加入（去重、校验归属） |
+| PUT `/api/hero/slides/order` | 管理员 | 批量重排（数组下标即 `sort_order`） |
+| PATCH `/api/hero/slides/:id` | 管理员 | 改图注 / 启用 / 静音 |
+| DELETE `/api/hero/slides/:id` | 管理员 | 移除引用（不删素材本身） |
+
+- `router.js` 接 5 条路由，**`/order` 必须排在 `/:id` 之前**（否则被当 id 吞掉）；
+- `publicScope.js` 白名单加 `hero`（访客只读，写操作仍被挡）；
+- 返回结构统一给 `media_url` + `media_type`（前端不用管底层是图还是视频），
+  另给 `media_public` 供管理端提示「素材还没公开，访客看不到这一条」。
+
+**前端**
+
+| 文件 | 变化 |
+| --- | --- |
+| `components/HeroCarousel.jsx` | 优先读 `/api/hero/slides`，失败 / 为空**回退内置 18 张图**；支持视频（静音循环自动播）；新增喇叭开关（用户主动点开可出声，浏览器只拦「自动播放」） |
+| `components/Icon.jsx` | 加 `volumeOff` 图标 |
+| `routes/Gallery.jsx` | 新增「首页轮播」抽屉（`HeroDrawer`）：从图展图片 / 动态壁纸挑入、上下移动、启用开关、视频静音开关、图注、移除；页头加「首页轮播」入口按钮 |
+| `styles/home-landing.css` | `.ld-hero-sound` 静音按钮 |
+| `styles/gallery-timeline.css` | 抽屉里的类型角标 / 未公开警告样式 |
+| `lib/api.js` | 5 个方法（列表 / 新增 / 改 / 删 / 重排） |
+
+**图展接口的一处改动**：`GET /api/gallery` 每条多返回 `asset_id`
+（轮播要用它建立引用）。公开地址 `/api/assets/<id>` 本身就含这个 id，不构成额外泄露。
+
+### 验证
+
+- 后端单测 **139 项全过**（新增 3 项：路由顺序与写权限、访客白名单 + 私人素材不下发、
+  外键 cascade 与「不存文件字节」）；
+- 新增前端探针 `frontend/tests/heroCarousel.probe.mjs` **25 项全过**
+  （后台配置优先 / 接口失败回退 18 张 / 空配置回退 / 视频静音循环 / 静音开关 / 管理端四接口契约）；
+- 其余前端探针无回归：`justified` 50、`gallery` 17、`favorites`、`changelog` 39、
+  `queueOrder`、`miniPlayer`、`musicIdentity` 19、`coop` 20、`ui-buttons` 18、
+  `fontUnify` 11、`graphStats` 42、`statCharts` 311、`readerSwipe`、`star3dLayout` 53、
+  `bilibili` 51；`bookshelf` 11 过 / 1 失败（已知噪声：本地无 Supabase 配置）；
+- 生产构建成功（`npm run build`）。
+
+### 坑与教训
+
+1. **Preact 对 `<video muted>` 的更新不可靠**：只改 props 有时不会作用到正在播放的元素上。
+   静音状态一律用 `ref` 直接写 `el.muted`（并顺手 `play()`）。
+2. **探针的 DOM shim 要声明媒体属性**：`muted` / `autoPlay` 在真 DOM 上是**属性**（不是 attribute），
+   shim 里没有它们时，组件写 `el.muted = …` 会静默写到一个不存在的字段上，
+   断言也会误判。`autoPlay` 必须是**驼峰**（preact 靠 `'autoPlay' in el` 决定写属性还是 attribute）。
+3. **探针跑完要卸载组件**：`HeroCarousel` 的自动轮播是 `setInterval`，
+   不卸载会一直挂在事件循环上，探针要等 2 分钟才被 timeout 掐掉（卸载后 1.1 秒）。
+4. **本地 5173 端口可能被别的项目占用**（本轮被 `math-modeling-studio` 的 vite 占着）：
+   跑真浏览器探针前先确认端口上确实是本项目，否则会拿到「整页没渲染」的假失败。
+   用 `PROBE_BASE` / `UI_BASE` 环境变量换端口（本轮用 5180）。
+
+### 下一步
+
+- 线上跑一次迁移（`20261013000027_hero_slides.sql`）后，站长在图展页「首页轮播」里实测一次。
+- 视频体积目前**不限制**（用户明确说「暂时不限制」）；若首屏变慢，再考虑加体积上限。
+
+---
+
 ## 2.35 影视源修「只有 3 条源」+ 音乐上传收紧（2026-10-13，分支 feat/now-settings）
 
 ### 追加：给 AI 的写作基建 + 撤销导航栏「更多」下拉（同日）

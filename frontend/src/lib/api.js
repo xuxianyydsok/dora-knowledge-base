@@ -673,6 +673,14 @@ export const api = {
   deleteWallpaper: (id) => request(`/api/wallpapers/${id}`, { method: 'DELETE' }),
   wallpaperFileUrl: (id) => withMediaToken(`${API_BASE_URL}/api/wallpapers/${id}/file`),
 
+  // 首页轮播素材（2026-10-13）：只存对图展素材的引用，不重复存文件。
+  // 读对访客开放（首页要显示）；增删改仅站长。
+  listHeroSlides: () => request('/api/hero/slides'),
+  addHeroSlide: (body) => request('/api/hero/slides', { method: 'POST', body }),
+  updateHeroSlide: (id, body) => request(`/api/hero/slides/${id}`, { method: 'PATCH', body }),
+  deleteHeroSlide: (id) => request(`/api/hero/slides/${id}`, { method: 'DELETE' }),
+  reorderHeroSlides: (ids) => request('/api/hero/slides/order', { method: 'PUT', body: { ids } }),
+
   // 碎念（朋友圈式短动态）
   listMoments: (params = '') => request(`/api/moments${params}`),
   createMoment: (body) => request('/api/moments', { method: 'POST', body }),

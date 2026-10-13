@@ -459,3 +459,35 @@
 /* 策展抽屉里的「上传新图片」区块（2026-10-11 新增） */
 .gl-upload { display: flex; align-items: center; gap: var(--sp-3, 8px); flex-wrap: wrap; }
 .gl-upload .muted { font-size: 12px; line-height: 1.5; }
+
+/* —— 首页轮播管理（2026-10-13） —— */
+.gl-hero-tip {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  border-radius: var(--radius-sm, 10px);
+  padding: 9px 11px;
+}
+/* 类型角标：一眼分清这一条是图片还是视频 */
+.gl-hero-kind {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text-muted);
+}
+/* 素材未公开的警告：视频素材默认私人，忘了公开访客就看不到 */
+.gl-hero-warn {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b45309;
+}
+@media (prefers-color-scheme: dark) {
+  .gl-hero-warn { color: #fbbf24; }
+}
+/* 抽屉里的视频缩略图与图片缩略图同尺寸 */
+.gl-asset video { width: 100%; height: 100%; object-fit: cover; display: block; }

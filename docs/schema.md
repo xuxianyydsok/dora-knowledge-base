@@ -13,6 +13,7 @@
 | `20261006000004_blog_rss_notifications.sql` | `posts`、`rss_feeds`、`rss_articles`、`notifications`、`favorites` |
 | `20261009000014_drop_rss.sql` | 删除 `rss_feeds` / `rss_articles`（2026-10-09 用户决定移除 RSS） |
 | `20261012000023_rss.sql` | **重建** `rss_feeds` / `rss_articles`（2026-10-12 RSS 恢复，形态改为「站长订阅、访客只读」） |
+| `20261013000027_hero_slides.sql` | `hero_slides`（首页轮播素材，**只存对图展素材的引用**） |
 
 ## 表清单
 
@@ -32,6 +33,11 @@
 
 ### 博客 / RSS / 通知
 - **posts**：HTML 博客，`content` 原生 HTML（支持 katex/three/mermaid/chart 标签）、`status`、`slug`、`cover_path`
+- **hero_slides**（2026-10-13）：首页轮播素材。`source` ∈ asset/wallpaper，
+  `asset_id` / `wallpaper_id` 指向图展的 `assets` / `wallpapers`（**均 on delete cascade**，
+  删素材时首页引用自动消失，不会留下死引用）；`label`（图注）、`sort_order`、
+  `is_active`、`muted`（视频是否静音，默认 true）。**只存引用、不重复存文件** ——
+  素材与 R2 对象仍归图展那两张表管。
 - **rss_feeds**（2026-10-12 恢复重建）：订阅源，`feed_url`、`description`（源简介）、
   `fetch_interval`（默认 14400 秒）、`last_fetched_at`、`is_active`、`is_public`（访客可见）、
   `last_error` / `error_count`（抓取健康度）、`etag` / `last_modified`（条件请求）

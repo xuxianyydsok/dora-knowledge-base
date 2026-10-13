@@ -30,6 +30,7 @@ import * as feedback from './routes/feedback.js';
 import * as timeline from './routes/timeline.js';
 import * as books from './routes/books.js';
 import * as wallpapers from './routes/wallpapers.js';
+import * as heroSlides from './routes/heroSlides.js';
 import * as dynamicSources from './routes/dynamicSources.js';
 import { vodProxy } from './routes/vodProxy.js';
 
@@ -129,6 +130,16 @@ const routes = [
   ['GET', '/api/wallpapers/:id/file', wallpapers.getWallpaperFile],
   ['PATCH', '/api/wallpapers/:id', wallpapers.updateWallpaper],
   ['DELETE', '/api/wallpapers/:id', wallpapers.deleteWallpaper],
+
+  // 首页轮播素材（2026-10-13）：只存对图展素材的引用，不重复存文件。
+  // 读对访客开放（首页要显示），写全部 requireAdmin。
+  // ⚠ 顺序：/api/hero/slides/order 是 3 段路径，必须排在 2 段的 /:id 之前，
+  //   否则会被当成 id 吞掉（PUT /api/hero/slides/order 会变成「改 id=order 的项」）。
+  ['GET', '/api/hero/slides', heroSlides.listHeroSlides],
+  ['POST', '/api/hero/slides', heroSlides.createHeroSlide],
+  ['PUT', '/api/hero/slides/order', heroSlides.reorderHeroSlides],
+  ['PATCH', '/api/hero/slides/:id', heroSlides.updateHeroSlide],
+  ['DELETE', '/api/hero/slides/:id', heroSlides.deleteHeroSlide],
 
   // 碎念（朋友圈式短动态）：读写需管理员；访客经公开读边界只看公开条目
   ['GET', '/api/moments', moments.listMoments],

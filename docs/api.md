@@ -726,6 +726,53 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 > 头部缓冲取 **64KB** 是实测结论：4KB 时四个 4K 样本全部解析不到元数据，
 > 64KB 时全部成功（见 `docs/progress.md` 第九节）。
 
+## 首页轮播 Hero Slides（2026-10-13）
+
+首页首屏那张大图（`components/HeroCarousel.jsx`）**可以由站长在后台配置**，
+不用改代码重新部署。
+
+**设计：本表只存引用，不重复存文件。** 素材来源是图展已有的两套：
+
+| `source` | 指向 | 素材形态 |
+| --- | --- | --- |
+| `asset` | `assets` 表（图展静态图片） | 图片 |
+| `wallpaper` | `wallpapers` 表（动态壁纸） | 视频 |
+
+R2 对象仍归图展那两张表管；删图展素材时本表引用由外键 `on delete cascade`
+自动清掉，不会出现「首页挂着一条指向已删对象的死引用」。
+复制文件会导致「同一张图存两遍」「删了图展首页还挂着破图」，所以不做。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/hero/slides` | **访客可读** | 列出轮播项；访客只看到 `is_active=true` **且底层素材已公开**的项（私人视频即便挂在首页也播不出来，留一条空轮播比少一条更糟）。站长可见全部，便于发现「忘了公开素材」 |
+| POST | `/api/hero/slides` | 管理员 | body：`{ source, asset_id 或 wallpaper_id, label?, is_active?, muted? }`；素材必须存在且属于本人；**同一素材不可重复加入**（409） |
+| PUT | `/api/hero/slides/order` | 管理员 | body：`{ ids: [...] }` 批量重排（数组下标即 `sort_order`）；个别 id 失败不影响其余（`allSettled`） |
+| PATCH | `/api/hero/slides/:id` | 管理员 | 改 `label` / `is_active` / `muted` / `sort_order` |
+| DELETE | `/api/hero/slides/:id` | 管理员 | 移除引用（**不删图展里的素材本身**） |
+
+返回结构（单条）：
+
+```json
+{
+  "id": "<uuid>", "source": "wallpaper", "label": "夜色车流",
+  "sort_order": 0, "is_active": true, "muted": true,
+  "media_url": "…/api/wallpapers/<id>/file", "media_type": "video",
+  "media_public": true, "duration": 21.2, "width": 3840, "height": 2160,
+  "asset_id": null, "wallpaper_id": "<uuid>",
+  "created_at": "…", "updated_at": "…"
+}
+```
+
+**视频的自动播放策略**：浏览器只放行**静音**视频自动播放。`muted` 默认 `true`
+（静音循环自动播）；站长关掉静音后，首页那段视频不会自动播，访客点轮播条上的
+喇叭按钮即可开声（用户主动点击不算自动播放，允许出声）—— 这是浏览器策略，不是 bug。
+
+**路由顺序**：`PUT /api/hero/slides/order` 是 3 段路径，必须排在
+`PATCH|DELETE /api/hero/slides/:id` **之前**，否则会被当成 `id='order'` 吞掉。
+
+**素材未公开时**：接口会在 `media_public=false` 时提示管理端
+「素材还没公开，访客看不到这一条」，站长去图展「策展」里打开公开即可。
+
 ## 公开时间轴 Timeline（2026-10-10）
 
 聚合「已发布公开博客 + 公开资源（github/music/movie）+ 公开展览」，只读公开内容。

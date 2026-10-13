@@ -337,6 +337,227 @@ function WallpaperCard({ item, index, onOpen }) {
 }
 
 // ---------------- 管理抽屉 ----------------
+// 首页轮播管理（2026-10-13 用户要求）：
+//   「首页它不是有那些图片吗？我想实现能够在管理员端上传图片，或者说一些视频
+//    来进行轮播图的替换」「存在数据库里吧」「可以复用图展的素材」
+//   「视频的话要静音循环。可以开启个开关，就是可以静音也可以播放那个音乐」
+//
+// 与「策展」抽屉的分工：
+//   · 策展抽屉 = 管**素材与展览**（上传、公开、排序、标题）；
+//   · 本抽屉   = 管**首页轮播**（从图展里挑哪些、排第几、要不要静音、图注）。
+// 本抽屉**不重复上传**：素材统一在图展那边传，这里只做「挑选与编排」。
+export function HeroDrawer({ onClose }) {
+  const [slides, setSlides] = useState([]);
+  const [pics, setPics] = useState([]);       // 图展静态图片（可加入轮播）
+  const [walls, setWalls] = useState([]);     // 图展动态壁纸（可加入轮播）
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [drafts, setDrafts] = useState({});
+
+  async function load() {
+    setLoading(true);
+    try {
+      // 三个接口互不依赖：其中一个失败不该让整个抽屉变成错误页。
+      const [hs, gl, wl] = await Promise.allSettled([
+        api.listHeroSlides(),
+        api.listGallery('?limit=200'),
+        api.listWallpapers('?limit=200')
+      ]);
+      if (hs.status === 'fulfilled') setSlides(hs.value?.items || []);
+      else toastError(hs.reason?.message || '轮播列表加载失败');
+      if (gl.status === 'fulfilled') setPics(gl.value?.items || []);
+      if (wl.status === 'fulfilled') setWalls(wl.value?.items || []);
+    } finally { setLoading(false); }
+  }
+  useEffect(() => {
+    load();
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  // 已在轮播里的素材 id（按来源分开），用来把「加入」按钮置灰。
+  const usedAsset = useMemo(() => new Set(slides.filter((s) => s.source === 'asset').map((s) => s.asset_id)), [slides]);
+  const usedWall = useMemo(() => new Set(slides.filter((s) => s.source === 'wallpaper').map((s) => s.wallpaper_id)), [slides]);
+
+  const draftOf = (s) => ({ label: s.label || '', ...(drafts[s.id] || {}) });
+  const setDraft = (s, patch) => setDrafts((d) => ({ ...d, [s.id]: { ...draftOf(s), ...patch } }));
+
+  async function add(source, refId) {
+    setBusy(`add-${refId}`);
+    try {
+      await api.addHeroSlide(source === 'asset' ? { source, asset_id: refId } : { source, wallpaper_id: refId });
+      toastSuccess('已加入首页轮播');
+      await load();
+    } catch (err) { toastError(err.message); }
+    finally { setBusy(''); }
+  }
+
+  async function save(s) {
+    const d = draftOf(s);
+    setBusy(`save-${s.id}`);
+    try {
+      await api.updateHeroSlide(s.id, { label: d.label || null });
+      toastSuccess('已保存');
+      await load();
+    } catch (err) { toastError(err.message); }
+    finally { setBusy(''); }
+  }
+
+  async function toggle(s, patch) {
+    setBusy(`toggle-${s.id}`);
+    try {
+      await api.updateHeroSlide(s.id, patch);
+      await load();
+    } catch (err) { toastError(err.message); }
+    finally { setBusy(''); }
+  }
+
+  async function remove(s) {
+    if (!confirm('从首页轮播移除？图展里的素材不会被删除。')) return;
+    setBusy(`del-${s.id}`);
+    try {
+      await api.deleteHeroSlide(s.id);
+      toastSuccess('已移除');
+      await load();
+    } catch (err) { toastError(err.message); }
+    finally { setBusy(''); }
+  }
+
+  // 上移 / 下移：本地先算出新顺序再整表提交，避免「一条条 PATCH」产生中间态。
+  async function move(index, dir) {
+    const next = index + dir;
+    if (next < 0 || next >= slides.length) return;
+    const ids = slides.map((s) => s.id);
+    [ids[index], ids[next]] = [ids[next], ids[index]];
+    setBusy('order');
+    try {
+      await api.reorderHeroSlides(ids);
+      await load();
+    } catch (err) { toastError(err.message); }
+    finally { setBusy(''); }
+  }
+
+  return createPortal((
+    <div class="gl-drawer-mask" onClick={onClose}>
+      <aside class="gl-drawer" role="dialog" aria-modal="true" aria-label="首页轮播" onClick={(e) => e.stopPropagation()}>
+        <header class="gl-drawer-head">
+          <strong>首页轮播</strong>
+          <button type="button" class="gl-lb-close" onClick={onClose} aria-label="关闭"><Icon name="close" size={18} /></button>
+        </header>
+
+        <p class="gl-hero-tip">
+          从图展的素材里挑图片或视频放到首页首屏。视频默认静音循环，访客可点喇叭自己开声；
+          素材本身要先在「策展」里设为公开，否则访客看不到。
+        </p>
+
+        <section class="gl-drawer-sec">
+          <h4>当前轮播（{slides.length}）</h4>
+          {loading && <span class="muted">正在载入…</span>}
+          {!loading && slides.length === 0 && (
+            <span class="muted">还没有配置。没配置时首页会显示内置的 18 张图。</span>
+          )}
+          {slides.map((s, i) => {
+            const d = draftOf(s);
+            const isVideo = s.media_type === 'video';
+            return (
+              <div key={s.id} class="gl-edit">
+                {isVideo
+                  ? <video class="gl-edit-thumb" src={s.media_url} muted loop playsInline preload="metadata" />
+                  : <img class="gl-edit-thumb" src={s.media_url} alt="" />}
+                <div class="gl-edit-fields">
+                  <input
+                    placeholder="图注（画面右下角那行字，可留空）"
+                    value={d.label}
+                    onInput={(e) => setDraft(s, { label: e.currentTarget.value })}
+                  />
+                  <div class="gl-edit-row">
+                    <span class="gl-hero-kind">{isVideo ? '视频' : '图片'}</span>
+                    <label class="gl-switch">
+                      <input type="checkbox" checked={s.is_active} disabled={busy === `toggle-${s.id}`}
+                        onChange={(e) => toggle(s, { is_active: e.currentTarget.checked })} />
+                      启用
+                    </label>
+                    {isVideo && (
+                      <label class="gl-switch">
+                        <input type="checkbox" checked={!s.muted} disabled={busy === `toggle-${s.id}`}
+                          onChange={(e) => toggle(s, { muted: !e.currentTarget.checked })} />
+                        有声音
+                      </label>
+                    )}
+                  </div>
+                  {!s.media_public && (
+                    <span class="gl-hero-warn">
+                      素材还没公开，访客看不到这一条。去「策展」把它设为公开。
+                    </span>
+                  )}
+                  <div class="gl-edit-row">
+                    <button type="button" disabled={i === 0 || busy === 'order'} onClick={() => move(i, -1)} title="上移">↑</button>
+                    <button type="button" disabled={i === slides.length - 1 || busy === 'order'} onClick={() => move(i, 1)} title="下移">↓</button>
+                    <button type="button" class="primary" disabled={busy === `save-${s.id}`} onClick={() => save(s)}>保存</button>
+                    <button type="button" disabled={busy === `del-${s.id}`} onClick={() => remove(s)}>移除</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+
+        <section class="gl-drawer-sec">
+          <h4>从图展图片加入（{pics.length}）</h4>
+          {pics.length === 0
+            ? <span class="muted">图展里还没有图片。先在「策展」里上传。</span>
+            : (
+              <div class="gl-asset-grid">
+                {pics.map((it) => {
+                  const id = it.asset_id || it.image?.asset_id;
+                  const already = usedAsset.has(id);
+                  return (
+                    <button
+                      key={it.id}
+                      type="button"
+                      class="gl-asset"
+                      disabled={already || !id || busy === `add-${id}`}
+                      title={already ? '已在首页轮播里' : '加入首页轮播'}
+                      onClick={() => add('asset', id)}
+                    >
+                      <img src={it.image.url} alt={it.title || '图片'} loading="lazy" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+        </section>
+
+        <section class="gl-drawer-sec">
+          <h4>从图展动态壁纸加入（{walls.length}）</h4>
+          {walls.length === 0
+            ? <span class="muted">图展里还没有动态壁纸。先在「策展」里上传 MP4 / WebM。</span>
+            : (
+              <div class="gl-asset-grid">
+                {walls.map((w) => {
+                  const already = usedWall.has(w.id);
+                  return (
+                    <button
+                      key={w.id}
+                      type="button"
+                      class="gl-asset"
+                      disabled={already || busy === `add-${w.id}`}
+                      title={already ? '已在首页轮播里' : '加入首页轮播（视频，默认静音循环）'}
+                      onClick={() => add('wallpaper', w.id)}
+                    >
+                      <video src={api.wallpaperFileUrl(w.id)} muted playsInline preload="metadata" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+        </section>
+      </aside>
+    </div>
+  ), document.body);
+}
+
 function CuratorDrawer({ items, wallpapers, onClose, onReload }) {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -712,6 +933,7 @@ export function Gallery() {
   const [openIndex, setOpenIndex] = useState(null);      // 图片灯箱，null = 关闭
   const [openWall, setOpenWall] = useState(null);        // 动态壁纸灯箱，null = 关闭
   const [curating, setCurating] = useState(false);
+  const [editingHero, setEditingHero] = useState(false);   // 首页轮播管理抽屉
   const [expandPics, setExpandPics] = useState(false);   // 图片区是否展开全部
   const [expandWalls, setExpandWalls] = useState(false); // 动态壁纸区是否展开全部
   const [masonryRef, masonryWidth] = useMeasuredWidth();   // 静态图片区容器宽度
@@ -792,9 +1014,14 @@ export function Gallery() {
         ]}
       >
         {isAdmin && (
-          <button type="button" class="primary" onClick={() => setCurating(true)}>
-            <Icon name="grid" size={16} /> 策展
-          </button>
+          <>
+            <button type="button" onClick={() => setEditingHero(true)} title="配置首页首屏的轮播图片 / 视频">
+              <Icon name="star" size={16} /> 首页轮播
+            </button>
+            <button type="button" class="primary" onClick={() => setCurating(true)}>
+              <Icon name="grid" size={16} /> 策展
+            </button>
+          </>
         )}
       </PageHeader>
 
@@ -911,6 +1138,7 @@ export function Gallery() {
           onReload={load}
         />
       )}
+      {editingHero && isAdmin && <HeroDrawer onClose={() => setEditingHero(false)} />}
     </section>
   );
 }

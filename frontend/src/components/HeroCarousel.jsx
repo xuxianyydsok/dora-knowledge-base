@@ -1,5 +1,11 @@
 // 首页大图轮换（Hero）：全幅宽、电影感的开场画面。
 //
+// 2026-10-13 起：轮播内容**可以由站长在后台配置**（`hero_slides` 表 + `/api/hero/slides`）。
+//   · 站长在图展里挑素材（图片或视频）加入首页轮播，不用改代码重新部署；
+//   · 没配置时**回退到下面 HERO_SLIDES 里内置的 18 张图**，保证首页永远不为空；
+//   · 视频：静音循环播放；站长可关掉静音（但浏览器会拦截带声音的自动播放，
+//     此时视频不会自动播，需要用户点一下 —— 这是浏览器策略，不是 bug）。
+//
 // 设计取舍：
 //   1) 图片是站长的精选壁纸（public/hero/*.webp，2560×1440 + 1280×720 两档），
 //      统一裁成 16:9，桌面出大图、窄屏走 -sm 变体，避免手机下浪费带宽。
@@ -9,6 +15,7 @@
 //   4) 尊重 prefers-reduced-motion：关掉推近与自动播放，只保留手动切换。
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon.jsx';
+import { api } from '../lib/api.js';
 
 // 站长本地「图片1」文件夹里的 50 张壁纸，挑出 18 张最有冲击力的做开场。
 // label 用中文，是画面右下角的图注（用户不喜欢纯装饰的洋文标签）。
@@ -58,13 +65,51 @@ function usePrefersReducedMotion() {
 }
 
 export function HeroCarousel() {
-  const n = HERO_SLIDES.length;
+  // 轮播内容：优先用站长配置（接口返回），失败或为空则回退内置图片。
+  // 用 useState + useEffect 而不是顶层 await：接口挂了首页也必须能正常显示。
+  const [slides, setSlides] = useState(HERO_SLIDES);
+
+  useEffect(() => {
+    let alive = true;
+    api.listHeroSlides()
+      .then((res) => {
+        if (!alive) return;
+        const items = (res?.items || []).filter((s) => s.media_url);
+        if (items.length) {
+          setSlides(items.map((s) => ({
+            src: s.media_url,
+            label: s.label || '',
+            type: s.media_type,          // 'image' | 'video'
+            muted: s.muted !== false,
+            id: s.id
+          })));
+        }
+      })
+      .catch(() => { /* 接口失败：保持内置图片 */ });
+    return () => { alive = false; };
+  }, []);
+
+  const n = slides.length || 1;
   const [cur, setCur] = useState(0);
   const [paused, setPaused] = useState(false);
+  // 用户手动改过静音状态的项（按 id 记）：true = 用户要声音，false = 用户要静音。
+  // 没记录的项按站长在后台设的默认值（`muted` 字段）。视频默认静音 ——
+  // 浏览器只允许「静音视频」自动播放，带声音的自动播放一律会被拦。
+  const [unmuted, setUnmuted] = useState({});
+  // 视频元素的真实 DOM 引用（按 slide key 记）。Preact 对 `muted` 属性的更新
+  // 不够可靠，静音状态一律走 ref 直接写 DOM，见下面的同步 effect。
+  const videoRefs = useRef({});
   const reduce = usePrefersReducedMotion();
   const timer = useRef(null);
 
   const go = (i) => setCur(((i % n) + n) % n);
+
+  // 某一项当前是否静音：用户手动改过就以用户为准，否则用站长设的默认值。
+  const isMuted = (s) => {
+    if (!s || s.type !== 'video') return true;
+    if (s.id && s.id in unmuted) return !unmuted[s.id];
+    return s.muted !== false;
+  };
 
   // 自动播放：鼠标悬停 / 键盘聚焦 / 页面切到后台时暂停。
   useEffect(() => {
@@ -81,7 +126,32 @@ export function HeroCarousel() {
   // 只在「当前 ± 1」这个窗口里挂图片，其余不进 DOM
   const mounted = [];
   for (let d = -WINDOW; d <= WINDOW; d++) mounted.push(((cur + d) % n + n) % n);
-  const slide = HERO_SLIDES[cur];
+  const slide = slides[cur] || {};
+  const curIsVideo = slide.type === 'video';
+  const curMuted = isMuted(slide);
+
+  // 视频的静音与播放状态一律直接写 DOM：
+  //   1) Preact 对 `muted` 这个属性（不是 attribute）的更新不可靠，
+  //      只改 props 有时不会作用到正在播放的 <video> 上；
+  //   2) 切张时元素在「±1 窗口」里可能只是从「下一张」变成「当前张」（key 不变、
+  //      不重建），此时光改 `autoPlay` 属性**不会**让浏览器开始播放 ——
+  //      必须显式 play()。这是实测踩到的坑。
+  // 带声音的自动播放会被浏览器拦，play() 的 rejection 直接吞掉（用户手动点喇叭
+  // 时不算自动播放，允许出声）；被拦也只是不出声，不该抛到界面上。
+  useEffect(() => {
+    const curKey = slide.id || slide.src;
+    for (const [key, el] of Object.entries(videoRefs.current)) {
+      if (!el) continue;
+      const s = slides.find((x) => (x.id || x.src) === key);
+      if (!s) continue;
+      el.muted = isMuted(s);
+      if (key === curKey) {
+        if (el.paused) el.play?.().catch(() => {});
+      } else if (!el.paused) {
+        el.pause?.();
+      }
+    }
+  }, [unmuted, cur, slides]);
 
   return (
     <section
@@ -95,14 +165,42 @@ export function HeroCarousel() {
     >
       <div class="ld-hero-media" aria-hidden="true">
         {mounted.map((i) => {
-          const s = HERO_SLIDES[i];
+          const s = slides[i];
+          if (!s) return null;
+          // 视频：静音 + 循环 + 自动播放（浏览器只放行静音自动播放）。
+          // 站长在后台设了「不静音」时，浏览器会拦住自动播放，此时视频停在第
+          // 一帧、由用户点下方喇叭按钮手动开声（这是浏览器策略，不是 bug）。
+          if (s.type === 'video') {
+            const key = s.id || s.src;
+            return (
+              <video
+                key={key}
+                ref={(el) => {
+                  if (el) videoRefs.current[key] = el;
+                  else delete videoRefs.current[key];
+                }}
+                class={`ld-hero-img ld-hero-video${i === cur ? ' on' : ''}`}
+                src={s.src}
+                muted={isMuted(s)}
+                loop
+                playsInline
+                autoPlay={i === cur}
+                preload={i === cur ? 'auto' : 'none'}
+                poster=""
+              />
+            );
+          }
+          // 图片：内置图有 -sm 变体（窄屏省带宽）；后台配置的图直接用原图
+          const isBuiltin = String(s.src).startsWith('/hero/');
           return (
             <img
-              key={s.src}
+              key={s.id || s.src}
               class={`ld-hero-img${i === cur ? ' on' : ''}`}
               src={s.src}
-              srcSet={`${s.src.replace('.webp', '-sm.webp')} 1280w, ${s.src} 2560w`}
-              sizes="100vw"
+              {...(isBuiltin ? {
+                srcSet: `${s.src.replace('.webp', '-sm.webp')} 1280w, ${s.src} 2560w`,
+                sizes: '100vw'
+              } : {})}
               alt=""
               decoding="async"
               fetchpriority={i === cur ? 'high' : 'low'}
@@ -124,14 +222,30 @@ export function HeroCarousel() {
 
       <div class="ld-hero-bar">
         <span class="ld-hero-caption">{slide.label}</span>
+        {/* 视频的静音开关：只在当前是视频时出现。图片没有声音，不该有按钮。 */}
+        {curIsVideo && (
+          <button
+            type="button"
+            class={`ld-hero-sound${curMuted ? '' : ' on'}`}
+            aria-label={curMuted ? '打开声音' : '静音'}
+            title={curMuted ? '打开声音' : '静音'}
+            onClick={() => {
+              const key = slide.id;
+              if (!key) return;
+              setUnmuted((m) => ({ ...m, [key]: isMuted(slide) }));
+            }}
+          >
+            <Icon name={curMuted ? 'volumeOff' : 'volume'} size={17} />
+          </button>
+        )}
         <div class="ld-hero-dots" role="tablist" aria-label="选择图片">
-          {HERO_SLIDES.map((s, i) => (
+          {slides.map((s, i) => (
             <button
-              key={s.src}
+              key={s.id || s.src}
               type="button"
               role="tab"
               aria-selected={i === cur ? 'true' : 'false'}
-              aria-label={`第 ${i + 1} 张：${s.label}`}
+              aria-label={`第 ${i + 1} 张：${s.label || ''}`}
               class={`ld-hero-dot${i === cur ? ' on' : ''}`}
               style={{ '--ld-interval': `${INTERVAL}ms` }}
               onClick={() => go(i)}

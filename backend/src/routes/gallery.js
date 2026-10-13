@@ -38,6 +38,9 @@ const ASSET_SELECT = 'id,public_url,width,height,mime_type,is_public';
 function shape(item, asset) {
   return {
     id: item.id,
+    // 底层素材 id：公开地址 /api/assets/<id> 本身就含这个 id，不构成额外泄露。
+    // 首页轮播管理要用它做「从图展加入轮播」的引用（见 routes/heroSlides.js）。
+    asset_id: item.asset_id,
     title: item.title,
     description: item.description,
     captured_at: item.captured_at,
