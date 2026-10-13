@@ -403,6 +403,51 @@
 /* 双页模式：正文两栏并排，加一点书页间距 */
 .bk-reader-body.two-up iframe { padding: 0; }
 
+/* ---------------- PDF 阅读区（pdf.js 自绘 canvas） ----------------
+ * 结构：.bk-reader-body.is-pdf > .bk-pdf-box > canvas.bk-pdf-canvas
+ * 与 EPUB 的差异：EPUB 把正文交给 iframe 自己滚动；PDF 是「一页一屏」，
+ * 由 .bk-pdf-box 负责居中与滚动（放大后可上下拖动看整页）。
+ * 背景走 --bk-pdf-bg（由阅读设置里的背景色决定，含夜间），
+ * 让 PDF 的白页在夜间主题下也不刺眼。
+ */
+.bk-reader-body.is-pdf {
+  background: var(--bk-pdf-bg, var(--bg-subtle, var(--bg)));
+  overflow: hidden;
+}
+.bk-pdf-box {
+  flex: 1 1 auto; min-height: 0; width: 100%;
+  display: flex; align-items: flex-start; justify-content: center;
+  overflow: auto;                      /* 放大后可以拖动看整页 */
+  padding: 14px;
+  box-sizing: border-box;
+  outline: none;
+  touch-action: pan-x pan-y;           /* 允许纵向滚动；左右滑动由 JS 翻页 */
+}
+.bk-pdf-canvas {
+  display: block; margin: auto;
+  max-width: none;
+  border-radius: 2px;
+  /* 页面阴影：让「一页纸」浮在背景上，和微信读书那种观感一致 */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .16), 0 12px 32px -12px rgba(0, 0, 0, .3);
+  background: #fff;
+}
+
+/* 页码直达输入框（顶栏「第 n / 共 m 页」那个 n 可点可输） */
+.bk-page-jump {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 0 8px; height: 30px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm, 10px);
+  font-family: var(--font-mono, monospace); font-size: 12.5px;
+  color: var(--text-muted);
+}
+.bk-page-input {
+  width: 44px; height: 22px; padding: 0 2px;
+  border: none; background: transparent; color: var(--text);
+  font-family: inherit; font-size: 12.5px; text-align: center;
+}
+.bk-page-input:focus { outline: none; color: var(--primary); }
+.bk-page-total { white-space: nowrap; }
+
 /* 窄屏：书架两列、阅读器工具条换行 */
 @media (max-width: 640px) {
   .bk-shelf { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--sp-5, 16px); }

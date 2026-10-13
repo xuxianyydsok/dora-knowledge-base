@@ -51,13 +51,23 @@ const R2_KEY_CURSOR = 'system/dynamic-vod-cursor.json';
 //   R2 里长期只有 5 条「已验证通过」的源 —— 搜索自然只有 3 条源命中。
 //   改 6 后一天 24 轮可探 144 次，43 个源当天就能覆盖 3 遍，之后滚动复检。
 //
-// ⚠ 子请求预算（Cloudflare 免费版**单次调用**上限 50，实测确认）：
-//   每条源最多 5 个子请求（类目表 + 列表 + 详情 + m3u8 主清单 + 分片探测），
-//   再叠加订阅拉取（主库 + 补充库最多 3 个）与探测内可能的重试。
-//   6 × 5 = 30，加订阅约 33，留足余量。
-//   注意这是**总量**限制而非并发限制 —— 批大小开太大（例如 12）会直接把
-//   整轮探测打爆在「Too many subrequests」上，结果一个源都存不进去。
-const PROBE_BATCH_SIZE = 6;
+// ⚠ 子请求预算（Cloudflare 免费版**单次调用**上限 50，实测确认）。
+//
+// 单条源的子请求数比想象中多（每一步都可能因防盗链重试一次）：
+//   类目表 + 关键词探测 + 最新列表 + 详情 + m3u8 主清单 + 变体清单 + 首个分片
+//   常态 7 个，最坏（每步都重试）11 个。
+// 因此批大小必须按**最坏情况**留余量：5 × 7 = 35，加订阅拉取（最多 3）≈ 38。
+//
+// 2026-10-13 踩过的坑：手动重探一度用了 batchSize 8 → 8 × 7 = 56 > 50，
+// 整批在「Too many subrequests」上崩掉；更糟的是这个错误被当成**源的问题**
+// 记进失败计数，把 ffzy / lovedan / wolong / moduzy / iqiyi 等好源误摘出池子
+// （用户看到「源加不齐」的直接原因）。现在有 SUBREQ_EXHAUSTED_RE 兜底：
+// 配额耗尽只跳过、绝不记失败。
+const PROBE_BATCH_SIZE = 5;
+
+// 「子请求配额耗尽」识别：这是**探测自己的预算问题**，不是源坏了。
+// 命中时必须跳过该源（既不记失败，也不摘源），否则会把好源误杀。
+const SUBREQ_EXHAUSTED_RE = /too many subrequests/i;
 
 // 探测并发度。串行探测 10 个源要 30~60s，远超 cron 的 waitUntil 舒适区间；
 // 全并发又可能瞬时打满子请求预算。折中取 3。
@@ -457,17 +467,41 @@ export async function probeSourceDeep(source, {
   }
 
   // —— 步骤 3：m3u8 主清单 ——
+  //
+  // ⚠ Referer 必须与**真实播放时**一致，否则会把能播的源误判成坏的。
+  //   真实播放走 /api/vod/proxy，它用的 Referer 是「媒体地址自己的域名」
+  //   （vodProxy.js: `Referer: ${target.origin}/`），**不是**采集接口的域名。
+  //   2026-10-13 踩的坑：这里原来用 `new URL(source.api).origin`，
+  //   而大量采集源的 m3u8 挂在另一个 CDN 域名上 → 403，被记成「源坏了」，
+  //   结果 jszy / ffzy / zuida / wujin / zuidazy / bfzy / p2100 / kuaiche /
+  //   shandian / suoni / yaya / lovedan 等一大批好源被误摘出池子
+  //   （用户看到的「源怎么加都加不齐」）。
+  //
+  //   现在按「媒体域名 → 接口域名 → 不带」依次尝试，任一成功即算通过，
+  //   与播放代理的实际行为对齐。
   let playlistText;
-  try {
-    const res = await fetchTextWithTimeout(playUrl, playlistTimeoutMs, {
-      // 分片服务器普遍校验 Referer 必须来自播放页所在源站
-      Referer: new URL(source.api).origin + '/'
-    });
-    playlistText = res.text;
-    if (!res.ok) return done(false, 'playlist', `主清单 HTTP ${res.status}`);
-    if (!/#EXTM3U/i.test(playlistText)) return done(false, 'playlist', '主清单不是 m3u8');
-  } catch (err) {
-    return done(false, 'playlist', err?.message || err);
+  {
+    const mediaOrigin = new URL(playUrl).origin;
+    const apiOrigin = new URL(source.api).origin;
+    const attempts = [
+      { Referer: `${mediaOrigin}/` },
+      ...(mediaOrigin !== apiOrigin ? [{ Referer: `${apiOrigin}/` }] : []),
+      {}
+    ];
+    let lastErr = '';
+    let got = null;
+    for (const hdr of attempts) {
+      try {
+        const res = await fetchTextWithTimeout(playUrl, playlistTimeoutMs, hdr);
+        if (!res.ok) { lastErr = `主清单 HTTP ${res.status}`; continue; }
+        if (!/#EXTM3U/i.test(res.text)) { lastErr = '主清单不是 m3u8'; continue; }
+        got = res; break;
+      } catch (err) {
+        lastErr = err?.message || String(err);
+      }
+    }
+    if (!got) return done(false, 'playlist', lastErr || '主清单不可用');
+    playlistText = got.text;
   }
 
   // —— 步骤 4：首个分片（参考项，失败不影响判定）——
@@ -486,12 +520,14 @@ export async function probeSourceDeep(source, {
 
     const variantUrl = new URL(variant, playUrl).toString();
     const isNested = /\.m3u8(\?|#|$)/i.test(variantUrl);
+    // 与主清单同理：Referer 用「该地址自己的域名」，对齐 /api/vod/proxy 的真实行为
+    const refOf = (u) => {
+      try { return { Referer: new URL(u).origin + '/' }; } catch { return {}; }
+    };
 
     if (isNested) {
       // 变体清单 → 再取一次，然后从里面拿第一个 .ts
-      const sub = await fetchTextWithTimeout(variantUrl, playlistTimeoutMs, {
-        Referer: new URL(source.api).origin + '/'
-      });
+      const sub = await fetchTextWithTimeout(variantUrl, playlistTimeoutMs, refOf(variantUrl));
       if (sub.ok) {
         const seg = sub.text
           .split('\n')
@@ -499,17 +535,13 @@ export async function probeSourceDeep(source, {
           .find((l) => l && !l.startsWith('#'));
         if (seg) {
           const segUrl = new URL(seg, variantUrl).toString();
-          const head = await headWithTimeout(segUrl, playlistTimeoutMs, {
-            Referer: new URL(source.api).origin + '/'
-          });
+          const head = await headWithTimeout(segUrl, playlistTimeoutMs, refOf(segUrl));
           segmentOk = head.ok;
         }
       }
     } else {
       // 直接就是分片地址
-      const head = await headWithTimeout(variantUrl, playlistTimeoutMs, {
-        Referer: new URL(source.api).origin + '/'
-      });
+      const head = await headWithTimeout(variantUrl, playlistTimeoutMs, refOf(variantUrl));
       segmentOk = head.ok;
     }
   } catch {
@@ -635,6 +667,7 @@ export async function refreshDynamicSources(env = {}, { batchSize = PROBE_BATCH_
     probed: 0,
     passed: 0,
     failed: 0,
+    skipped: 0,   // 因子请求配额耗尽而跳过（不记失败、不摘源）
     cursor: 0,
     encoding: null,
     errors: []
@@ -692,6 +725,13 @@ export async function refreshDynamicSources(env = {}, { batchSize = PROBE_BATCH_
   for (const { source, res } of results) {
     if (!res) continue;
     try {
+      // 配额耗尽：本轮探测**自己**把子请求打爆了，与源的质量无关。
+      // 必须跳过（不记失败、不摘源）—— 否则好源会被连续失败计数误杀。
+      if (!res.ok && SUBREQ_EXHAUSTED_RE.test(String(res.error || ''))) {
+        summary.skipped = (summary.skipped || 0) + 1;
+        summary.errors.push({ key: source.key, step: 'quota', error: '本轮子请求配额耗尽，已跳过（不记失败）' });
+        continue;
+      }
       summary.probed += 1;
       if (res.ok) {
         summary.passed += 1;

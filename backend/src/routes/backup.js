@@ -3,7 +3,8 @@
 // 导入：按依赖顺序恢复并重新映射 ID；仅支持安全的合并模式（replace 明确拒绝）
 // 权限：普通用户仅导出/导入自己数据；管理员可 ?all=true 导出全部
 //
-// 注意：RSS 模块 2026-10-09 已整体删除，备份不再包含 rss_* 表，也不恢复它们。
+// 注意：RSS 模块已删除（2026-10-09 首次移除，2026-10-13 彻底放弃并清理代码），
+// 备份不再包含 rss_* 表，也不恢复它们。
 
 import { ok, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';

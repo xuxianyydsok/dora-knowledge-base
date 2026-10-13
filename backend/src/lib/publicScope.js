@@ -17,11 +17,7 @@
 //   GET /api/files（列表）仍被 requireAdmin 挡住，不会因为放进白名单而泄露私人附件清单。
 // 含 books（图书）：书架面向读者，列出/正文/封面都对访客放行，但路由层只放行
 //   is_public=true 的书（私人书对访客一律按「不存在」处理）。
-// 含 rss（2026-10-12）：RSS 改成「站长订阅一次、访客只读」的方案 A ——
-//   访客打开 /rss 直接看站长订阅的内容，不需要自己登录、也不需要自己加源。
-//   只读白名单只放行 GET；订阅源增删改、抓取、标记已读仍是写操作，必须登录
-//   （且 POST/PATCH/DELETE 都不在 PUBLIC_POST_PATHS 里，访客天然被挡住）。
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers|rss)(\/|$)/;
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers)(\/|$)/;
 
 // 站长收藏（2026-10-11 用户要求）：站长收藏的影视 / 音乐对所有人可见可播。
 // 它是一条**精确路径**（不是前缀），因此单独判定 —— 不能塞进上面的前缀正则，
@@ -78,13 +74,6 @@ export const MAX_MOMENT_FILES = 5;
 // 访客读碎念时必须叠加的查询条件（供路由与测试共用）。
 // Worker 用 service_role 直连 PostgREST，RLS 不替它过滤，这一条必须在查询层显式带上。
 export function momentGuestFilters() {
-  return { is_public: 'eq.true' };
-}
-
-// 访客读 RSS 时必须叠加的条件：只读**站长公开的订阅源**。
-// 路由层还要再叠 user_id = 站长 id（访客上下文里 user.id 就是站长，天然满足），
-// 但 is_public 必须显式带上，否则站长标为私人的源会被访客读到。
-export function guestRssFeedFilters() {
   return { is_public: 'eq.true' };
 }
 

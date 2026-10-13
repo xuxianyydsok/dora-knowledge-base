@@ -24,6 +24,21 @@ const built = await build({
   bundle: true, write: false, format: 'esm', target: 'es2020',
   jsx: 'automatic', jsxImportSource: 'preact',
   loader: { '.css': 'empty', '.js': 'jsx', '.jsx': 'jsx' },
+  // BookReader 现在会 import pdfReader.js，后者用 Vite 的 `?url` 后缀拿 worker 地址。
+  // esbuild 不认识这个后缀，会把 `...pdf.worker.min.mjs?url` 当真模块解析并报
+  // 「No matching export for import "default"」。探针只测 resolveSwipe 这个纯函数，
+  // 所以把整个 pdfReader 换成一个空壳（下面用 alias 指向桩文件）。
+  // BookReader 现在会 import pdfReader.js，后者用 Vite 的 `?url` 后缀拿 worker 地址，
+  // esbuild 解析不了那个后缀。用一个插件在解析阶段把它换成桩文件 ——
+  // 比 alias 可靠（esbuild 的 alias 不接受路径形式的键）。
+  plugins: [{
+    name: 'stub-pdf-reader',
+    setup(b) {
+      b.onResolve({ filter: /pdfReader\.js$/ }, () => ({
+        path: resolve(HERE, 'stubs/pdfReader.stub.mjs')
+      }));
+    }
+  }],
   define: {
     'import.meta.env.VITE_API_BASE_URL': '"http://127.0.0.1:9"',
     'import.meta.env.VITE_SUPABASE_URL': '""',

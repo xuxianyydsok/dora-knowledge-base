@@ -13,6 +13,11 @@ build/
 frontend/dist/
 backend/dist/
 
+# ---- pdf.js 附加资源（构建时从 node_modules 拷进 public/，不入库）----
+# 169 个 bcmap + 标准字体 + wasm 共约 4MB，由 vite.config.js 的 copy-pdf-assets
+# 插件在每次构建时自动生成。提交它们只会让仓库变大且每次升级 pdf.js 都要重传。
+frontend/public/pdfjs/
+
 # ---- 环境变量与密钥（严禁入库）----
 .env
 .env.*

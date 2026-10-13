@@ -13,6 +13,79 @@
 
 ## 2.35 影视源修「只有 3 条源」+ 音乐上传收紧（2026-10-13，分支 feat/now-settings）
 
+### 追加：PDF 改成站内阅读器（微信读书那种）（同日）
+
+**用户原话**：「图书的在线阅读，你能不能做一个像微信读书那样的一个在线阅读器啊？
+现在的话，它都是直接跳到那个浏览器阅之前我记得你好像之前做过吧？
+然后里面的那些配置就不要变，或者按照微信读书的那种排布方式也可以。」
+
+**问题定位**：EPUB 早就是站内自研阅读器（目录 / 字号 / 字体 / 背景 / 单双页 / 进度条），
+**只有 PDF 是直接把文件塞进 `<iframe>` 交给浏览器内置阅读器** ——
+工具栏、配色、翻页全由浏览器决定，各家表现不一致，手机上还常变成下载。
+
+**做法**：装 `pdfjs-dist`（Mozilla PDF.js，MIT，1 个包），PDF 也自绘渲染。
+
+| 项目 | 说明 |
+|---|---|
+| 新文件 | `frontend/src/lib/pdfReader.js`（打开 / 渲染 / 缩放 / 大纲 / 页码工具） |
+| 改动 | `components/BookReader.jsx`（PDF 分支走 canvas，新增页码直达、缩放、书签目录）、`styles/books.css`、`vite.config.js`（构建时拷 pdf.js 附加资源） |
+| 依赖 | `pdfjs-dist@6.4.299`（`npm install`，经用户同意） |
+| 构建产物 | `pdf.min` 480KB 单独分包，**只在打开 PDF 时加载**；`dist/pdfjs/` 4MB（cmaps + 字体 + wasm）由 Pages 静态托管 |
+
+**几个关键取舍**
+
+1. **不整本下载**：`getDocument` 传 URL，pdf.js 自己按 Range 分段取
+   （后端 `/api/books/:id/file` 已支持 Range → 206），大文件秒开第一页。
+2. **中文 PDF 必须给 cMap**：不给的话 GBK / Big5 旧书整页空白或乱码。
+   169 个 bcmap + 16 个标准字体 + 2 个 wasm 由 `vite.config.js` 在构建时拷进
+   `public/pdfjs/`（走 public 而不是 import，避免被 Rollup 逐个打进 bundle）。
+3. **高分屏**：canvas 按 `devicePixelRatio` 放大再用 CSS 缩回，否则文字发虚。
+4. **不引 pdf.js 的 viewer**：那个是完整应用，会和本站路由 / 样式打架；只用 core。
+5. **PDF 没有「字号 / 字体」**：固定版面的字是画上去的，改不了。
+   这两项换成 PDF 真正有用的**缩放 + 适宽 / 适页**，背景与单双页保留。
+
+**实测**（无头 Chrome + 中文 PDF 样本）
+
+- 渲染管线：2 页文档 → 适宽 143% → canvas 852×1205（dpr=1），
+  采样 19371 像素中 1931 个非白、999 种颜色 → 确实画出了内容（不是白屏）。
+- 组件 UI：`第 1 / 2 页 · 0%` → 点「下一页」→ `第 2 / 2 页 · 100%`；
+  设置面板有「缩放 234% / 适宽 / 适页 / 自定义」，无「字号 / 字体」；
+  点「适页」后缩放从 234% 降到 100%；**页面内不再有 iframe**。
+- 回归：`readerSwipe` 19 项、`bookshelf` 11 项、`fontUnify` 11 项、
+  `ui-buttons` 18 项、`coop` 20 项、`justified` 50 项、`statCharts` 311 项、
+  `graphStats` 42 项、`musicIdentity` 19 项、`miniPlayer` / `queueOrder` /
+  `favorites` / `gallery` / `epubReader` 全部通过；后端单测 136 项全过。
+
+**踩坑记录**：`readerSwipe.probe.mjs` 用 esbuild 单独打包 BookReader，
+而 pdfReader 用 Vite 的 `?url` 后缀取 worker 地址，esbuild 解析不了那个后缀
+（报 `No matching export for import "default"`）。esbuild 的 `alias` 又不接受
+路径形式的键，最后用 `onResolve` 插件把 pdfReader 换成测试桩
+（`tests/stubs/pdfReader.stub.mjs`）解决。
+
+### 追加：站内 RSS 阅读器彻底移除（同日）
+
+用户原话：「直接把 RSS 的那个项目给砍了。太麻烦了，直接取消，我直接还是自己用 FOLO 算了，
+相关的文件把它清理干净」。
+
+RSS 模块经历过「10-09 删 → 10-12 恢复 → 10-13 再删」，这次是**彻底放弃**，
+不再保留任何代码痕迹。清理范围：
+
+| 层 | 删除内容 |
+|---|---|
+| 后端 | `lib/rss.js`、`lib/rssPresets.js`、`lib/rssSync.js`、`lib/rssTranslate.js`、`routes/rss.js` |
+| 后端接线 | `router.js` 的 17 条路由与 import、`index.js` 的抓取定时任务、`publicScope.js` 的白名单与 `guestRssFeedFilters` |
+| 前端 | `routes/Rss.jsx`、`lib/rssRead.js`、`styles/rss.css`、`app.jsx` 路由、`routes.js` 懒加载、`Layout.jsx` 导航项、`api.js` 全部 RSS 方法、`Icon.jsx` 的 rss 图标 |
+| 通知 | `rss_new` 类型（`notify.js`、`routes/notifications.js`） |
+| 数据库 | 迁移 `20261013000025_drop_rss.sql`：drop 两张表、清 rss_new 通知与 rss_article 资源、收敛 type 约束 |
+| 测试 | `tests/run.mjs` 里 RSS 段（11 项用例）与 4 个 import；136 项全过 |
+| 文档 | `docs/rss.md` 删除，相关文档交叉引用更新 |
+
+**保留**（其它模块在用的通用件，不是 RSS 专用）：
+`lib/markdown.js`（Markdown→HTML，测试在用）、`lib/zhConvert.js`（繁体转简体，音乐歌词在用）。
+
+导航栏因此少一项，现在是：NewsNow / GitHub / 博客 / 音乐 / 影视 / 图书 / 图展 / 时间轴 /
+碎念 / 图谱 / 收藏 / 更新 / 共创。
+
 ### 用户反馈
 
 > 「而且有些电视剧它搜出来只有3条影视源是怎么回事？你那不是69条吗？」

@@ -55,14 +55,18 @@ export async function getDynamicVodSources(request, env) {
  * 手动触发一轮探测。
  *
  * 与 cron 的区别：这里是独立的 fetch invocation，**没有** GitHub Star 同步
- * 与 RSS 抓取抢子请求，所以可以一次探更多源（cron 里固定 6 个）。
- * 子请求预算：8 个源 × 最多 5 步 = 40，加订阅拉取 3 个 ≈ 43，卡在免费版 50 以内。
- * 想快速把源池灌满时，连点几次这个接口即可（43 个源约 6 次全覆盖）。
+ * 与其它定时任务抢子请求，所以可以一次探更多源（cron 里固定 5 个）。
+ *
+ * 子请求预算（免费版单次上限 50）：单条源常态 7 个、最坏 11 个（每步都可能重试），
+ * 因此 6 × 7 = 42，加订阅拉取 3 ≈ 45，已经是安全上限。
+ * ⚠ 曾用 8 个源 → 56 > 50，整批崩在「Too many subrequests」上，
+ * 而且错误被当成源的问题，把好源误摘出池子（见 lib/dynamicSources.js 的说明）。
+ * 想快速把源池灌满时，连点几次这个接口即可（43 个源约 9 次全覆盖）。
  */
 export async function refreshDynamicVodSources(request, env) {
   await requireAdmin(request, env);
 
-  const summary = await refreshDynamicSources(env, { batchSize: 8 });
+  const summary = await refreshDynamicSources(env, { batchSize: 6 });
   resetVodSourceCache();
   return ok({ ok: true, summary }, request, env);
 }

@@ -27,7 +27,6 @@ import * as timelineRoute from '../src/routes/timeline.js';
 import * as mediaUrl from '../src/lib/mediaUrl.js';
 import * as musicSources from '../src/lib/musicSources.js';
 import * as markdown from '../src/lib/markdown.js';
-import * as rssTranslate from '../src/lib/rssTranslate.js';
 import * as musicIdentity from '../src/lib/musicIdentity.js';
 import * as movies from '../src/routes/movies.js';
 import * as safeUrl from '../src/lib/safeUrl.js';
@@ -35,9 +34,6 @@ import * as momentsRoute from '../src/routes/moments.js';
 import * as meRoute from '../src/routes/me.js';
 import * as githubAi from '../src/lib/githubAi.js';
 import * as dynamicSources from '../src/lib/dynamicSources.js';
-import * as rssParse from '../src/lib/rss.js';
-import * as rssPresets from '../src/lib/rssPresets.js';
-import * as rssRoute from '../src/routes/rss.js';
 import * as audioType from '../src/lib/audioType.js';
 import * as audioMeta from '../src/lib/audioMeta.js';
 import * as zhConvert from '../src/lib/zhConvert.js';
@@ -438,199 +434,6 @@ async function unit() {
   });
 
   // ---- 公开读边界（三层权限：公开访客 / 登录用户 / 管理员） ----
-  // ---- RSS 恢复（2026-10-12，方案 A：站长订阅、访客只读） ----
-  section('UNIT · RSS 解析与订阅边界（方案 A）');
-
-  await test('parseFeed: RSS 2.0 标题/链接/摘要/正文/封面', async () => {
-    const xml = `<?xml version="1.0"?><rss version="2.0"><channel>
-      <title>测试源 &amp; 示例</title>
-      <link>https://example.com</link>
-      <description>一个用来测试的源</description>
-      <item>
-        <title>第一篇 &lt;文章&gt;</title>
-        <link>https://example.com/a</link>
-        <guid>a-1</guid>
-        <pubDate>Mon, 12 Oct 2026 08:00:00 GMT</pubDate>
-        <description><![CDATA[<p>摘要里的 <b>HTML</b> 应被去掉</p>]]></description>
-        <content:encoded><![CDATA[<p>${'正文'.repeat(120)}</p>]]></content:encoded>
-        <enclosure url="https://example.com/cover.jpg" type="image/jpeg" />
-      </item>
-    </channel></rss>`;
-    const feed = rssParse.parseFeed(xml);
-    assert(feed.title === '测试源 & 示例', `标题解码错: ${feed.title}`);
-    assert(feed.siteUrl === 'https://example.com', `站点链接错: ${feed.siteUrl}`);
-    assert(feed.description === '一个用来测试的源', `源简介错: ${feed.description}`);
-    assert(feed.items.length === 1, `条目数错: ${feed.items.length}`);
-    const it = feed.items[0];
-    assert(it.title === '第一篇 <文章>', `条目标题解码错: ${it.title}`);
-    assert(it.guid === 'a-1', `guid 错: ${it.guid}`);
-    assert(!/<b>/.test(it.summary), `摘要应去掉 HTML 标签: ${it.summary}`);
-    assert(it.contentHtml && it.contentHtml.includes('正文'), 'content:encoded 应作为正文 HTML 保留');
-    assert(it.coverPath === 'https://example.com/cover.jpg', `封面错: ${it.coverPath}`);
-    assert(it.publishedAt === '2026-10-12T08:00:00.000Z', `时间错: ${it.publishedAt}`);
-    return '标题/链接/简介/摘要/正文/封面/时间 全部解析正确';
-  });
-
-  await test('parseFeed: Atom 的 subtitle / link href / id 也能解析', async () => {
-    const xml = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
-      <title>Atom 源</title>
-      <subtitle>这是 Atom 的副标题</subtitle>
-      <link rel="alternate" href="https://atom.example.com" />
-      <entry>
-        <title>条目一</title>
-        <id>tag:example.com,2026:1</id>
-        <link href="https://atom.example.com/1" />
-        <updated>2026-10-12T09:00:00Z</updated>
-        <summary>Atom 摘要</summary>
-      </entry>
-    </feed>`;
-    const feed = rssParse.parseFeed(xml);
-    assert(feed.title === 'Atom 源', `Atom 标题错: ${feed.title}`);
-    assert(feed.description === '这是 Atom 的副标题', `Atom 副标题应作为源简介: ${feed.description}`);
-    assert(feed.siteUrl === 'https://atom.example.com', `Atom 站点链接错: ${feed.siteUrl}`);
-    const it = feed.items[0];
-    assert(it.guid === 'tag:example.com,2026:1', `Atom guid 应取 id: ${it.guid}`);
-    assert(it.link === 'https://atom.example.com/1', `Atom 条目链接错: ${it.link}`);
-    assert(it.publishedAt === '2026-10-12T09:00:00.000Z', `Atom 时间错: ${it.publishedAt}`);
-    return 'Atom 标题/副标题/链接/id/时间 全部解析正确';
-  });
-
-  await test('parseFeed: 只有短摘要时 content_html 为 null（不存半篇正文）', async () => {
-    const xml = `<rss version="2.0"><channel><title>T</title><item>
-      <title>只有摘要</title><link>https://e.com/1</link>
-      <description>很短的一段描述</description>
-    </item></channel></rss>`;
-    const it = rssParse.parseFeed(xml).items[0];
-    assert(it.summary === '很短的一段描述', `摘要错: ${it.summary}`);
-    assert(it.contentHtml === null, '短摘要不应被当成正文 HTML 存下来');
-    return '短摘要只进 summary，contentHtml 为 null';
-  });
-
-  await test('OPML 解析与导出：能往返（parse → build → parse）', async () => {
-    const opml = `<?xml version="1.0"?><opml version="2.0"><body>
-      <outline type="rss" text="A 站" xmlUrl="https://a.com/feed" htmlUrl="https://a.com" />
-      <outline type="rss" text="B 站" xmlUrl="https://b.com/rss" />
-      <outline text="空分组" />
-    </body></opml>`;
-    const feeds = rssParse.parseOpml(opml);
-    assert(feeds.length === 2, `应解析出 2 个源，实际 ${feeds.length}`);
-    assert(feeds[0].feedUrl === 'https://a.com/feed' && feeds[0].title === 'A 站', '第一个源解析错');
-    const xml = rssParse.buildOpml([{ title: 'A & B', feed_url: 'https://a.com/feed', site_url: 'https://a.com' }]);
-    const back = rssParse.parseOpml(xml);
-    assert(back.length === 1 && back[0].feedUrl === 'https://a.com/feed', '导出再解析应回到同一个源');
-    assert(back[0].title === 'A & B', `XML 实体应正确转义: ${back[0].title}`);
-    return '2 源解析 / 实体转义 / 往返一致';
-  });
-
-  await test('访客白名单：/api/rss 只读放行，写操作全拒绝', async () => {
-    const { isGuestAllowed } = publicScope;
-    assert(isGuestAllowed('GET', '/api/rss/feeds'), '访客应可读订阅源列表');
-    assert(isGuestAllowed('GET', '/api/rss/articles'), '访客应可读条目列表');
-    assert(isGuestAllowed('GET', '/api/rss/articles/abc'), '访客应可读单条详情');
-    assert(isGuestAllowed('GET', '/api/rss/opml'), '访客应可导出 OPML（只读）');
-    assert(!isGuestAllowed('POST', '/api/rss/feeds'), '访客不应新增订阅源');
-    assert(!isGuestAllowed('PATCH', '/api/rss/feeds/x'), '访客不应修改订阅源');
-    assert(!isGuestAllowed('DELETE', '/api/rss/feeds/x'), '访客不应删除订阅源');
-    assert(!isGuestAllowed('POST', '/api/rss/feeds/x/fetch'), '访客不应触发抓取');
-    assert(!isGuestAllowed('PATCH', '/api/rss/articles/x'), '访客不应标记已读');
-    assert(!isGuestAllowed('POST', '/api/rss/opml'), '访客不应导入 OPML');
-    assert(!isGuestAllowed('POST', '/api/rss/discover'), '访客不应调用自动发现');
-    return 'GET 4 条放行 / 写操作 7 条拒绝';
-  });
-
-  await test('访客过滤：rss 必须叠加 is_public=eq.true', async () => {
-    const f = publicScope.guestRssFeedFilters();
-    assert(f.is_public === 'eq.true', `访客必须只读公开源: ${JSON.stringify(f)}`);
-    return `guestRssFeedFilters=${JSON.stringify(f)}`;
-  });
-
-  await test('RSS 路由契约：读走 requireAuth、写走 requireAdmin、不回传 user_id', async () => {
-    for (const fn of ['listFeeds', 'listArticles', 'getArticle', 'createFeed', 'updateFeed', 'deleteFeed',
-      'fetchFeedNow', 'fetchAllFeeds', 'updateArticle', 'markArticlesRead', 'exportOpml', 'importOpml',
-      'getPresets', 'discoverFeed']) {
-      assert(typeof rssRoute[fn] === 'function', `rss.js 应导出 ${fn}`);
-    }
-    const src = readFileSync(join(BACKEND, 'src', 'routes', 'rss.js'), 'utf8');
-    // 读接口必须用 requireAuth（访客才能进），写接口必须用 requireAdmin
-    // 取某个导出函数体：从它的声明到下一个标记（end 传数字表示直接到文件末尾）
-    const readFn = (name, end) => {
-      const from = src.indexOf(`export async function ${name}`);
-      const to = typeof end === 'number' ? end : src.indexOf(end, from + 1);
-      assert(from >= 0, `找不到导出函数 ${name}`);
-      assert(to > from, `${name} 的结束标记定位失败`);
-      return src.slice(from, to);
-    };
-    assert(/requireAuth\(/.test(readFn('listFeeds', '// GET /api/rss/feeds/:id')), 'listFeeds 应走 requireAuth');
-    assert(/requireAuth\(/.test(readFn('listArticles', '// PATCH /api/rss/articles/:id')), 'listArticles 应走 requireAuth');
-    for (const [fn, next] of [['createFeed', '// PATCH /api/rss/feeds/:id'],
-      ['updateFeed', '// DELETE /api/rss/feeds/:id'],
-      ['deleteFeed', '// POST /api/rss/feeds/:id/fetch'],
-      ['fetchFeedNow', '// POST /api/rss/fetch-all'],
-      ['fetchAllFeeds', '// ---------------------------------------------------------------\n// 条目'],
-      ['importOpml', src.length]]) {
-      assert(/requireAdmin\(/.test(readFn(fn, next)), `${fn} 应走 requireAdmin（仅站长可写）`);
-    }
-    // 字段白名单：不得 select:*（防止 user_id / etag 等内部字段回传）
-    assert(!/select:\s*'\*'/.test(src), 'rss.js 不得使用 select:*');
-    assert(/const FEED_SELECT = '[^']*'/.test(src) && /const ARTICLE_SELECT = '[^']*'/.test(src),
-      '应有 FEED_SELECT / ARTICLE_SELECT 字段白名单');
-    assert(!/user_id/.test(src.slice(src.indexOf('const FEED_SELECT'), src.indexOf('const ARTICLE_SELECT'))),
-      'FEED_SELECT 不得包含 user_id');
-    return '14 个导出 / 读 requireAuth / 写 requireAdmin / 字段白名单不含 user_id';
-  });
-
-  await test('RSS 精选源：全部为国内站点，且数量与分组正确', async () => {
-    const all = rssPresets.listPresets('all');
-    assert(all.length >= 10, `精选源至少 10 个，实际 ${all.length}`);
-    // 用户要求「只涉及国内的」：不能出现已知的境外源。
-    // 注意 YouTube 也在内 —— 用户后来明确「不要抓国外的」，中文频道同样不算国内站点
-    //（曾经把两个中文 YouTube 频道放进来过，已移除）。
-    // 按**主机名后缀**比对，不能用 url.includes(host)：
-    // v2ex.com 里含子串 "x.com"，朴素 includes 会把国内站误判成境外站。
-    const foreign = ['openai.com', 'anthropic.com', 'huggingface.co', 'ycombinator.com', 'techcrunch.com',
-      'theverge.com', 'arstechnica.com', 'technologyreview.com', 'dev.to', 'lobste.rs', 'github.blog',
-      'cloudflare.com', 'youtube.com', 'youtu.be', 'x.com', 'twitter.com', 'reddit.com', 'medium.com'];
-    const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ''; } };
-    for (const f of all) {
-      const host = hostOf(f.feed_url);
-      for (const bad of foreign) {
-        assert(host !== bad && !host.endsWith(`.${bad}`), `精选源不应包含境外源 ${bad}：${f.feed_url}`);
-      }
-      assert(/^https:\/\//.test(f.feed_url), `精选源必须是 https：${f.feed_url}`);
-      assert(f.title && f.title.trim(), `精选源必须有标题：${f.feed_url}`);
-    }
-    // 分组过滤
-    const ai = rssPresets.listPresets('ai');
-    assert(ai.length > 0 && ai.every((f) => f.group === 'ai'), 'group=ai 应只返回 AI 组');
-    assert(ai.length < all.length, 'group 过滤应真的缩小范围');
-    const keys = rssPresets.PRESET_GROUPS.map((g) => g.key).sort().join(',');
-    assert(keys === 'ai,dev,github,media,mine,news', `分组应为 ai/dev/github/media/mine/news，实际 ${keys}`);
-    // GitHub 趋势组：用户点名要的（唯一一处用户明确要求保留的境外平台，
-    // 因为 GitHub Trending 本身就是 GitHub 的功能，没有国内替代品）。
-    const gh = rssPresets.listPresets('github');
-    assert(gh.length === 3, `GitHub 趋势组应为日/周/月 3 个源，实际 ${gh.length}`);
-    assert(gh.every((f) => f.feed_url.startsWith('https://mshibanami.github.io/')), 'GitHub 趋势组应全部来自实测可用的第三方源');
-    // 「我从 Folo 导出的」这一组必须非空，且同样不含境外站点
-    const mine = rssPresets.listPresets('mine');
-    assert(mine.length >= 8, `Folo 分组至少 8 个源，实际 ${mine.length}`);
-    // 无重复地址
-    const urls = all.map((f) => f.feed_url);
-    assert(new Set(urls).size === urls.length, '精选源地址不应重复');
-    return `${all.length} 个国内源 / ${rssPresets.PRESET_GROUPS.length} 组 / 无重复 / 无境外源`;
-  });
-
-  await test('RSS 抓取搭车现有 cron：不新增触发器', async () => {
-    const wrangler = readFileSync(join(BACKEND, 'wrangler.toml'), 'utf8');
-    const cronLine = wrangler.match(/crons\s*=\s*\[([^\]]*)\]/)?.[1] ?? '';
-    const crons = cronLine.split(',').map((s) => s.trim()).filter(Boolean);
-    assert(crons.length === 1, `不应新增 cron 触发器（账号已满 5 个），实际 ${crons.length} 个：${crons.join(' ')}`);
-    assert(crons[0].includes('*/5 2-3 * * *'), `应保留原有 cron，实际 ${crons[0]}`);
-    const idx = readFileSync(join(BACKEND, 'src', 'index.js'), 'utf8');
-    assert(/syncAllFeeds\(/.test(idx), 'index.js 的 scheduled 里应顺带跑 RSS 抓取');
-    assert(/rss sync/.test(idx), '应打印 rss sync 日志便于线上排查');
-    return `cron 仍为 ${crons[0]}，RSS 搭同一班车`;
-  });
-
   section('UNIT · 公开读边界（访客白名单与过滤）');
 
   await test('访客 GET 白名单：公开只读接口放行、个人接口拒绝', async () => {
@@ -1367,16 +1170,6 @@ async function unit() {
     assert(!/<script/i.test(html), 'script 标签必须被转义');
     assert(html.includes('&lt;script&gt;'), 'script 应以转义文本形式出现');
     return '原始 HTML 被转义，无法注入脚本';
-  });
-
-  await test('GitHub Trending 识别与条目切分', () => {
-    assert(rssTranslate.isGithubTrendingFeed('https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml') === true,
-      '应识别 Trending 源');
-    assert(rssTranslate.isGithubTrendingFeed('https://sspai.com/feed') === false, '普通源不应误判');
-    const p = rssTranslate.splitTrendingItem({ title: 'owner/repo', summary: '<p>English desc here.</p><p>noise</p>' });
-    assert(p.repo === 'owner/repo', '应提取仓库名');
-    assert(p.desc === 'English desc here.', '应只取第一段描述');
-    return 'Trending 判定与切分正确';
   });
 
   await test('音乐去重：同一首歌（同名同歌手）只保留一条', async () => {

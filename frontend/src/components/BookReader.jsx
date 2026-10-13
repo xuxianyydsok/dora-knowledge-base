@@ -12,6 +12,8 @@ import { createPortal } from 'preact/compat';
 import { api } from '../lib/api.js';
 import { Icon } from './Icon.jsx';
 import { toastError } from '../lib/toast.jsx';
+// PDF 缩放档位（纯常量，不触发 pdf.js 加载；真正的 pdf.js 在打开 PDF 时才动态 import）
+import { PDF_ZOOM_STEPS, stepZoom } from '../lib/pdfReader.js';
 // 阅读器自己带样式与字体：谁挂载它都能正常显示，不依赖宿主页面碰巧 import 过。
 // （首页书架复用时，首页并不会 import books.css / wenkai.css。）
 import '../styles/books.css';
@@ -105,7 +107,9 @@ export function resolveSwipe({ dx = 0, dy = 0, atBottom = false, atTop = false, 
 }
 
 export function BookReader({ book, onClose }) {
-  const [loading, setLoading] = useState(book.format === 'epub');
+  // EPUB 要解压、PDF 要解析文档，两者打开时都需要 loading 态；
+  // 其余格式（理论上不会进阅读器）不需要。
+  const [loading, setLoading] = useState(book.format === 'epub' || book.format === 'pdf');
   const [error, setError] = useState('');
   const [chapters, setChapters] = useState([]);
   const [index, setIndex] = useState(0);
@@ -122,6 +126,31 @@ export function BookReader({ book, onClose }) {
   const cleanupRef = useRef(null);
 
   const isEpub = book.format === 'epub';
+  const isPdf = book.format === 'pdf';
+
+  // ---------------- PDF 状态（基于 pdf.js 自绘 canvas） ----------------
+  // 与 EPUB 的区别：PDF 是固定版面，没有「章节」概念，翻的是**页**。
+  // 因此进度条走页码（1..total），「字号 / 字体」这类对 PDF 无意义的设置
+  // 换成「缩放 / 适宽 / 适页」（见下面的设置面板）。
+  const [pdfDoc, setPdfDoc] = useState(null);
+  const [pdfPage, setPdfPage] = useState(1);
+  const [pdfTotal, setPdfTotal] = useState(0);
+  const [pdfZoom, setPdfZoom] = useState(1);
+  const [pdfFit, setPdfFit] = useState('width');   // width | page | custom
+  const [pdfOutline, setPdfOutline] = useState([]);
+  const [pdfPageInput, setPdfPageInput] = useState('');
+  const [pdfDragPage, setPdfDragPage] = useState(null);
+  const pdfDocRef = useRef(null);
+  const pdfCanvasRef = useRef(null);
+  const pdfBoxRef = useRef(null);
+  const pdfRenderRef = useRef(null);
+  const pdfBaseVpRef = useRef(new Map());
+  // 实际用于渲染的缩放比。与 pdfZoom（用于显示百分比）分开：
+  // 适宽 / 适页模式下由容器尺寸算出，避免写回 state 造成 effect 自触发。
+  const pdfZoomRef = useRef(1);
+  // 自定义缩放的「代次」：点 +/− 或拖滑块时 +1，用来触发重渲染，
+  // 而适宽 / 适页的自动计算不会改它。
+  const [pdfZoomTick, setPdfZoomTick] = useState(0);
 
   // 双页阅读：窄屏（<900px）强制回单页，否则手机上两栏会挤成一条
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
@@ -210,6 +239,101 @@ export function BookReader({ book, onClose }) {
     };
   }, [book.id]);
 
+  // PDF：打开文档（pdf.js 按 Range 流式拉取，不整本下载）
+  useEffect(() => {
+    if (book.format !== 'pdf') return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const mod = await import('../lib/pdfReader.js');
+        // 走 bookFileUrl（带媒体令牌）：私人书在登录后也能读，
+        // 且给 pdf.js 的是 URL 而不是字节 —— 它自己按 Range 分段取，
+        // 几百 MB 的书也能秒开第一页。
+        const opened = await mod.openPdf(api.bookFileUrl(book.id));
+        if (!alive) { opened.destroy(); return; }
+        pdfDocRef.current = opened;
+        setPdfDoc(opened.doc);
+        setPdfTotal(opened.pageCount);
+        // 回到上次读到的页（没有记录就第 1 页）
+        const saved = mod.loadPdfPage(book.id);
+        setPdfPage(Math.min(opened.pageCount || 1, Math.max(1, saved)));
+        // 大纲（PDF 自带书签）：没有就空数组，UI 自动隐藏目录按钮
+        mod.loadOutline(opened.doc).then((list) => { if (alive) setPdfOutline(list); }).catch(() => {});
+      } catch (err) {
+        if (alive) setError(err?.message || 'PDF 打开失败');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+      try { pdfDocRef.current?.destroy?.(); } catch { /* 已销毁 */ }
+      pdfDocRef.current = null;
+      pdfBaseVpRef.current = new Map();
+    };
+  }, [book.id]);
+
+  // PDF：窗口尺寸变化 → 重算适宽 / 适页（旋转手机、拉窗口后页面会被裁掉）
+  // 做法是递增 tick 让渲染 effect 重跑，由它按新容器尺寸算缩放。
+  useEffect(() => {
+    if (!isPdf || pdfFit === 'custom') return undefined;
+    let timer = null;
+    const onResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        pdfZoomRef.current = 0;            // 清掉旧值，强制重算
+        setPdfZoomTick((t) => t + 1);
+      }, 180);
+    };
+    window.addEventListener('resize', onResize);
+    return () => { clearTimeout(timer); window.removeEventListener('resize', onResize); };
+  }, [isPdf, pdfFit]);
+
+  // PDF：把当前页画到 canvas（取消上一次未完成的渲染，避免快速翻页时错位）
+  //
+  // ⚠ 这里**不能**在 effect 里 setPdfZoom 又把它列进依赖 —— 会自己触发自己
+  //   （适宽算出的值写回 state → effect 重跑 → 再算一次…）。做法是：
+  //   适宽 / 适页模式下算出的实际缩放存进 pdfZoomRef 供本次渲染用，
+  //   只把「用于显示的百分比」同步进 state，且用阈值挡住无意义的更新。
+  useEffect(() => {
+    if (!isPdf || !pdfDoc) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import('../lib/pdfReader.js');
+        const canvas = pdfCanvasRef.current;
+        if (!canvas) return;
+        const base = await mod.getBaseViewport(pdfDoc, pdfPage, pdfBaseVpRef.current);
+        const box = pdfBoxRef.current;
+        // 自定义模式用滑块的值；适宽 / 适页由容器尺寸算。
+        // 注意读的是 pdfZoom（state）而不是 ref：滑块拖到中间值时要立刻生效。
+        let zoom = pdfFit === 'custom' ? pdfZoom : pdfZoomRef.current;
+        if (pdfFit !== 'custom' && box) {
+          zoom = mod.fitZoom(base, { width: box.clientWidth, height: box.clientHeight }, pdfFit);
+          // 同步给「设置面板里的百分比」显示；阈值避免亚像素抖动引发重渲染
+          if (Math.abs(zoom - pdfZoomRef.current) > 0.01) setPdfZoom(zoom);
+        }
+        pdfZoomRef.current = zoom;
+        // 丢掉上一次还没画完的渲染
+        pdfRenderRef.current?.cancel?.();
+        const task = await mod.renderPageToCanvas(
+          pdfDoc, pdfPage, canvas, zoom, window.devicePixelRatio || 1
+        );
+        if (cancelled) { task?.cancel?.(); return; }
+        pdfRenderRef.current = task;
+        mod.savePdfPage(book.id, pdfPage);
+      } catch (err) {
+        // 快速翻页导致的 cancel 不算错误
+        if (!/cancel/i.test(String(err?.message || ''))) {
+          toastError(err?.message || '这一页渲染失败');
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // pdfZoom 只在「自定义」模式下才影响渲染；适宽/适页时由容器尺寸决定，
+    // 所以把它放进依赖会在每次自动计算后多渲染一次。用 pdfZoomRef 读取实际值。
+  }, [isPdf, pdfDoc, pdfPage, pdfFit, pdfZoomTick, book.id]);
+
   async function goTo(i) {
     const reader = epubRef.current;
     if (!reader || busyRef.current) return;
@@ -292,6 +416,96 @@ export function BookReader({ book, onClose }) {
   const navApi = useRef({});
   navApi.current = { step, onBodyScroll, goTo };
   const busyRef = useRef(false);
+
+  // ---------------- PDF 翻页 / 缩放 ----------------
+  // 翻页语义与 EPUB 对齐：左滑 / 向下滑 = 下一页，右滑 / 向上滑 = 上一页。
+  // 区别是 PDF 每页高度自适应，不存在「页内滚动」，所以一次手势就是一次翻页。
+  function pdfTurn(delta) {
+    if (!pdfTotal) return;
+    setPdfPage((p) => Math.min(pdfTotal, Math.max(1, p + delta)));
+  }
+
+  function pdfGoTo(page) {
+    if (!pdfTotal) return;
+    const n = Math.min(pdfTotal, Math.max(1, Number(page) || 1));
+    setPdfPage(n);
+    setTocOpen(false);
+  }
+
+  function pdfSetZoom(z, { custom = true } = {}) {
+    pdfZoomRef.current = z;
+    setPdfZoom(z);
+    // 自定义缩放要立刻重画（适宽/适页由容器尺寸驱动，不走这条）
+    setPdfZoomTick((t) => t + 1);
+    if (custom) setPdfFit('custom');
+  }
+
+  function pdfFitTo(mode) {
+    setPdfFit(mode);
+    // 适宽 / 适页：清掉自定义值，让渲染 effect 按容器尺寸重算
+    pdfZoomRef.current = mode === 'custom' ? pdfZoomRef.current : 0;
+    setPdfZoomTick((t) => t + 1);
+  }
+
+  // PDF 的键盘 / 滚轮 / 触屏：挂在阅读区容器上（PDF 不经过 iframe）
+  function onPdfWheel(e) {
+    // 只在没有按 Ctrl（那是浏览器缩放）时把滚轮当翻页；
+    // 触控板横向滑动同样翻页。
+    if (e.ctrlKey) return;
+    const dy = e.deltaY;
+    const dx = e.deltaX;
+    const d = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+    if (Math.abs(d) < 12) return;
+    e.preventDefault();
+    pdfTurn(d > 0 ? 1 : -1);
+  }
+
+  function onPdfKey(e) {
+    if (settingsOpen || tocOpen) return;
+    switch (e.key) {
+      case 'ArrowRight': case 'PageDown': case ' ':
+        e.preventDefault(); pdfTurn(1); break;
+      case 'ArrowLeft': case 'PageUp':
+        e.preventDefault(); pdfTurn(-1); break;
+      case 'Home':
+        e.preventDefault(); pdfGoTo(1); break;
+      case 'End':
+        e.preventDefault(); pdfGoTo(pdfTotal); break;
+      default: break;
+    }
+  }
+
+  // PDF 触屏：与 EPUB 用同一个 resolveSwipe 语义（左/下滑=下一页，右/上滑=上一页）。
+  // 不同点：PDF 一页就是满屏，没有「页内滚动」，所以任何方向滑过阈值都翻页。
+  function makePdfTouchHandlers() {
+    let start = null;
+    const SWIPE = 42;
+    const AXIS_MIN = 12;
+    return {
+      onTouchStart(e) {
+        if (e.touches.length !== 1) { start = null; return; }
+        const t = e.touches[0];
+        start = { x: t.clientX, y: t.clientY, fired: false };
+      },
+      onTouchMove(e) {
+        if (!start || e.touches.length !== 1) return;
+        const t = e.touches[0];
+        const dx = t.clientX - start.x;
+        const dy = t.clientY - start.y;
+        if (Math.abs(dx) < AXIS_MIN && Math.abs(dy) < AXIS_MIN) return;
+        const dir = resolveSwipe({ dx, dy, atBottom: true, atTop: true, threshold: SWIPE });
+        if (dir === 0) return;
+        e.preventDefault();
+        pdfTurn(dir);
+        start.fired = true;
+        start.x = t.clientX;
+        start.y = t.clientY;
+      },
+      onTouchEnd() { start = null; }
+    };
+  }
+  const pdfTouch = useRef(null);
+  if (!pdfTouch.current) pdfTouch.current = makePdfTouchHandlers();
 
   // EPUB：把翻页输入挂到 iframe 内部（滚轮 / 触屏上下滑 / 方向键 / 空格 / PgUp·PgDn）。
   // iframe 里章节内的链接点击也在这里兜住：命中 data-epub-href 就翻到对应章节。
@@ -443,6 +657,10 @@ export function BookReader({ book, onClose }) {
   const canTurn = total > 1;
   const progressPct = canTurn ? ((index + percent / 100) / total) * 100 : percent;
   const chLabel = (i) => chapters[i]?.title || `第 ${i + 1} 章`;
+  // PDF 进度：按「页」算（第 1 页 0%、最后一页 100%），与 lib/pdfReader.pagePercent 同一口径
+  const pdfPercent = pdfTotal > 1
+    ? Math.round(((Math.min(Math.max(1, pdfPage), pdfTotal) - 1) / (pdfTotal - 1)) * 100)
+    : 0;
 
   return createPortal((
     <div class="bk-reader" role="dialog" aria-modal="true" aria-label={`阅读《${book.title}》`}>
@@ -455,6 +673,43 @@ export function BookReader({ book, onClose }) {
           </span>
         </div>
         <div class="bk-reader-tools">
+          {/* PDF 工具条：翻页 + 页码直达 + 缩放。与 EPUB 的「上一章/目录/下一章」
+              并列，但语义换成「页」，因为 PDF 是固定版面、没有章节概念。 */}
+          {isPdf && pdfTotal > 0 && (
+            <>
+              <button type="button" onClick={() => pdfTurn(-1)} disabled={pdfPage <= 1} title="上一页">
+                <Icon name="chevronLeft" size={15} /><span>上一页</span>
+              </button>
+              <div class="bk-page-jump">
+                <input
+                  class="bk-page-input"
+                  type="text"
+                  inputMode="numeric"
+                  value={pdfPageInput === '' ? pdfPage : pdfPageInput}
+                  title="输入页码后回车跳转"
+                  aria-label="跳到指定页"
+                  onFocus={() => setPdfPageInput('')}
+                  onInput={(e) => setPdfPageInput(e.currentTarget.value.replace(/[^\d]/g, ''))}
+                  onBlur={() => setPdfPageInput('')}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    pdfGoTo(e.currentTarget.value);
+                    setPdfPageInput('');
+                    e.currentTarget.blur();
+                  }}
+                />
+                <span class="bk-page-total">/ {pdfTotal}</span>
+              </div>
+              {pdfOutline.length > 0 && (
+                <button type="button" onClick={() => setTocOpen((v) => !v)} title="书签目录">
+                  <Icon name="list" size={15} /><span>目录</span>
+                </button>
+              )}
+              <button type="button" onClick={() => pdfTurn(1)} disabled={pdfPage >= pdfTotal} title="下一页">
+                <span>下一页</span><Icon name="chevronRight" size={15} />
+              </button>
+            </>
+          )}
           {canTurn && (
             <>
               <button type="button" onClick={() => turn(-1)} title="上一章">
@@ -566,6 +821,97 @@ export function BookReader({ book, onClose }) {
               )}
             </div>
           )}
+
+          {/* PDF 的阅读设置：背景 / 缩放 / 适宽 / 适页。
+              没有「字号 / 字体」—— PDF 是固定版面，字体是画进页面的，
+              改不了；对 PDF 真正有用的是缩放，所以换成这组控件。 */}
+          {isPdf && (
+            <div class="bk-set-wrap" ref={settingsRef}>
+              <button
+                type="button"
+                class={settingsOpen ? 'on' : ''}
+                onClick={() => setSettingsOpen((v) => !v)}
+                title="阅读设置"
+                aria-expanded={settingsOpen}
+              >
+                <Icon name="sliders" size={15} /><span>阅读设置</span>
+              </button>
+              {settingsOpen && (
+                <div class="bk-set" role="dialog" aria-label="阅读设置">
+                  <div class="bk-set-group">
+                    <span class="bk-set-label">背景</span>
+                    <div class="bk-set-swatches">
+                      {READER_BACKGROUNDS.map((b) => (
+                        <button
+                          key={b.key}
+                          type="button"
+                          class={`bk-swatch${prefs.bg === b.key ? ' on' : ''}`}
+                          style={`--sw:${b.bg}`}
+                          title={b.label}
+                          aria-label={b.label}
+                          onClick={() => setPref({ bg: b.key })}
+                        ><span /></button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div class="bk-set-group">
+                    <span class="bk-set-label">缩放 <em>{Math.round(pdfZoom * 100)}%</em></span>
+                    <div class="bk-set-row">
+                      <button
+                        type="button"
+                        class="bk-set-btn"
+                        disabled={pdfZoom <= PDF_ZOOM_STEPS[0]}
+                        onClick={() => pdfSetZoom(stepZoom(pdfZoom, -1))}
+                        title="缩小"
+                      >A−</button>
+                      <input
+                        class="bk-set-range"
+                        type="range"
+                        min={PDF_ZOOM_STEPS[0]}
+                        max={PDF_ZOOM_STEPS[PDF_ZOOM_STEPS.length - 1]}
+                        step={0.05}
+                        value={pdfZoom}
+                        onInput={(e) => pdfSetZoom(Number(e.target.value))}
+                      />
+                      <button
+                        type="button"
+                        class="bk-set-btn"
+                        disabled={pdfZoom >= PDF_ZOOM_STEPS[PDF_ZOOM_STEPS.length - 1]}
+                        onClick={() => pdfSetZoom(stepZoom(pdfZoom, 1))}
+                        title="放大"
+                      >A+</button>
+                    </div>
+                  </div>
+
+                  <div class="bk-set-group">
+                    <span class="bk-set-label">显示方式</span>
+                    <div class="bk-set-chips">
+                      <button
+                        type="button"
+                        class={`bk-set-chip${pdfFit === 'width' ? ' on' : ''}`}
+                        onClick={() => pdfFitTo('width')}
+                      >适宽</button>
+                      <button
+                        type="button"
+                        class={`bk-set-chip${pdfFit === 'page' ? ' on' : ''}`}
+                        onClick={() => pdfFitTo('page')}
+                      >适页</button>
+                      <button
+                        type="button"
+                        class={`bk-set-chip${pdfFit === 'custom' ? ' on' : ''}`}
+                        onClick={() => setPdfFit('custom')}
+                        title="用上面的缩放滑块自己调"
+                      >自定义</button>
+                    </div>
+                    <p class="bk-set-hint">PDF 是固定版面，字号和字体改不了 —— 用缩放看大小。</p>
+                  </div>
+
+                  <p class="bk-set-tip">滚轮 / ↑↓ / 左右方向键翻页；触屏左滑下一页、右滑上一页；点页码可直接跳转。</p>
+                </div>
+              )}
+            </div>
+          )}
           {/* 下载是可选项：默认在线阅读，想存到本地的读者再点这里 */}
           <a
             class="bk-tool-link"
@@ -581,9 +927,53 @@ export function BookReader({ book, onClose }) {
         </div>
       </div>
 
-      <div class={`bk-reader-body${twoUp ? ' two-up' : ''}`} ref={bodyRef} onScroll={onBodyScroll}>
-        {book.format === 'pdf' && (
-          <iframe src={api.bookFileUrl(book.id)} title={`《${book.title}》`} />
+      <div
+        class={`bk-reader-body${twoUp ? ' two-up' : ''}${isPdf ? ' is-pdf' : ''}`}
+        ref={bodyRef}
+        onScroll={onBodyScroll}
+        style={isPdf ? `--bk-pdf-bg:${(READER_BACKGROUNDS.find((b) => b.key === prefs.bg) || READER_BACKGROUNDS[0]).bg}` : undefined}
+      >
+        {/* PDF：pdf.js 自绘 canvas（见 lib/pdfReader.js）。
+            不再用 <iframe> 交给浏览器内置阅读器 —— 那样工具栏 / 配色 / 翻页
+            全由浏览器决定，手机端还常常直接变成下载。 */}
+        {isPdf && (
+          <div
+            class="bk-pdf-box"
+            ref={pdfBoxRef}
+            tabIndex={0}
+            onWheel={onPdfWheel}
+            onKeyDown={onPdfKey}
+            onTouchStart={pdfTouch.current.onTouchStart}
+            onTouchMove={pdfTouch.current.onTouchMove}
+            onTouchEnd={pdfTouch.current.onTouchEnd}
+          >
+            {loading && (
+              <div class="bk-reader-state">
+                <span class="spinner" aria-hidden="true" />
+                <p>正在打开 PDF…</p>
+              </div>
+            )}
+            {!loading && error && (
+              <div class="bk-reader-state">
+                <Icon name="alert" size={30} />
+                <h3>这本书暂时读不了</h3>
+                <p>{error}。也可以先下载到本地，用阅读器打开。</p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+                  <a class="btn primary" href={api.bookDownloadUrl(book.id)} download={book.original_name || undefined}>
+                    <Icon name="download" size={16} /> 下载 PDF
+                  </a>
+                  <button type="button" class="btn" onClick={onClose}>返回书架</button>
+                </div>
+              </div>
+            )}
+            {!error && (
+              <canvas
+                ref={pdfCanvasRef}
+                class="bk-pdf-canvas"
+                aria-label={`《${book.title}》第 ${pdfPage} 页`}
+              />
+            )}
+          </div>
         )}
 
         {book.format === 'epub' && (
@@ -649,7 +1039,76 @@ export function BookReader({ book, onClose }) {
           </div>
         )}
 
-        {tocOpen && total > 0 && (
+        {/* PDF 底部进度：显示「第几页 / 共几页」+ 百分比，拖动可跳页。
+            与 EPUB 那条共用同一套外观（.bk-progressbar），只是把「章」换成「页」。 */}
+        {isPdf && pdfTotal > 0 && !loading && !error && (
+          <div class="bk-progressbar" role="group" aria-label="阅读进度">
+            <button
+              type="button"
+              class="bk-progress-arrow"
+              onClick={() => pdfTurn(-1)}
+              disabled={pdfPage <= 1}
+              title="上一页"
+            >
+              <Icon name="chevronLeft" size={15} />
+            </button>
+            <div class="bk-progress-main">
+              <div class="bk-progress-head">
+                <span class="bk-progress-ch">{book.title || '未命名'}</span>
+                <span class="bk-progress-num">
+                  第 {pdfPage} / {pdfTotal} 页 · {pdfPercent}%
+                </span>
+              </div>
+              <input
+                class="bk-progress-range"
+                type="range"
+                min={1}
+                max={pdfTotal}
+                step={1}
+                value={pdfDragPage ?? pdfPage}
+                title="拖动跳到指定页"
+                onInput={(e) => setPdfDragPage(Number(e.target.value))}
+                onChange={(e) => { setPdfDragPage(null); pdfGoTo(e.target.value); }}
+                style={`--pct:${pdfPercent}%`}
+              />
+            </div>
+            <button
+              type="button"
+              class="bk-progress-arrow"
+              onClick={() => pdfTurn(1)}
+              disabled={pdfPage >= pdfTotal}
+              title="下一页"
+            >
+              <Icon name="chevronRight" size={15} />
+            </button>
+          </div>
+        )}
+
+        {/* PDF 书签目录：用 PDF 自带的大纲（很多扫描版没有，此时目录按钮不显示）。
+            缩进按层级给（depth * 12px），与 EPUB 的扁平章节目录区分开。 */}
+        {tocOpen && isPdf && pdfOutline.length > 0 && (
+          <aside class="bk-toc" role="navigation" aria-label="书签目录">
+            <div class="bk-toc-head">
+              <span>书签（{pdfOutline.length} 条）</span>
+              <button type="button" class="bk-toc-close" onClick={() => setTocOpen(false)} aria-label="关闭目录">
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+            <div class="bk-toc-list">
+              {pdfOutline.map((o, i) => (
+                <button
+                  key={`${i}-${o.page}-${o.title}`}
+                  type="button"
+                  class={`bk-toc-item${o.page === pdfPage ? ' on' : ''}`}
+                  style={`padding-left:${12 + (o.depth || 0) * 12}px`}
+                  onClick={() => pdfGoTo(o.page)}
+                >{o.title}</button>
+              ))}
+            </div>
+          </aside>
+        )}
+
+        {tocOpen && !isPdf && total > 0 && (
           <aside class="bk-toc" role="navigation" aria-label="章节目录">
             <div class="bk-toc-head">
               <span>目录（{total} 章）</span>

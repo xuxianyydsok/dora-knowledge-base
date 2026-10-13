@@ -15,8 +15,6 @@ import { useAuth } from '../lib/auth.jsx';
 
 const PRIMARY = [
   ['/news', 'NewsNow'], ['/github', 'GitHub'],
-  // RSS 阅读器（2026-10-12 恢复）：站长订阅一次，所有人来读，不用各自订阅
-  ['/rss', 'RSS'],
   ['/posts', '博客'],
   ['/music', '音乐'], ['/movies', '影视'],
   ['/books', '图书'],
