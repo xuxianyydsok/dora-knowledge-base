@@ -5987,3 +5987,104 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   .app-header .brand { padding-top: 5px; padding-bottom: 5px; }
   .app-nav a { padding-top: 12px; padding-bottom: 12px; }
 }
+
+/* ---------------- B 站曲目（MV）----------------
+ * 用户要求（2026-10-13）：「上传音乐的时候可以上传一个哔哩哔哩的链接」
+ * 「我需要的就是那个视频窗口……直接看那个视频」「前端要区分一下是来自哔哩哔哩的」。
+ *
+ * 三处用到：
+ *   .amu-bili*   管理员上传页的「添加 B 站视频」区
+ *   .bv-badge-sm 曲目卡片上的 B站 徽章
+ *   .bv-*        B 站播放页（整页弹层）
+ * 识别色统一用 B 站粉 #fb7299。
+ */
+
+/* —— 管理员页：添加 B 站视频 —— */
+.amu-bili {
+  padding: var(--sp-5, 16px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 14px);
+  background: var(--bg-elevated, var(--surface));
+  display: flex; flex-direction: column; gap: var(--sp-3, 10px);
+}
+.amu-bili-head { display: flex; align-items: center; gap: 8px; color: #fb7299; }
+.amu-bili-head h2 { margin: 0; font-size: var(--fs-lead, 15px); color: var(--text); }
+.amu-bili-hint { margin: 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.6; }
+.amu-bili-fields {
+  display: grid; gap: var(--sp-3, 8px);
+  grid-template-columns: 2fr 1fr 1fr;
+}
+.amu-bili-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.amu-bili-ok { font-size: 12px; color: #16a34a; font-family: var(--font-mono, monospace); }
+.amu-bili-bad { font-size: 12px; color: var(--danger, #dc2626); }
+@media (max-width: 720px) { .amu-bili-fields { grid-template-columns: 1fr; } }
+
+/* —— 曲目卡片上的 B站 徽章 —— */
+.bv-badge-sm {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px; border-radius: 999px;
+  background: color-mix(in srgb, #fb7299 16%, transparent);
+  color: #fb7299; font-size: 10.5px; font-weight: 620;
+  vertical-align: middle; white-space: nowrap;
+}
+/* 封面右上角的角标（复用 .album-flag 的定位，只换配色） */
+.album-flag.is-video { background: #fb7299; color: #fff; }
+
+/* —— B 站播放页（整页弹层）—— */
+.bv-wrap {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  animation: bv-in var(--dur-med, .22s) var(--ease-out, ease) both;
+}
+@keyframes bv-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .bv-wrap { animation: none; } }
+
+.bv-bar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  padding: 10px var(--sp-5, 16px);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated, var(--surface));
+}
+.bv-bar button, .bv-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 32px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-pill, 999px);
+  background: transparent; color: var(--text);
+  font-family: var(--font-ui); font-size: 12.5px; text-decoration: none; cursor: pointer;
+  transition: border-color var(--dur-fast, .18s) ease, color var(--dur-fast, .18s) ease;
+}
+.bv-bar button:hover, .bv-link:hover { border-color: #fb7299; color: #fb7299; }
+.bv-bar button.on { background: #fb7299; border-color: #fb7299; color: #fff; }
+.bv-title {
+  font-size: var(--fs-sm, 13.5px); font-weight: 620; color: var(--text);
+  max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bv-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  background: #fb7299; color: #fff; font-size: 11px; font-weight: 620;
+}
+.bv-spacer { flex: 1 1 auto; }
+
+.bv-stage {
+  flex: 1 1 auto; min-height: 0; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: #000;
+}
+.bv-frame { width: 100%; height: 100%; border: none; display: block; }
+.bv-loading {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+  color: #cfd6e4; background: #000;
+}
+.bv-loading p { margin: 0; font-size: 13px; }
+.bv-hint { color: var(--text-muted); font-size: 12.5px; }
+
+.bv-meta {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 9px var(--sp-5, 16px);
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated, var(--surface));
+  font-size: 12px; color: var(--text-muted);
+}

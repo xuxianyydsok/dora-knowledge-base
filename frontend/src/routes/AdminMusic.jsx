@@ -31,6 +31,7 @@ import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { toast, toastError, toastSuccess } from '../lib/toast.jsx';
+import { parseBilibiliInput, isValidBvid, bilibiliEmbedUrl } from '../lib/bilibili.js';
 import '../styles/admin-music.css';
 
 // 与后端 audioType.js 的白名单一致：只收能真正解码出时长的音频容器
@@ -101,6 +102,12 @@ export function AdminMusic() {
   const [items, setItems] = useState([]);      // 待传队列
   const [results, setResults] = useState([]);  // 上传成功的曲目
   const [dragging, setDragging] = useState(false);
+  // B 站曲目（MV）：用户要求「上传音乐时可以上传一个哔哩哔哩的链接」，
+  // 且「需要的就是那个视频窗口……直接看那个视频」。
+  const [biliUrl, setBiliUrl] = useState('');
+  const [biliTitle, setBiliTitle] = useState('');
+  const [biliArtist, setBiliArtist] = useState('');
+  const [biliBusy, setBiliBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
 
@@ -168,6 +175,37 @@ export function AdminMusic() {
         error: err?.message || '上传失败，请重试'
       });
       return null;
+    }
+  }
+
+  // 添加 B 站曲目：只填「链接 + 歌名（+ 歌手）」，不传文件。
+  // 后端只校验并解析出 BV 号入库；播放时前端嵌 B 站官方播放器（见 BilibiliPlayer.jsx）。
+  async function addBilibili() {
+    const parsed = parseBilibiliInput(biliUrl);
+    if (parsed.isShortLink) {
+      toastError('b23.tv 短链无法直接识别，请打开后复制完整链接（含 BV 号）');
+      return;
+    }
+    if (!parsed.bvid || !isValidBvid(parsed.bvid)) {
+      toastError('没找到 B 站视频号（BV 号），请检查链接');
+      return;
+    }
+    const title = biliTitle.trim();
+    if (!title) { toastError('请填写歌名'); return; }
+    setBiliBusy(true);
+    try {
+      const saved = await api.createMusic({
+        title,
+        artist: biliArtist.trim() || null,
+        bilibili_url: parsed.bvid
+      });
+      setBiliUrl(''); setBiliTitle(''); setBiliArtist('');
+      toastSuccess(`《${saved?.title || title}》已加入音乐库（B 站 MV）`);
+      setResults((prev) => [saved, ...prev]);
+    } catch (err) {
+      toastError(err?.message || '添加失败，请重试');
+    } finally {
+      setBiliBusy(false);
     }
   }
 
@@ -280,6 +318,66 @@ export function AdminMusic() {
           />
         </div>
       </div>
+
+      {/* B 站曲目（MV）：只填链接 + 歌名，不传文件。
+          用户要求「有些音乐它是以 MV 的形式呈现出来的，那个直接看那个视频」，
+          所以这类曲目在音乐页点开会打开 B 站播放器窗口，而不是走音频播放条。 */}
+      <section class="amu-bili">
+        <div class="amu-bili-head">
+          <Icon name="video" size={16} />
+          <h2>添加 B 站视频（MV）</h2>
+        </div>
+        <p class="amu-bili-hint">
+          粘贴 B 站视频链接或 BV 号即可（也支持手机端链接、播放器链接）。
+          播放时会嵌入 B 站官方播放器，所以是「边听边看视频」。
+        </p>
+        <div class="amu-bili-fields">
+          <label class="amu-field amu-bili-url">
+            <span>B 站链接 / BV 号</span>
+            <input
+              type="text"
+              value={biliUrl}
+              placeholder="https://www.bilibili.com/video/BV1xx411c7mD 或 BV1xx411c7mD"
+              onInput={(e) => setBiliUrl(e.currentTarget.value)}
+            />
+          </label>
+          <label class="amu-field">
+            <span>歌名</span>
+            <input
+              type="text"
+              value={biliTitle}
+              placeholder="必填"
+              onInput={(e) => setBiliTitle(e.currentTarget.value)}
+            />
+          </label>
+          <label class="amu-field">
+            <span>歌手</span>
+            <input
+              type="text"
+              value={biliArtist}
+              placeholder="选填"
+              onInput={(e) => setBiliArtist(e.currentTarget.value)}
+            />
+          </label>
+        </div>
+        <div class="amu-bili-actions">
+          <button
+            type="button"
+            class="primary amu-btn"
+            disabled={biliBusy || !biliUrl.trim() || !biliTitle.trim()}
+            onClick={addBilibili}
+          >
+            <Icon name="plus" size={15} />{biliBusy ? '添加中…' : '加入音乐库'}
+          </button>
+          {biliUrl && (() => {
+            const p = parseBilibiliInput(biliUrl);
+            const ok = p.bvid && isValidBvid(p.bvid);
+            return ok
+              ? <span class="amu-bili-ok">已识别：{p.bvid}</span>
+              : <span class="amu-bili-bad">{p.isShortLink ? 'b23.tv 短链需展开后复制完整链接' : '没找到 BV 号'}</span>;
+          })()}
+        </div>
+      </section>
 
       {/* 待上传队列 */}
       {items.length > 0 && (

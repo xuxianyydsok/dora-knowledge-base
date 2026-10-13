@@ -19,6 +19,7 @@ import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicSco
 import { looksLikeAudioStream, isStaleAudioUrl, resolveAudioPlayback } from '../lib/mediaUrl.js';
 import { isAdminFavorited } from './favorites.js';
 import { dedupeMusicList, findDuplicateMusic, musicIdentity, normalizeMusicText } from '../lib/musicIdentity.js';
+import { parseBilibiliInput, isValidBvid } from '../lib/bilibili.js';
 import { toSimplified, hasTraditional } from '../lib/zhConvert.js';
 
 // 歌词统一转简体（2026-10-12 用户要求：「有些时候搜出来的歌词展现的是繁体中文，
@@ -305,8 +306,32 @@ export async function createMusic(request, env) {
   // 播放地址只接受**媒体直链**：网页地址（分享页 / 平台落地页 audius.co/...）一律不用，
   // 否则前端把它交给 <audio> 必然报「暂无可用的播放地址」。见 lib/mediaUrl.js。
   // 优先级：完整音轨 audio_url > 显式直链 url > 试听片段 preview_url。
-  const resolved = resolveAudioPlayback({ url: rawUrl, audio_url: audioUrl, preview_url: previewUrl });
-  if (!resolved.url) {
+  // B 站曲目（2026-10-13 用户要求）：
+  //   「可以上传那个一个哔哩哔哩的一个链接」「需要的就是那个视频窗口……直接看那个视频」
+  // 形态是「嵌 B 站官方播放器」，因此**不需要音频直链** —— 走 iframe 播放。
+  // 这里只解析出 BV 号入库，播放器地址由前端用同一个规则拼（见 lib/bilibili.js）。
+  const rawBili = optionalString(body.bilibili_url, 'bilibili_url', { max: 500 })
+    ?? optionalString(body.bvid, 'bvid', { max: 40 }) ?? null;
+  let bvid = null;
+  if (rawBili) {
+    const parsed = parseBilibiliInput(rawBili);
+    if (parsed.isShortLink) {
+      throw new HttpError(422, 'b23.tv 短链无法直接识别，请打开后复制完整链接（含 BV 号）');
+    }
+    if (parsed.isAv && !parsed.bvid) {
+      throw new HttpError(422, 'av 号请改用 BV 号（在 B 站视频页地址里可以找到）');
+    }
+    if (!parsed.bvid || !isValidBvid(parsed.bvid)) {
+      throw new HttpError(422, '没能从链接里找到 B 站视频号（BV 号），请检查后重试');
+    }
+    bvid = parsed.bvid;
+  }
+
+  // 没有 B 站链接时，仍然要求有可播放的音频直链（原有校验不变）
+  const resolved = bvid
+    ? { url: null, quality: 'full' }
+    : resolveAudioPlayback({ url: rawUrl, audio_url: audioUrl, preview_url: previewUrl });
+  if (!bvid && !resolved.url) {
     throw new HttpError(422, '该曲目暂无可播放的音频直链（只收到网页地址或空地址）');
   }
   // quality：full=完整音轨，preview=试听片段（优先按直链类型判定，其次尊重显式声明）
@@ -405,7 +430,9 @@ export async function createMusic(request, env) {
     genre: optionalString(body.genre, 'genre', { max: 100 }) ?? null,
     release_year: optionalInt(body.release_year, 'release_year', { min: 0, max: 3000 }) ?? null,
     notes: optionalString(body.notes, 'notes', { max: 2000 }) ?? null,
-    lyrics: optionalString(body.lyrics, 'lyrics', { max: 20000 }) ?? null
+    lyrics: optionalString(body.lyrics, 'lyrics', { max: 20000 }) ?? null,
+    // B 站曲目：存 BV 号，前端据此拼嵌入播放器地址（见 lib/bilibili.js）
+    bvid
   });
 
   await setResourceTags(db, resource.id, user.id, tagIds);
@@ -474,6 +501,20 @@ export async function updateMusic(request, env, id) {
   if (body.release_year !== undefined) extPatch.release_year = optionalInt(body.release_year, 'release_year', { min: 0, max: 3000 }) ?? null;
   if (body.notes !== undefined) extPatch.notes = optionalString(body.notes, 'notes', { max: 2000 }) ?? null;
   if (body.lyrics !== undefined) extPatch.lyrics = optionalString(body.lyrics, 'lyrics', { max: 20000 }) ?? null;
+  // B 站链接：允许编辑时改（粘贴新链接会覆盖，传空串/null 表示清掉 B 站曲目标记）
+  if (body.bilibili_url !== undefined || body.bvid !== undefined) {
+    const raw = optionalString(body.bilibili_url, 'bilibili_url', { max: 500 })
+      ?? optionalString(body.bvid, 'bvid', { max: 40 }) ?? null;
+    if (!raw) {
+      extPatch.bvid = null;
+    } else {
+      const parsed = parseBilibiliInput(raw);
+      if (!parsed.bvid || !isValidBvid(parsed.bvid)) {
+        throw new HttpError(422, '没能从链接里找到 B 站视频号（BV 号），请检查后重试');
+      }
+      extPatch.bvid = parsed.bvid;
+    }
+  }
 
   if (Object.keys(extPatch).length) {
     const rows = await db.update(EXT, qs({

@@ -19,6 +19,7 @@ import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { usePlayer } from '../lib/player.jsx';
 import { toastError, toastSuccess, toastInfo } from '../lib/toast.jsx';
 import { useAuth } from '../lib/auth.jsx';
+import { BilibiliPlayer, BilibiliBadge } from '../components/BilibiliPlayer.jsx';
 import { MusicHome } from '../components/MusicHome.jsx';
 import { SearchHistory } from '../components/SearchHistory.jsx';
 import { pushHistory } from '../lib/searchHistory.js';
@@ -104,7 +105,11 @@ function AlbumCard({ item, onPlay, onOpen, onRemove }) {
         >
           <Icon name="play" size={20} />
         </button>
-        {q !== 'full' && <span class="album-flag">{q === 'lossless' ? '无损' : '试听'}</span>}
+        {/* B 站曲目（MV）用视频标记，不再显示音质 —— 它本来就不是音频文件。
+            用户要求「前端要区分一下是来自哔哩哔哩的」。 */}
+        {t.bvid
+          ? <span class="album-flag is-video">B站</span>
+          : (q !== 'full' && <span class="album-flag">{q === 'lossless' ? '无损' : '试听'}</span>)}
         {onRemove && (
           <button
             class="album-remove"
@@ -117,7 +122,10 @@ function AlbumCard({ item, onPlay, onOpen, onRemove }) {
       </div>
       <div class="album-meta">
         <h3 title={item.title}>{item.title}</h3>
-        <p title={t.artist}>{t.artist || '未知歌手'}</p>
+        <p title={t.artist}>
+          {t.artist || '未知歌手'}
+          {t.bvid && <> <BilibiliBadge /></>}
+        </p>
         {t.album && <span class="album-name" title={t.album}>{t.album}</span>}
       </div>
     </article>
@@ -188,6 +196,8 @@ function SearchRow({ item, busy, resolving, onPlay, onCollect }) {
 export function Music() {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
+  // B 站曲目（MV）用嵌入播放器，与 <audio> 播放条是两条独立路径
+  const [biliMusic, setBiliMusic] = useState(null);
   // isAdmin 用来决定要不要显示「上传音乐」入口（2026-10-13 用户要求：
   // 「在用户端的话是不能看到那个音乐导入的」）。普通用户与访客都看不到这个按钮。
   const { isAuthenticated, isAdmin } = useAuth();
@@ -255,6 +265,28 @@ export function Music() {
       toastError(`搜索失败：${e.message}`);
       setCandidates([]); setSearchNote(''); setSearchSources([]);
     } finally { setSearching(false); }
+  }
+
+  // ---- B 站曲目（MV）的播放路径 ----
+  //
+  // 用户要求：「我需要的就是那个视频窗口……直接看那个视频」。
+  // B 站曲目**不走 <audio>**（跨域 + 机房 IP 限流两个原因，见 components/BilibiliPlayer.jsx），
+  // 而是打开嵌入播放器。因此这里把「播放」分流：
+  //   · 含 track.bvid → 打开 B 站播放器
+  //   · 其余 → 原有的 <audio> 播放队列
+  function isBili(m) { return !!m?.track?.bvid; }
+
+  function playItem(m, list) {
+    if (isBili(m)) { setBiliMusic(m); return; }
+    playQueue(list, list.indexOf(m));
+  }
+
+  // 「播放本组」：如果整组第一首是 B 站曲目，就打开它；否则按原逻辑走队列。
+  // （把 B 站曲目混进 <audio> 队列会卡住那一首，因为拿不到 audio_url）
+  function playShelf(list) {
+    const first = list[0];
+    if (first && isBili(first)) { setBiliMusic(first); return; }
+    playQueue(list, 0);
   }
 
   // 候选列表直接播放（榜单 / 访客），不入库
@@ -364,6 +396,14 @@ export function Music() {
   );
   // 当前分组下「播放本组 / 全部播放 / 随机」该用的那批曲目
   const visibleItems = group === 'history' ? historyFiltered : filtered;
+
+  // 音频队列用的曲目：**排除 B 站曲目**。
+  // B 站曲目没有 audio_url（走 iframe 播放），混进 <audio> 队列会在那一首卡住。
+  // 「全部播放 / 随机」只播音频曲目；B 站曲目单独点开播放器看 MV。
+  const audioItems = useMemo(
+    () => visibleItems.filter((m) => !m?.track?.bvid),
+    [visibleItems]
+  );
 
   const shelves = useMemo(() => {
     if (group === 'recent') return [{ key: 'recent', title: '最近添加', items: filtered.slice(0, 60) }];
@@ -503,8 +543,8 @@ export function Music() {
 
         {mode === 'library' && visibleItems.length > 1 && (
           <>
-            <button onClick={() => playQueue(visibleItems, 0)}><Icon name="play" size={14} /> 全部播放</button>
-            <button onClick={() => playQueue([...visibleItems].sort(() => Math.random() - 0.5), 0)}>
+            <button onClick={() => playQueue(audioItems, 0)} disabled={!audioItems.length}><Icon name="play" size={14} /> 全部播放</button>
+            <button onClick={() => playQueue([...audioItems].sort(() => Math.random() - 0.5), 0)} disabled={!audioItems.length}>
               <Icon name="shuffle" size={14} /> 随机
             </button>
           </>
@@ -586,7 +626,7 @@ export function Music() {
                   <span class="count">{shelf.items.length} 首</span>
                   <span class="spacer" />
                   {shelf.items.length > 0 && (
-                    <button onClick={() => playQueue(shelf.items, 0)}><Icon name="play" size={13} /> 播放本组</button>
+                    <button onClick={() => playShelf(shelf.items)}><Icon name="play" size={13} /> 播放本组</button>
                   )}
                 </div>
                 {group === 'history' && (
@@ -597,7 +637,7 @@ export function Music() {
                     <AlbumCard
                       key={m.id}
                       item={m}
-                      onPlay={() => playQueue(shelf.items, shelf.items.indexOf(m))}
+                      onPlay={() => playItem(m, shelf.items)}
                       onOpen={() => route(`/music/${m.id}`)}
                       onRemove={() => remove(m)}
                     />
@@ -699,6 +739,10 @@ export function Music() {
           </section>
         )
       )}
+
+      {/* B 站曲目（MV）播放器：整页弹层，Esc 或「返回」关闭。
+          与 <audio> 播放条互不干扰 —— 两条独立路径，见 components/BilibiliPlayer.jsx */}
+      {biliMusic && <BilibiliPlayer music={biliMusic} onClose={() => setBiliMusic(null)} />}
 
     </section>
   );
