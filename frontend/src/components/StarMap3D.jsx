@@ -24,7 +24,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 // 纯布局计算在 lib/star3dLayout.js（点大小、俯仰角、三维坐标、自检都在那边，
 // 那份是零依赖纯函数，能被 Node 直接 import 做离线单测）。
-import { layout3D, CAMERA_TILT, validateLayout } from '../lib/star3dLayout.js';
+import {
+  layout3D, CAMERA_TILT, validateLayout, flowTargetCount, stepFlow, flowGeometry
+} from '../lib/star3dLayout.js';
 
 // 自转速度（弧度/秒）。用户明确要求「缓慢自转」——0.055 约 114 秒转一圈，
 // 有动感但不晃眼（实测 0.15 以上会让人盯久了发晕）。
@@ -135,6 +137,70 @@ export function StarMap3D({ data, mode = 'blog', onPick, label, autoRotate = tru
         });
         const lines = new THREE.LineSegments(lnGeo, lnMat);
         root.add(lines);
+
+        // ---- 流动光点：沿连线跑（与 2D 版同一套观感，用户明确要求）----
+        //
+        // 实现方式与 2D 一致：粒子从连线一端 t=0 走到另一端 t=1，
+        // 带一小段渐变拖尾 + 亮头。区别是这里交给 GPU：
+        //   · 拖尾 = 单个 LineSegments（每帧只更新 position/alpha 两个 buffer）
+        //   · 亮头 = 单个 Points
+        // 两者都用 AdditiveBlending，叠在连线上就是「流动的光」。
+        //
+        // 为什么不用「每个光点一个 Mesh」：几百个 Mesh 会拖垮帧率；
+        // 用两个 buffer 每帧整体重传，260 个光点的开销可以忽略。
+        const flowTarget = flowTargetCount((graph.links || []).length);
+        // 连线端点索引（layout3D 算好的 linkPositions 是坐标，这里要的是索引）
+        const linkEnds = (graph.links || []).map((l) => [l.ia, l.ib]);
+
+        const flowTailGeo = new THREE.BufferGeometry();
+        const flowHeadGeo = new THREE.BufferGeometry();
+        // 先给足容量（按目标数量分配），每帧只更新前 n 个顶点、用 drawRange 控制实际绘制量
+        flowTailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(flowTarget * 6), 3));
+        flowTailGeo.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(flowTarget * 2), 1));
+        flowHeadGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(flowTarget * 3), 3));
+
+        // 拖尾：两端透明度不同（尾透头亮），所以自定义着色器传 alpha
+        const flowTailMat = new THREE.ShaderMaterial({
+          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+          uniforms: { uColor: { value: new THREE.Color('#9fd8ff') } },
+          vertexShader: `
+            attribute float alpha;
+            varying float vAlpha;
+            void main() {
+              vAlpha = alpha;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }`,
+          fragmentShader: `
+            uniform vec3 uColor;
+            varying float vAlpha;
+            void main() { gl_FragColor = vec4(uColor, vAlpha * 1.6); }`
+        });
+        // 亮头：圆形柔边白点，比星点更亮更小
+        const flowHeadMat = new THREE.ShaderMaterial({
+          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+          uniforms: { uColor: { value: new THREE.Color('#eaf6ff') } },
+          vertexShader: `
+            void main() {
+              vec4 mv = modelViewMatrix * vec4(position, 1.0);
+              gl_PointSize = clamp(260.0 / -mv.z, 2.0, 12.0);
+              gl_Position = projectionMatrix * mv;
+            }`,
+          fragmentShader: `
+            uniform vec3 uColor;
+            void main() {
+              vec2 d = gl_PointCoord - vec2(0.5);
+              float r = length(d);
+              if (r > 0.5) discard;
+              gl_FragColor = vec4(uColor, smoothstep(0.5, 0.0, r));
+            }`
+        });
+        const flowTails = new THREE.LineSegments(flowTailGeo, flowTailMat);
+        const flowHeads = new THREE.Points(flowHeadGeo, flowHeadMat);
+        // 光点属于「装饰」，不参与拾取，也不该被深度测试挡住星点
+        flowTails.renderOrder = 2;
+        flowHeads.renderOrder = 3;
+        root.add(flowTails);
+        root.add(flowHeads);
 
         threeScene.add(root);
 
@@ -263,6 +329,37 @@ export function StarMap3D({ data, mode = 'blog', onPick, label, autoRotate = tru
         const onVis = () => { paused = document.hidden; };
         document.addEventListener('visibilitychange', onVis);
 
+        // 光点状态（粒子列表）与每帧更新函数。
+        // 放在这里而不是外层 state：这些是每帧都变的渲染数据，走 Preact 的响应式会白白重渲染组件。
+        let flow = [];
+        const updateFlow = (dt) => {
+          if (!flowTarget || !linkEnds.length) return;
+          flow = stepFlow(flow, dt, linkEnds.length, flowTarget);
+          // 悬停联动（与 2D 一致）：鼠标停在某个点上时，只保留**与它相连**的光点。
+          // 这样「谁和谁有关系」一眼就能看出来，而不是一团乱流。
+          let visible = flow;
+          if (hoverIdx >= 0) {
+            visible = flow.filter((p) => {
+              const e = linkEnds[p.linkIndex];
+              return e && (e[0] === hoverIdx || e[1] === hoverIdx);
+            });
+          }
+          const fg = flowGeometry(visible, geo.positions, linkEnds);
+          // 只更新前 n 个顶点，并用 drawRange 限制绘制量（容量是预分配的）
+          const n = visible.length;
+          const tailPos = flowTailGeo.getAttribute('position');
+          const tailAlpha = flowTailGeo.getAttribute('alpha');
+          const headPos = flowHeadGeo.getAttribute('position');
+          tailPos.array.set(fg.tailPositions);
+          tailAlpha.array.set(fg.tailAlphas);
+          headPos.array.set(fg.headPositions);
+          tailPos.needsUpdate = true;
+          tailAlpha.needsUpdate = true;
+          headPos.needsUpdate = true;
+          flowTailGeo.setDrawRange(0, n * 2);   // 拖尾是线段，顶点数 = 光点数 * 2
+          flowHeadGeo.setDrawRange(0, n);       // 亮头是点，顶点数 = 光点数
+        };
+
         const frame = (now) => {
           raf = requestAnimationFrame(frame);
           const dt = Math.min(0.05, (now - prev) / 1000);
@@ -273,6 +370,7 @@ export function StarMap3D({ data, mode = 'blog', onPick, label, autoRotate = tru
           if (autoRotate && idle <= 0 && !dragging) yaw += ROTATE_SPEED * dt;
           updateCam();
           root.rotation.y = 0;   // 自转交给相机（保持灯光/拾取逻辑简单）
+          updateFlow(dt);        // 光点沿连线流动
           renderer.render(threeScene, cam);
         };
         raf = requestAnimationFrame(frame);
@@ -293,6 +391,8 @@ export function StarMap3D({ data, mode = 'blog', onPick, label, autoRotate = tru
           canvasEl.removeEventListener('click', onClick);
           ptGeo.dispose(); ptMat.dispose();
           lnGeo.dispose(); lnMat.dispose();
+          flowTailGeo.dispose(); flowTailMat.dispose();
+          flowHeadGeo.dispose(); flowHeadMat.dispose();
           renderer.dispose();
           stateRef.current = null;
         };

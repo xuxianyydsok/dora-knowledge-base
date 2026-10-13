@@ -153,3 +153,107 @@ export function bounds3D(geo) {
   }
   return { minX, maxX, minY, maxY, minZ, maxZ, maxRadiusXZ };
 }
+
+
+// ---------------- 流动光点（与 2D 版同一套观感） ----------------
+//
+// 2D 版（StarMap.jsx）沿随机连线跑「光点」：粒子从连线一端 t=0 走到另一端 t=1，
+// 带一小段渐变拖尾 + 白色头部，加色混合（lighter）。
+// 用户要求 3D 也要有同样的流动光点，所以这里把**粒子状态推进**这段逻辑抽成纯函数，
+// 渲染层（three 的 Points）只负责按算出来的位置画。
+//
+// 为什么单独抽出来：粒子生命周期（生成 / 推进 / 回收）容易写出「越积越多」
+// 或「全部同一时刻消失」这类只能靠长时间观察才发现的问题，抽出来就能用 Node 断言钉死。
+
+// 粒子数量：与 2D 同口径 —— 连线数的 5%，夹在 60~260 之间。
+// 上限 260 是性能考虑：3D 里每个光点还要算拖尾，太多会拖帧率。
+export function flowTargetCount(linkCount) {
+  const n = Number(linkCount) || 0;
+  if (n <= 0) return 0;
+  return Math.min(260, Math.max(60, Math.round(n * 0.05)));
+}
+
+/**
+ * 推进一批光点，返回仍然存活的光点数组。
+ *
+ * 与 2D 的区别：2D 用 `sp` 是「每毫秒」的固定步长（0.00009~0.00029），
+ * 这里改成**每秒**的 `speed`（0.09~0.29），调用方传秒级 dt，语义更清楚。
+ *
+ * @param {Array} list 现有光点 [{ linkIndex, t, speed }]
+ * @param {number} dt 秒
+ * @param {number} linkCount 连线总数（用于随机分配新粒子）
+ * @param {number} target 目标数量
+ * @param {() => number} rand 随机源（测试时可注入固定值，保证结果可复现）
+ */
+export function stepFlow(list, dt, linkCount, target, rand = Math.random) {
+  const out = [];
+  for (const p of list) {
+    const t = p.t + p.speed * dt;
+    // t 走到 1 就到达终点，回收（下一帧会补新的）
+    if (t < 1) out.push({ ...p, t });
+  }
+  // 补足到目标数量。
+  // 新粒子的初始 t **必须是随机的**，不能从 0 开始：
+  //   若都从 0 起步，第一帧会看到「所有光点同时从连线起点出发」，
+  //   之后它们也永远同相位地一起走一起消失 —— 画面像在整体呼吸，而不是流动。
+  //   随机 t 之后光点均匀铺在各条线上，观感才是连续的流动。
+  // 2D 版就是这么做的（`t: Math.random()`），这里保持一致。
+  if (linkCount > 0) {
+    let add = target - out.length;
+    while (add > 0) {
+      out.push({
+        linkIndex: Math.min(linkCount - 1, Math.floor(rand() * linkCount)),
+        t: rand(),
+        speed: 0.09 + rand() * 0.2
+      });
+      add -= 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * 算出一批光点在屏幕/世界空间的坐标与透明度，供渲染层填 buffer。
+ *
+ * 每条光点画成「一段拖尾 + 一个亮头」：
+ *   - 头部：t 处，最亮
+ *   - 尾部：t - tail 处，透明
+ * 用一个 2 顶点的小线段表示拖尾，再加一个点表示头部。
+ *
+ * @returns {{ tailPositions: Float32Array, tailAlphas: Float32Array, headPositions: Float32Array }}
+ *   tailPositions 长度 = n * 6（每段拖尾两个端点）
+ *   tailAlphas   长度 = n * 2（两端各自的透明度，头亮尾透）
+ *   headPositions 长度 = n * 3
+ */
+export function flowGeometry(flow, positions, linkEnds, tail = 0.07) {
+  const n = flow.length;
+  const tailPositions = new Float32Array(n * 6);
+  const tailAlphas = new Float32Array(n * 2);
+  const headPositions = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const p = flow[i];
+    const ends = linkEnds[p.linkIndex];
+    if (!ends) continue;
+    const a = ends[0] * 3;
+    const b = ends[1] * 3;
+    const ax = positions[a]; const ay = positions[a + 1]; const az = positions[a + 2];
+    const bx = positions[b]; const by = positions[b + 1]; const bz = positions[b + 2];
+    const t = Math.min(1, Math.max(0, p.t));
+    const tp = Math.max(0, t - tail);
+    // 拖尾两端
+    tailPositions[i * 6] = ax + (bx - ax) * tp;
+    tailPositions[i * 6 + 1] = ay + (by - ay) * tp;
+    tailPositions[i * 6 + 2] = az + (bz - az) * tp;
+    tailPositions[i * 6 + 3] = ax + (bx - ax) * t;
+    tailPositions[i * 6 + 4] = ay + (by - ay) * t;
+    tailPositions[i * 6 + 5] = az + (bz - az) * t;
+    // 透明度：尾部 0、头部 1（渲染时再乘整体强度）
+    tailAlphas[i * 2] = 0;
+    tailAlphas[i * 2 + 1] = 1;
+    // 头部位置
+    headPositions[i * 3] = ax + (bx - ax) * t;
+    headPositions[i * 3 + 1] = ay + (by - ay) * t;
+    headPositions[i * 3 + 2] = az + (bz - az) * t;
+  }
+  return { tailPositions, tailAlphas, headPositions };
+}

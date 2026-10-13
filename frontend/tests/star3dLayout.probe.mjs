@@ -9,7 +9,8 @@
 // 连线索引合法）钉死之后，改布局参数不会悄悄把画面搞坏。
 
 import {
-  layout3D, validateLayout, bounds3D, hexToRgb01, CAMERA_TILT, LEAF_SIZE, HUB_SIZE
+  layout3D, validateLayout, bounds3D, hexToRgb01, CAMERA_TILT, LEAF_SIZE, HUB_SIZE,
+  flowTargetCount, stepFlow, flowGeometry
 } from '../src/lib/star3dLayout.js';
 
 let pass = 0; const fails = [];
@@ -123,6 +124,80 @@ ok('越界连线不会产生 NaN 坐标（只是画到 0,0,0）', allFinite);
 console.log('=== 8. 常量 ===');
 ok('俯仰角在 0.3~0.7 弧度（既有立体感又能看清分布）', CAMERA_TILT > 0.3 && CAMERA_TILT < 0.7, `${CAMERA_TILT}`);
 ok('枢纽点比星点大（视觉层级）', HUB_SIZE > LEAF_SIZE, `${HUB_SIZE} vs ${LEAF_SIZE}`);
+
+// ---------------- 9. 流动光点 ----------------
+console.log('=== 9. 流动光点（与 2D 同观感） ===');
+// 数量口径：连线数的 5%，夹在 60~260
+eq('连线数 0 → 0 个光点', flowTargetCount(0), 0);
+eq('连线数很少时至少 60 个（不然看不出流动）', flowTargetCount(100), 60);
+eq('连线数很多时封顶 260 个（性能）', flowTargetCount(100000), 260);
+ok('典型连线数落在区间内', flowTargetCount(1022) === 60, `1022 条边 → ${flowTargetCount(1022)} 个`);
+ok('负数连线数返回 0', flowTargetCount(-5) === 0);
+ok('非数字返回 0', flowTargetCount('x') === 0);
+
+// 用固定随机源，保证结果可复现
+function seeded(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    return s / 4294967296;
+  };
+}
+
+// 推进：粒子应随时间向 t=1 移动
+let flow = [];
+flow = stepFlow(flow, 0.016, 20, 10, seeded(1));
+eq('空列表推进后补到目标数量', flow.length, 10);
+ok('新粒子 t 不全为 0（否则会整体同相位闪烁）',
+  new Set(flow.map((p) => p.t)).size > 1, `不同 t 值 ${new Set(flow.map((p) => p.t)).size} 个`);
+ok('粒子都带合法 speed', flow.every((p) => p.speed > 0 && p.speed < 1));
+ok('粒子索引都在连线范围内', flow.every((p) => Number.isInteger(p.linkIndex) && p.linkIndex >= 0 && p.linkIndex < 20));
+
+// 推进一段时间后，t 应单调增大
+const before = flow.map((p) => p.t);
+flow = stepFlow(flow, 0.5, 20, 10, seeded(2));
+const moved = flow.filter((p, i) => before[i] !== undefined && p.t > before[i]).length;
+ok('推进后多数粒子 t 增大', moved >= 7, `${moved}/10 增大`);
+
+// 到达终点应被回收（t >= 1 不再保留）
+const almost = [{ linkIndex: 0, t: 0.99, speed: 1 }];
+const after = stepFlow(almost, 0.1, 0, 0, seeded(3));
+ok('t 超过 1 的粒子被回收', after.length === 0, `剩余 ${after.length}`);
+
+// 长时间运行不应无限增长（这是最容易出的 bug）
+let long = [];
+for (let i = 0; i < 600; i++) long = stepFlow(long, 0.016, 500, 100, seeded(100 + i));
+ok('长时间运行数量稳定在目标值', long.length === 100, `实际 ${long.length}`);
+
+// ---------------- 10. 光点几何 ----------------
+console.log('=== 10. 光点几何（拖尾 + 头部） ===');
+const pos = new Float32Array([0, 0, 0, 10, 0, 0]);   // 两点：原点 → (10,0,0)
+const ends = [[0, 1]];
+const fg = flowGeometry([{ linkIndex: 0, t: 0.5, speed: 0.1 }], pos, ends, 0.1);
+eq('拖尾坐标长度 = 光点数 * 6', fg.tailPositions.length, 6);
+eq('头部坐标长度 = 光点数 * 3', fg.headPositions.length, 3);
+eq('透明度数组长度 = 光点数 * 2', fg.tailAlphas.length, 2);
+eq('头部落在 t=0.5 处（x=5）', Math.round(fg.headPositions[0]), 5);
+eq('拖尾起点落在 t=0.4 处（x=4）', Math.round(fg.tailPositions[0]), 4);
+eq('拖尾终点与头部重合', Math.round(fg.tailPositions[3]), 5);
+eq('拖尾起点透明', fg.tailAlphas[0], 0);
+eq('拖尾终点不透明', fg.tailAlphas[1], 1);
+
+// 越界连线不应崩，也不应产生 NaN
+const badFg = flowGeometry([{ linkIndex: 99, t: 0.5, speed: 0.1 }], pos, ends, 0.1);
+let fgFinite = true;
+for (let i = 0; i < badFg.tailPositions.length; i++) if (!Number.isFinite(badFg.tailPositions[i])) fgFinite = false;
+ok('越界连线的光点不产生 NaN', fgFinite);
+
+// t 越界应被 clamp，不会跑到线外
+const clampFg = flowGeometry([{ linkIndex: 0, t: 5, speed: 0.1 }], pos, ends, 0.1);
+eq('t>1 被夹到终点（x=10）', Math.round(clampFg.headPositions[0]), 10);
+const clampFg2 = flowGeometry([{ linkIndex: 0, t: -3, speed: 0.1 }], pos, ends, 0.1);
+eq('t<0 被夹到起点（x=0）', Math.round(clampFg2.headPositions[0]), 0);
+
+// 空输入
+const emptyFg = flowGeometry([], pos, ends, 0.1);
+eq('空光点列表产出空数组', emptyFg.headPositions.length, 0);
 
 // ---------------- 汇总 ----------------
 console.log('\n' + '='.repeat(60));
