@@ -38,7 +38,9 @@ function rnd(seed) {
 // 把接口数据摊成「星区 + 星点 + 连线」。
 // 布局：所有星区均匀排在圆周上，星区内的点落在该扇区里（半径有厚度的星带），
 // 这样每个板块天然分开，又都朝中心聚拢。
-function buildScene(data, mode) {
+// 导出给 StarMap3D 复用：3D 版用同一份「星区 / 星点 / 连线 / 邻居表」，
+// 只把坐标从二维圆盘映射到三维空间，保证 2D 与 3D 的分类配色和交互语义一致。
+export function buildScene(data, mode) {
   const nodes = data?.nodes || [];
   const hubs = nodes.filter((n) => n.kind === 'hub');
   const leaves = nodes.filter((n) => n.kind === 'leaf');

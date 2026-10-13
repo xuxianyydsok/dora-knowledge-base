@@ -22,6 +22,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { StarMap, sectorColor, MAX_SECTORS, MAX_INNER } from '../components/StarMap.jsx';
+import { StarMap3D } from '../components/StarMap3D.jsx';
 import {
   StatBoard, StatCard, RankBars
 } from '../components/StatCharts.jsx';
@@ -49,6 +50,56 @@ const MODES = {
     brand: 'dora-repo-graph'
   }
 };
+
+// ---------------- 2D / 3D 视图切换 ----------------
+//
+// 用户要求（2026-10-13）：「二弟的话还是保留，只是说要添加一个 3D 的按钮」
+// 「根据你的建议来」—— 采纳的建议是：**两种都保留**，画布右上角一个切换按钮，
+// 桌面默认 3D、手机默认 2D（3D 在小屏 + 弱设备上体验差）。
+//
+// 为什么默认按屏幕宽度分流而不是一律 3D：
+//   3D 要多下 ~750KB 的 three 分包、且手机上帧率不稳；2D 版是手绘 canvas，
+//   几百个点毫无压力。手机上直接给 2D，用户想看 3D 仍然可以自己点。
+function useDefaultView() {
+  const [view, setView] = useState(() => {
+    if (typeof window === 'undefined') return '3d';
+    // 窄屏或低内存设备默认 2D
+    const narrow = window.innerWidth < 900;
+    const lowMem = typeof navigator !== 'undefined'
+      && Number(navigator.deviceMemory || 8) <= 4;
+    return (narrow || lowMem) ? '2d' : '3d';
+  });
+  return [view, setView];
+}
+
+// 画布右上角的视图切换（2D / 3D）。放在画布容器内部，随容器定位。
+function ViewSwitch({ view, onChange }) {
+  return (
+    <div class="sm-viewswitch" role="group" aria-label="视图模式">
+      <button
+        type="button"
+        class={view === '2d' ? 'on' : ''}
+        onClick={() => onChange('2d')}
+        title="2D 星图（手绘，最省电）"
+      >2D</button>
+      <button
+        type="button"
+        class={view === '3d' ? 'on' : ''}
+        onClick={() => onChange('3d')}
+        title="3D 星云（可拖动旋转、滚轮缩放）"
+      >3D</button>
+    </div>
+  );
+}
+
+// 画布本体：按 view 决定挂 2D 还是 3D。
+// 两者接收**完全相同**的 data / mode / onPick，所以切换不会改变筛选状态。
+function GraphCanvas({ view, data, mode, onPick, label }) {
+  if (!data) return <div class="sm-loading"><span /><span /><span /><p>正在铺设星轨…</p></div>;
+  return view === '3d'
+    ? <StarMap3D data={data} mode={mode} onPick={onPick} label={label} autoRotate />
+    : <StarMap data={data} mode={mode} onPick={onPick} label={label} />;
+}
 
 function fmtNum(n) { return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n || 0); }
 
@@ -215,6 +266,7 @@ function BlogGraph() {
   const [error, setError] = useState('');
   const [pick, setPick] = useState(null);      // 选中的枢纽 id
   const [q, setQ] = useState('');
+  const [view, setView] = useDefaultView();    // 2d | 3d
 
   useEffect(() => {
     let alive = true;
@@ -289,9 +341,8 @@ function BlogGraph() {
 
       <div class="sm-body">
         <div class="sm-canvas-box">
-          {data
-            ? <StarMap data={data} mode="blog" onPick={onPickNode} label="博客图谱" />
-            : <div class="sm-loading"><span /><span /><span /><p>正在铺设星轨…</p></div>}
+          <GraphCanvas view={view} data={data} mode="blog" onPick={onPickNode} label="博客图谱" />
+          {data && <ViewSwitch view={view} onChange={setView} />}
         </div>
 
         {/* 搜索框 + 分类 / 标签两栏（2026-10-11 用户要求：只有这两栏，且与左侧画布等高、
@@ -370,6 +421,7 @@ function RepoGraph() {
   const [error, setError] = useState('');
   const [pick, setPick] = useState(null);
   const [q, setQ] = useState('');
+  const [view, setView] = useDefaultView();    // 2d | 3d
 
   useEffect(() => {
     let alive = true;
@@ -445,9 +497,8 @@ function RepoGraph() {
 
       <div class="sm-body">
         <div class="sm-canvas-box">
-          {data
-            ? <StarMap data={data} mode="repos" onPick={onPickNode} label="开源项目图谱" />
-            : <div class="sm-loading"><span /><span /><span /><p>正在同步星标…</p></div>}
+          <GraphCanvas view={view} data={data} mode="repos" onPick={onPickNode} label="开源项目图谱" />
+          {data && <ViewSwitch view={view} onChange={setView} />}
         </div>
 
         {/* 搜索框 + 编程语言 / AI 应用分类两栏（与左侧画布等高，内容全部平铺不滚动） */}
