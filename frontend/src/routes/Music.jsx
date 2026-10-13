@@ -394,28 +394,37 @@ export function Music() {
     () => (quality === 'all' ? history : history.filter((m) => qualityOf(m.track || {}) === quality)),
     [history, quality]
   );
-  // 当前分组下「播放本组 / 全部播放 / 随机」该用的那批曲目
-  const visibleItems = group === 'history' ? historyFiltered : filtered;
-
-  // 音频队列用的曲目：**排除 B 站曲目**。
-  // B 站曲目没有 audio_url（走 iframe 播放），混进 <audio> 队列会在那一首卡住。
-  // 「全部播放 / 随机」只播音频曲目；B 站曲目单独点开播放器看 MV。
+  // ---- 音频 / MV 分离（2026-10-13 用户要求）----
+  //
+  // 用户原话：「我导入的那首哔哩哔哩的歌，在前端界面包括管理员界面，
+  //   要和它那种搜索出来的歌隔离开」「它其实是一个 MV 的形式，所以不能当做简单的音乐来处理」。
+  //
+  // 所以从**数据源头**就分开：`audioItems`（真音频）与 `mvItems`（B 站 MV）互不重叠，
+  // 音乐库 / 播放历史 / 全部播放 / 随机 全部只认 audioItems；
+  // B 站 MV 只出现在「MV」标签页里。
+  // 这样不会再出现「点进去播不了」（MV 没有 audio_url，走音频队列必然失败）。
   const audioItems = useMemo(
-    () => visibleItems.filter((m) => !m?.track?.bvid),
-    [visibleItems]
+    () => (group === 'history' ? historyFiltered : filtered).filter((m) => !m?.track?.bvid),
+    [group, historyFiltered, filtered]
   );
+  const mvItems = useMemo(
+    () => items.filter((m) => !!m?.track?.bvid),
+    [items]
+  );
+  // 当前分组下「播放本组 / 全部播放 / 随机」该用的那批曲目（只含音频）
+  const visibleItems = audioItems;
 
   const shelves = useMemo(() => {
-    if (group === 'recent') return [{ key: 'recent', title: '最近添加', items: filtered.slice(0, 60) }];
+    if (group === 'recent') return [{ key: 'recent', title: '最近添加', items: audioItems.slice(0, 60) }];
     // 播放历史：条目自带 progress，按上次收听时间倒序（后端已排好），不再按歌手 / 专辑分桶。
-    if (group === 'history') return [{ key: 'history', title: '播放历史', items: historyFiltered }];
+    if (group === 'history') return [{ key: 'history', title: '播放历史', items: audioItems }];
     const keyOf = (m) => {
       const t = m.track || {};
       const v = group === 'artist' ? (t.artist || '未知歌手') : (t.album || '未知专辑');
       return String(v).split(/[\/,&]/)[0].trim() || '未知';
     };
     const buckets = new Map();
-    for (const m of filtered) {
+    for (const m of audioItems) {
       const k = keyOf(m);
       if (!buckets.has(k)) buckets.set(k, []);
       buckets.get(k).push(m);
@@ -424,7 +433,7 @@ export function Music() {
       .sort((a, b) => b[1].length - a[1].length)
       .slice(0, 24)
       .map(([k, v]) => ({ key: k, title: k, items: v }));
-  }, [filtered, group, historyFiltered]);
+  }, [audioItems, group]);
 
   // —— 搜索结果的音源筛选 ——
   const platforms = useMemo(() => {
@@ -443,14 +452,25 @@ export function Music() {
     [candidates]
   );
 
-  const tabs = useMemo(() => [
-    { key: 'home', label: '首页' },
-    { key: 'library', label: '音乐库', count: items.length },
-    { key: 'search', label: searchedFor ? `「${searchedFor}」` : '搜索结果', count: candidates.length },
-    { key: 'queue', label: '播放队列', count: queue.length }
-  ], [items.length, searchedFor, candidates.length, queue.length]);
+  const tabs = useMemo(() => {
+    const list = [
+      { key: 'home', label: '首页' },
+      { key: 'library', label: '音乐库', count: audioItems.length },
+      { key: 'search', label: searchedFor ? `「${searchedFor}」` : '搜索结果', count: candidates.length },
+      { key: 'queue', label: '播放队列', count: queue.length }
+    ];
+    // MV 标签只在确实有 B 站曲目时出现，避免给访客一个永远空的入口
+    if (mvItems.length) list.splice(2, 0, { key: 'mv', label: 'MV', count: mvItems.length });
+    return list;
+  }, [audioItems.length, mvItems.length, searchedFor, candidates.length, queue.length]);
 
   const stats = useMemo(() => {
+    if (mode === 'mv') {
+      return [
+        { label: 'MV 数量', value: mvItems.length },
+        { label: '来源', value: '哔哩哔哩' }
+      ];
+    }
     if (mode === 'search') {
       return [
         { label: '命中音源', value: new Set(searchSources).size || '—' },
@@ -469,7 +489,7 @@ export function Music() {
       { label: '库内曲目', value: items.length },
       { label: '无损', value: lossless }
     ];
-  }, [mode, searchSources.length, candidates.length, playable, queue.length, index, items]);
+  }, [mode, searchSources.length, candidates.length, playable, queue.length, index, items, mvItems.length]);
 
   return (
     <section class="music-page page-col">
@@ -645,6 +665,40 @@ export function Music() {
                 </div>
               </section>
             ))
+      )}
+
+      {/* —— MV（B 站视频曲目）——
+          用户要求「要和搜索出来的歌隔离开」「它是 MV 形式，不能当普通音乐处理」。
+          所以这里是一个**独立板块**：只列 B 站曲目，点哪儿都是直接打开视频窗口，
+          不进音频详情页（那样会报「暂无可用的播放地址」）。 */}
+      {mode === 'mv' && (
+        mvItems.length === 0 ? (
+          <EmptyState
+            icon="video"
+            title="还没有 MV"
+            hint="站长可以在「上传音乐」页粘贴 B 站链接，把 MV 加进来。"
+          />
+        ) : (
+          <section class="mv-board">
+            <div class="grid-head">
+              <h2><span class="bar" />B 站 MV</h2>
+              <span class="count">{mvItems.length} 个</span>
+              <span class="spacer" />
+              <span class="mv-note">点封面直接播放视频，支持全屏与倍速</span>
+            </div>
+            <div class="album-grid">
+              {mvItems.map((m) => (
+                <AlbumCard
+                  key={m.id}
+                  item={m}
+                  onPlay={() => setBiliMusic(m)}
+                  onOpen={() => setBiliMusic(m)}
+                  onRemove={isAdmin ? () => remove(m) : undefined}
+                />
+              ))}
+            </div>
+          </section>
+        )
       )}
 
       {/* —— 搜索结果 —— */}

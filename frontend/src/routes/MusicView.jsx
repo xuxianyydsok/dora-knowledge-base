@@ -8,6 +8,7 @@ import { Icon } from '../components/Icon.jsx';
 import { TagChip } from '../components/TagChip.jsx';
 import { FavoriteButton } from '../components/FavoriteButton.jsx';
 import { usePlayer } from '../lib/player.jsx';
+import { BilibiliPlayer, BilibiliBadge } from '../components/BilibiliPlayer.jsx';
 
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 function fmtDuration(sec) {
@@ -18,6 +19,8 @@ function fmtDuration(sec) {
 }
 
 export function MusicView({ id }) {
+  // B 站曲目（MV）：详情页的「播放」也走视频窗口，不走音频队列
+  const [showBili, setShowBili] = useState(false);
   const [music, setMusic] = useState(null);
   const [all, setAll] = useState([]);
   const [error, setError] = useState('');
@@ -49,6 +52,8 @@ export function MusicView({ id }) {
   const md = music.metadata || {};
   const cover = t.artwork_url || music.cover_path;
   const isPreview = (t.quality || 'full') === 'preview';
+  // 是否 B 站曲目（MV）：有 bvid 就是。这类没有 audio_url，播放走视频窗口。
+  const isBili = !!t.bvid;
   // 有同歌手/同专辑就放「接下来播放」，否则退回库内其它歌曲 —— 避免单曲详情页下半屏全空
   const nextUp = siblings.length ? siblings : others;
   const secondary = siblings.length ? '接下来播放' : '音乐库其它歌曲';
@@ -119,16 +124,24 @@ export function MusicView({ id }) {
                   音源可能已过期，点播放会自动重新解析
                 </span>
               )}
-              <button
-                class="primary"
-                onClick={() => {
-                  if (isCurrent) toggle();
-                  else playQueue([music, ...nextUp], 0);
-                }}
-              >
-                <Icon name={isCurrent && playing ? 'pause' : 'play'} size={16} />
-                {isCurrent && playing ? '暂停' : '播放'}
-              </button>
+              {/* B 站曲目（MV）走视频窗口，不走音频队列 —— 它没有 audio_url，
+                  走队列必然报「暂无可用的播放地址」（2026-10-13 用户反馈的问题）。 */}
+              {isBili ? (
+                <button class="primary" onClick={() => setShowBili(true)}>
+                  <Icon name="video" size={16} /> 播放 MV
+                </button>
+              ) : (
+                <button
+                  class="primary"
+                  onClick={() => {
+                    if (isCurrent) toggle();
+                    else playQueue([music, ...nextUp], 0);
+                  }}
+                >
+                  <Icon name={isCurrent && playing ? 'pause' : 'play'} size={16} />
+                  {isCurrent && playing ? '暂停' : '播放'}
+                </button>
+              )}
               <button onClick={() => route(`/music/${music.id}/lyrics`)}>
                 <Icon name="lyrics" size={15} /> 同步歌词
               </button>

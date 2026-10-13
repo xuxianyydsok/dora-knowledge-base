@@ -6123,3 +6123,27 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 @media (prefers-reduced-motion: reduce) {
   .nav-more-trigger svg { transition: none; }
 }
+
+/* ---------------- MV 板块（音乐页「MV」标签）----------------
+ * 2026-10-13 用户要求：「我导入的那首哔哩哔哩的歌，要和搜索出来的歌隔离开」
+ * 「它其实是一个 MV 的形式，不能当做简单的音乐来处理」。
+ *
+ * 所以 MV 在音乐页是**独立板块**，不与音频曲目混排；版式复用音乐库的
+ * .album-grid / .album-card（同一套观感），只加一条说明文字与板块背景微差，
+ * 让访客一眼看出「这块是视频，不是歌」。
+ */
+.mv-board {
+  display: flex; flex-direction: column; gap: var(--sp-5, 16px);
+  padding: var(--sp-5, 16px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 14px);
+  /* 极淡的粉调底：呼应 B 站识别色，但强度很低，不喧宾夺主 */
+  background: color-mix(in srgb, #fb7299 4%, var(--bg-elevated, var(--surface)));
+}
+.mv-board .grid-head { display: flex; align-items: center; gap: 10px; }
+.mv-board .grid-head h2 { margin: 0; font-size: var(--fs-lead, 15px); display: flex; align-items: center; gap: 8px; }
+.mv-board .grid-head .bar { width: 3px; height: 14px; border-radius: 2px; background: #fb7299; }
+.mv-board .count { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono, monospace); }
+.mv-board .spacer { flex: 1 1 auto; }
+.mv-note { font-size: 12px; color: var(--text-muted); }
+@media (max-width: 640px) { .mv-note { display: none; } }
