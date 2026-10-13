@@ -1838,7 +1838,17 @@ async function videoTypeUnit() {
     assert(/hero_slides_ref_check/.test(flat), '应有来源与引用一致性的 check 约束');
     // 绝不存文件字节：表里不该出现 object_key / size 这类「存了文件」的列
     assert(!/object_key/.test(flat), 'hero_slides 只存引用，不该有 object_key');
-    return '两张素材表均 cascade，来源一致性有约束，不存文件字节';
+    // RLS：全站约定「所有业务表启用行级安全」。曾漏掉（2026-10-13 线上实测
+    // relrowsecurity=false），这里锁死，防止再漏。
+    assert(/alter table public\.hero_slides enable row level security/.test(flat),
+      'hero_slides 必须启用 RLS（与 assets / wallpapers 等所有业务表一致）');
+    for (const p of ['select_own', 'insert_own', 'update_own', 'delete_own', 'admin_all']) {
+      assert(new RegExp(`policy "hero_slides_${p}"`).test(flat), `缺少策略 hero_slides_${p}`);
+    }
+    // 迁移必须幂等：线上表曾被手工建过，`create trigger` 不幂等会让 CI 重跑整条失败
+    assert(/drop trigger if exists trg_hero_slides_updated_at/.test(flat),
+      '建 trigger 前必须先 drop if exists（迁移要能安全重跑）');
+    return '两张素材表均 cascade，来源一致性有约束，不存文件字节，RLS 与幂等均已锁定';
   });
 }
 

@@ -98,6 +98,44 @@
 - 线上跑一次迁移（`20261013000027_hero_slides.sql`）后，站长在图展页「首页轮播」里实测一次。
 - 视频体积目前**不限制**（用户明确说「暂时不限制」）；若首屏变慢，再考虑加体积上限。
 
+### 上线事故与修复（同日，重要）
+
+推送 `main` 后 CI 三个工作流里 **Supabase DB Migrate 失败**：
+
+```
+ERROR: trigger "trg_hero_slides_updated_at" for relation "hero_slides" already exists (SQLSTATE 42710)
+```
+
+**根因**：上一轮对话在中断前**用 Supabase API 手工把建表 SQL 跑到了线上**
+（表、约束、索引、触发器都已建好），但**没写进 `supabase_migrations` 历史表**。
+于是 CI 的 `supabase db push` 认为这条迁移没应用过、重跑一遍，
+卡在 `create trigger`（原写法不幂等）。后端 / 前端 / 质量检查 / 密钥扫描四个
+工作流都正常，线上接口 `/api/hero/slides` 也已 200（表是好的）。
+
+**顺带发现一个真实安全缺口**：线上 `hero_slides` 的 `relrowsecurity = false`，
+且没有任何策略 —— 迁移文件里**漏写了 RLS**（全站约定「所有业务表启用行级安全」，
+`assets` / `wallpapers` 等都有）。手工建表时也就一并漏了。
+
+**修复**：
+
+1. 迁移改为**幂等**：`drop trigger if exists ... ; create trigger ...`，
+   这样线上表已存在时重跑也能成功，并把这条迁移补进历史表；
+2. 迁移补上**遗漏的 RLS 与 5 条策略**（select/insert/update/delete_own + admin_all），
+   与 `assets` / `wallpapers` 完全一致；
+3. 单测加断言锁死：`hero_slides` 必须 `enable row level security`、
+   五条策略齐全、建 trigger 前必须 `drop trigger if exists`；
+4. 已在线上直接执行修复后的迁移（HTTP 201），确认 `relrowsecurity=true`、
+   5 条策略到位。
+
+**教训（下次注意）**：
+
+- **迁移文件是唯一入口**（`AGENTS.md` 第三节写得很清楚）。临时手工建表能救急，
+  但必须**同时**保证迁移文件幂等，否则 CI 会重跑失败；
+- **新建业务表时，RLS 不能漏**。手工建表尤其容易漏 —— 抄一份同类型表的
+  `enable row level security` + 策略段落最稳妥；
+- 迁移的**幂等性**值得默认保持（`if not exists` / `drop ... if exists`），
+  这样任何「线上已存在」的意外都不会让整条流水线失败。
+
 ---
 
 ## 2.35 影视源修「只有 3 条源」+ 音乐上传收紧（2026-10-13，分支 feat/now-settings）

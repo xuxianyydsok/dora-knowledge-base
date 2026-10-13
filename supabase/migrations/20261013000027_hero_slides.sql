@@ -22,6 +22,14 @@
 -- 排序：sort_order 升序，相同则按创建时间。管理员可上下移动。
 --
 -- 注意：只新增迁移，不改历史迁移。
+--
+-- ⚠️ 幂等性（2026-10-13 事故修复）：本迁移建表语句原本不是幂等的，
+--   而表在提交前曾被手工建到线上（没写进 supabase_migrations 历史），
+--   导致 CI 的 `supabase db push` 重跑时卡在 `create trigger ... already exists`
+--   整条迁移失败。现在把 **trigger 与 policy 都改成 `drop ... if exists` 再建**，
+--   这样无论线上表是否已存在，重跑都能成功并补上迁移历史。
+--   另外补上**遗漏的 RLS**：hero_slides 起初没启用行级安全（与全站约定不符），
+--   这里一并补上（详见文件末尾）。
 -- =============================================================
 
 create table if not exists public.hero_slides (
@@ -68,6 +76,36 @@ comment on table public.hero_slides is
 create index if not exists idx_hero_slides_order
   on public.hero_slides(user_id, is_active, sort_order);
 
+-- 幂等：先删后建。线上若已存在该触发器，重跑不会报 42710。
+drop trigger if exists trg_hero_slides_updated_at on public.hero_slides;
 create trigger trg_hero_slides_updated_at
   before update on public.hero_slides
   for each row execute function public.set_updated_at();
+
+-- -------------------------------------------------------------
+-- RLS（2026-10-13 补）：与 assets / wallpapers 等所有业务表一致 ——
+--   本人可读写自己的数据；管理员可读全部。
+--   注意：Worker 用 service_role 直连 PostgREST，RLS 不替它过滤，
+--   因此路由层仍必须显式叠加 user_id / is_active 过滤（见 routes/heroSlides.js）。
+-- -------------------------------------------------------------
+alter table public.hero_slides enable row level security;
+
+drop policy if exists "hero_slides_select_own" on public.hero_slides;
+create policy "hero_slides_select_own" on public.hero_slides
+  for select using (auth.uid() = user_id or public.is_admin());
+
+drop policy if exists "hero_slides_insert_own" on public.hero_slides;
+create policy "hero_slides_insert_own" on public.hero_slides
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "hero_slides_update_own" on public.hero_slides;
+create policy "hero_slides_update_own" on public.hero_slides
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "hero_slides_delete_own" on public.hero_slides;
+create policy "hero_slides_delete_own" on public.hero_slides
+  for delete using (auth.uid() = user_id);
+
+drop policy if exists "hero_slides_admin_all" on public.hero_slides;
+create policy "hero_slides_admin_all" on public.hero_slides
+  for all using (public.is_admin()) with check (public.is_admin());
