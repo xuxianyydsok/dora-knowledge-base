@@ -47,8 +47,12 @@ function RouterView() {
       <ProtectedRoute guest path="/categories"><Categories /></ProtectedRoute>
       <ProtectedRoute guest path="/tags"><Tags /></ProtectedRoute>
       <ProtectedRoute guest path="/news"><News /></ProtectedRoute>
-      {/* 视频页 2026-10-09 移除（见 docs/removed-features.md），旧链接回首页 */}
-      <Redirect path="/videos" to="/" />
+      {/* 视频库（B站 / YouTube 收藏）2026-10-09 从导航下线，2026-10-13 起**仅站长可见**。
+          用户要求：「这个视频的功能的话，其实我还想留着，但是能不能就只是在我的管理员端呈现，
+          前端用户访问的那一端不能呈现」「只是相当于先留着，后续看是否需要开发」。
+          因此：不再重定向到首页（那样站长自己也进不去），改成 admin-only 路由；
+          入口只在管理员下拉菜单里（见 Layout.jsx），访客与普通用户看不到、也进不来。 */}
+      <ProtectedRoute admin path="/videos"><Videos /></ProtectedRoute>
       <ProtectedRoute guest path="/github"><Github /></ProtectedRoute>
       <ProtectedRoute guest path="/posts"><Posts /></ProtectedRoute>
       <ProtectedRoute guest path="/posts/archive"><BlogArchive /></ProtectedRoute>

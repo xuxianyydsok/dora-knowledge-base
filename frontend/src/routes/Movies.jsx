@@ -286,7 +286,7 @@ export function Movies() {
       <PageHeader
         kicker="Movie Library"
         title="影视库"
-        sub="热播剧、国产剧、美剧、电影、动漫、综艺一站浏览；点海报即在 12 个采集源里搜索播放。"
+        sub="热播剧、国产剧、美剧、电影、动漫、综艺一站浏览；点海报即在多路采集源里同时搜索播放。"
         stats={isChannel ? undefined : stats}
         tabs={tabs}
         activeTab={mode}

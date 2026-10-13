@@ -56,7 +56,12 @@ export async function search(request, env) {
     if (!all) filters.user_id = `eq.${user.id}`;
     if (user.isGuest) Object.assign(filters, guestResourceFilters());   // 访客只搜公开资源
     if (resourceType) filters.type = `eq.${resourceType}`;
-    const resources = await db.select('resources', qs(filters));
+    // 视频库（video 类型）2026-10-13 起**仅站长可见**（用户要求「先留着，只在我的管理员端呈现」）。
+    // 访客搜索时排除该类型 —— 否则会搜到结果、点进去却看不到页面。
+    // 与前端 app.jsx 的 admin-only /videos 路由、Layout 的管理员菜单入口三处保持一致。
+    const guestBlockedVideo = user.isGuest && filters.type === 'eq.video';
+    if (user.isGuest && !filters.type) filters.type = 'neq.video';
+    const resources = guestBlockedVideo ? [] : await db.select('resources', qs(filters));
     results.push(...resources.map((r) => ({ kind: 'resource', ...r })));
   }
 

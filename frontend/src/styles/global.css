@@ -6088,3 +6088,38 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
   background: var(--bg-elevated, var(--surface));
   font-size: 12px; color: var(--text-muted);
 }
+
+/* ---------------- 导航栏「更多」下拉（2026-10-13） ----------------
+ * 把「更新日志 / 共创」这类低频入口收进下拉，一级导航从 13 项回到 11 项。
+ * 按钮外观刻意与 .app-nav a 完全一致（同一套字号/字重/内边距/圆角），
+ * 否则下拉按钮会比旁边的链接高一点、看着不齐（用户很在意这类「不协调」）。
+ */
+.app-nav .menu { display: inline-flex; }
+.nav-more-trigger {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--font-ui);
+  color: var(--text-muted);
+  font-size: 13.5px; font-weight: 500; letter-spacing: -0.01em;
+  padding: 7px 12px;
+  border: none; border-radius: var(--radius-pill);
+  background: transparent; cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out),
+              background-color var(--dur) var(--ease-out);
+}
+.nav-more-trigger:hover,
+.nav-more-trigger.open {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+/* 命中的是下拉里的页面时，按钮同样高亮，避免「点进去后导航栏像没反应」 */
+.nav-more-trigger.active {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.nav-more-label { display: inline-flex; align-items: center; gap: 3px; }
+/* 展开时把箭头转一下，给一点状态反馈 */
+.nav-more-trigger svg { transition: transform var(--dur-fast) var(--ease-out); }
+.nav-more-trigger.open svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  .nav-more-trigger svg { transition: none; }
+}

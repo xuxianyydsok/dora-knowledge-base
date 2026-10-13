@@ -476,7 +476,7 @@ export function Music() {
       <PageHeader
         kicker="Music Library"
         title="音乐"
-        sub="网易云官方榜单 + 7 路上游检索，高清封面，跨页面续播。"
+        sub="多路音源聚合检索（网易云 / 酷狗 / 酷我 / QQ 音乐等），高清封面，跨页面续播。"
         stats={mode === 'home' ? undefined : stats}
         tabs={tabs}
         activeTab={mode}

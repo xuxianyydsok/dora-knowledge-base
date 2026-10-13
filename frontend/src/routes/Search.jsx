@@ -6,6 +6,7 @@ import { Card } from '../components/Card.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState } from '../components/StateView.jsx';
+import { useAuth } from '../lib/auth.jsx';
 
 const TYPE_OPTIONS = [
   { value: 'all', label: '全部' },
@@ -21,6 +22,8 @@ const RESOURCE_TYPES = [
 ];
 
 export function Search({ q: initialQ }) {
+  // 视频库仅站长可见（见 app.jsx 的 /videos），搜索结果的跳转要按身份分流
+  const { isAdmin } = useAuth();
   const [q, setQ] = useState(initialQ || '');
   const [type, setType] = useState('all');
   const [resourceType, setResourceType] = useState('');
@@ -45,7 +48,9 @@ export function Search({ q: initialQ }) {
 
   function open(item) {
     if (item.kind === 'post') route(`/posts/${item.id}`);
-    else if (item.type === 'video') route('/videos');
+    // 视频库仅站长可见：非站长搜到这类结果时不做跳转（跳过去也看不到），
+    // 改为按「有外链就开外链」处理，避免出现「点了没反应」。
+    else if (item.type === 'video') { if (isAdmin) route('/videos'); else if (item.url) window.open(item.url, '_blank'); }
     else if (item.type === 'music') route(`/music/${item.id}`);
     else if (item.type === 'movie') route(`/movies/${item.id}`);
     else if (item.type === 'github') route('/github');

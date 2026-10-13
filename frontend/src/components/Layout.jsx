@@ -19,7 +19,17 @@ const PRIMARY = [
   ['/music', '音乐'], ['/movies', '影视'],
   ['/books', '图书'],
   ['/gallery', '图展'], ['/timeline', '时间轴'], ['/moments', '碎念'],
-  ['/graph/blog', '图谱'], ['/favorites', '收藏'], ['/changelog', '更新'], ['/coop', '共创']
+  ['/graph/blog', '图谱'], ['/favorites', '收藏']
+];
+
+// 「更多」下拉（2026-10-13 用户要求「三的话都要做」）：
+// 把「更新 / 共创」这两个**访客很少点、但需要能找得到**的入口收进下拉，
+// 一级导航从 13 项回到 11 项，窄屏下不用横向滚那么远。
+// 以后再加新功能也有地方放（用户原话：「后续如果添加更多的功能导航栏放不下的话，
+// 我会让你把它做成一个更多的一个下拉框」）。
+const MORE = [
+  ['/changelog', '更新日志', 'sparkles'],
+  ['/coop', '共创', 'heart']
 ];
 
 // 「图谱」是一级导航（指向 /graph/blog）；两种图谱在页面内用标签切换（博客图谱 / 开源项目图谱）。
@@ -121,6 +131,17 @@ export function Layout({ children }) {
         {/* 窄屏（≤1080px）不再用三横线抽屉，一级导航直接横向滚动（2026-10-09，阈值 2026-10-10 由 920px 上调，见 docs/removed-features.md） */}
         <nav class="app-nav">
           {PRIMARY.map(([href, label]) => link(href, label))}
+          {/* 「更多」下拉：把低频入口收在这里（见上方 MORE 的说明）。
+              当前路径命中其中任意一项时，按钮也高亮，避免「点进去后导航栏没反应」。 */}
+          <Dropdown
+            triggerClass={`nav-more-trigger${MORE.some(([href]) => isActive(href)) ? ' active' : ''}`}
+            label="更多"
+            trigger={<span class="nav-more-label">更多<Icon name="chevronDown" size={13} /></span>}
+          >
+            {MORE.map(([href, label, icon]) => (
+              <MenuLink key={href} href={href} icon={icon}>{label}</MenuLink>
+            ))}
+          </Dropdown>
         </nav>
 
         <span class="spacer" />
@@ -161,6 +182,9 @@ export function Layout({ children }) {
             <MenuLink href="/settings" icon="settings">设置</MenuLink>
             <MenuLink href="/backup" icon="backup">备份</MenuLink>
             {isAdmin && <MenuLink href="/admin/users" icon="crown">用户管理</MenuLink>}
+            {/* 视频库：仅站长可见（2026-10-13 用户要求「先留着，但只在我的管理员端呈现」）。
+                暂未对访客开放，等确定要不要继续开发再决定是否放回一级导航。 */}
+            {isAdmin && <MenuLink href="/videos" icon="video">视频库</MenuLink>}
             {isAdmin && <MenuLink href="/admin/feedback" icon="heart">共创反馈</MenuLink>}
             {/* 源健康中心：仅管理员可见（原先挂在已删除的「更多」下拉里） */}
             {isAdmin && <MenuLink href="/sources" icon="wave">源状态</MenuLink>}

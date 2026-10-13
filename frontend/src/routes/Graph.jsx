@@ -352,6 +352,8 @@ export function Graph() {
     if (kind === 'c') route(id === 'none' ? '/posts' : `/posts?cat=${encodeURIComponent(n.slug || id)}`);
     else if (kind === 't') route(`/posts?tag=${encodeURIComponent(n.slug || id)}`);
     else if (kind === 'a') route(`/github?cat=${encodeURIComponent(id)}`);
+    // 视频库仅站长可见（见 app.jsx 的 /videos）：/graph 本身就是站长控制台，
+    // 所以这里保留 /videos 跳转是安全的。
     else if (kind === 's') route({ movie: '/movies', music: '/music', video: '/videos', github: '/github' }[id] || '/');
   }
 

@@ -1,9 +1,17 @@
 // 学习视频库（Bilibili / YouTube）
+//
+// ⚠ 2026-10-13：本模块整体**仅站长可见**（用户要求「先留着，但只在我的管理员端呈现」）。
+//   三处保持一致：
+//     · 前端路由 /videos 走 ProtectedRoute admin（app.jsx）
+//     · 入口只在管理员下拉菜单里（Layout.jsx）
+//     · 本文件所有接口 requireAdmin（下方各 handler 的第一行）
+//   为什么要连接口一起锁：只挡前端的话，知道 URL 的人仍可直接调接口拿到数据。
+//   将来若决定对访客开放，把这三处的 admin 约束去掉即可恢复。
 // 元信息抓取 + 资源 CRUD + 播放进度保存
 // 权限：普通用户仅操作自己名下视频；管理员可 ?all=true 查看全部
 
 import { ok, readJson, HttpError } from '../lib/response.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAdmin } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchVideoMeta } from '../lib/fetchers.js';
 import {
@@ -23,7 +31,7 @@ function userFilter(user, all) {
 
 // POST /api/videos/fetch  —— 抓取视频元信息（不落库）
 export async function fetchVideoInfo(request, env) {
-  const { db, user } = await requireAuth(request, env);
+  const { db, user } = await requireAdmin(request, env);
   const body = await readJson(request);
   const url = requireString(body.url, 'url', { max: 500 });
 
@@ -40,7 +48,7 @@ export async function fetchVideoInfo(request, env) {
 
 // GET /api/videos
 export async function listVideos(request, env) {
-  const { db, user } = await requireAuth(request, env);
+  const { db, user } = await requireAdmin(request, env);
   const url = new URL(request.url);
   const all = url.searchParams.get('all') === 'true';
 
@@ -60,7 +68,7 @@ export async function listVideos(request, env) {
 
 // GET /api/videos/:id
 export async function getVideo(request, env, id) {
-  const { db, user } = await requireAuth(request, env);
+  const { db, user } = await requireAdmin(request, env);
   requireUuid(id, 'id');
 
   const rows = await db.select(TABLE, qs({
@@ -78,7 +86,7 @@ export async function getVideo(request, env, id) {
 
 // POST /api/videos
 export async function createVideo(request, env) {
-  const { db, user } = await requireAuth(request, env);
+  const { db, user } = await requireAdmin(request, env);
   const body = await readJson(request);
   const url = requireString(body.url, 'url', { max: 500 });
 
@@ -116,7 +124,7 @@ export async function createVideo(request, env) {
 
 // PATCH /api/videos/:id
 export async function updateVideo(request, env, id) {
-  const { db, user } = await requireAuth(request, env);
+  const { db, user } = await requireAdmin(request, env);
   requireUuid(id, 'id');
   const body = await readJson(request);
 
@@ -146,7 +154,7 @@ export async function updateVideo(request, env, id) {
 
 // DELETE /api/videos/:id
 export async function deleteVideo(request, env, id) {
-  const { db, user } = await requireAuth(request, env);
+  const { db, user } = await requireAdmin(request, env);
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({
     id: `eq.${id}`, type: `eq.${TYPE}`,
@@ -158,7 +166,7 @@ export async function deleteVideo(request, env, id) {
 
 // PUT /api/videos/:id/progress  —— 保存播放进度
 export async function saveVideoProgress(request, env, id) {
-  const { db, user } = await requireAuth(request, env);
+  const { db, user } = await requireAdmin(request, env);
   requireUuid(id, 'id');
   const body = await readJson(request);
 
@@ -192,7 +200,7 @@ export async function saveVideoProgress(request, env, id) {
 
 // GET /api/videos/:id/progress
 export async function getVideoProgress(request, env, id) {
-  const { db, user } = await requireAuth(request, env);
+  const { db, user } = await requireAdmin(request, env);
   requireUuid(id, 'id');
   const progress = await getProgress(db, user.id, id);
   return ok(progress || { resource_id: id, position: 0, progress: 0, completed: false }, request, env);
