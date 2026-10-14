@@ -42,6 +42,20 @@ createServer(async (req, res) => {
       res.end(buf);
       return;
     } catch { /* 不是目录，继续走 SPA 回退 */ }
+    // Pretty URL：无扩展名的路径 → 尝试补 .html。
+    // Cloudflare Pages 会把 /lab/10-live-motion 直接映射到 10-live-motion.html
+    // （并且把 /x.html 308 到 /x）。本地必须对齐，否则「线上能用、本地 404」
+    // 或反过来，探针就失去意义。
+    if (!extname(file)) {
+      try {
+        const html = await readFile(file + '.html');
+        const h4 = { 'Content-Type': 'text/html; charset=utf-8' };
+        if (CSP) h4['Content-Security-Policy'] = CSP;
+        res.writeHead(200, h4);
+        res.end(html);
+        return;
+      } catch { /* 没有同名 .html，继续走 SPA 回退 */ }
+    }
     try {
       const buf = await readFile(join(ROOT, 'index.html'));
       const h3 = { 'Content-Type': 'text/html; charset=utf-8' };

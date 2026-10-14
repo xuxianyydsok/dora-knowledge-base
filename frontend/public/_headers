@@ -6,15 +6,26 @@
 # 只对 script/object/base/frame 做严格限制。真实域名与密钥一律不写进本文件。
 /*
   X-Content-Type-Options: nosniff
-  X-Frame-Options: DENY
+  # 2026-10-14 由 DENY 放宽为 SAMEORIGIN：本站有两处**同源** iframe
+  #   · /math 路由内嵌讲义子站（public/math/）
+  #   · /lab/ 图鉴挑选页内嵌各组图鉴
+  # DENY 会把同源嵌套也一并拒绝（表现为 iframe 元素在、但内容空白、
+  # contentDocument 为 null），导致「数学讲义内嵌」实际不可用。
+  # SAMEORIGIN 只允许同源站点嵌套自己，跨站嵌入仍被拒绝，安全性不降。
+  X-Frame-Options: SAMEORIGIN
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; connect-src 'self' https: wss:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; frame-src 'self' https: blob:
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: data: https:; connect-src 'self' https: wss:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; frame-src 'self' https: blob:
 
 # frame-src 说明（2026-10-11）：图书页的 PDF 阅读器用 <iframe> 内嵌自建 API 的
 # /api/books/<id>/file（域名随环境变化，不写死），EPUB 阅读器用 srcDoc 的 sandbox iframe。
 # 与 connect-src 同样的理由，这里对 frame-src 放开 https:（不再逐个列 YouTube / B 站域名）。
+#
+# frame-ancestors 说明（2026-10-14）：由 'none' 放宽为 'self'。二者是一对
+#   —— frame-src 管「本页能嵌谁」，frame-ancestors / X-Frame-Options 管
+#   「本页能被谁嵌」。'none' 会连本站自己嵌自己都拒绝，于是 /math 的讲义内嵌
+#   与 /lab/ 的图鉴预览都失效（iframe 在、内容空白）。'self' 仍拒绝一切跨站嵌入。
 
 # 带内容哈希的构建产物可长期强缓存
 /assets/*

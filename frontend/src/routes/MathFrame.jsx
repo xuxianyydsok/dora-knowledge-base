@@ -20,7 +20,12 @@
 import { useEffect } from 'preact/hooks';
 import { route } from 'preact-router';
 
-const MATH_SRC = '/math/index.html?embed=1';
+// 2026-10-14 路径修正：讲义子站目录由 public/math/ 移到 public/math-site/。
+// 原因：public/math/ 这个**静态目录**会被 Cloudflare Pages 优先匹配，
+// 把本站的 /math 路由整个吃掉 —— 点导航「数学」时浏览器直接加载讲义页本身
+// （整页跳走），MathFrame 组件从未被渲染。改名为 math-site 后 /math 归 SPA 路由独占，
+// 讲义仍可通过 /math-site/ 直接访问。
+const MATH_SRC = '/math-site/index.html?embed=1';
 
 export function MathFrame() {
   // 讲义总览页顶栏的「返回主站」按钮通过 postMessage 请求离开（见 embed.js）。

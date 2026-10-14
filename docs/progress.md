@@ -85,6 +85,57 @@
 - 改造时注意：这些是自包含 HTML（内联样式 + 内联脚本），要按站内规范
   **改写成 Preact 组件 + 外提脚本**，不能直接粘贴（CSP 会拦）。
 
+### 三、顺手修掉两个线上真实故障（重要）
+
+做 `/lab/` 预览时发现 iframe 打不开，顺藤摸出**两个此前一直存在、但从未被验证出来**的问题。
+
+#### 故障 1：`/math` 的「讲义内嵌」实际是坏的（上一轮 commit `223312e` 未生效）
+
+**现象**：点导航「数学」，URL 变成 `/math`、SPA 外壳还在，但内容区**没有讲义**。
+
+**两个叠加的根因**：
+
+1. **静态目录把 SPA 路由吃掉了**。上一轮把讲义放在 `public/math/`，
+   而 Cloudflare Pages **优先匹配静态文件** —— 访问 `/math` 时直接命中
+   `public/math/index.html`（讲义页本身），SPA 的 `/math` 路由从来没被渲染过。
+   于是用户看到的仍是「整页跳走」，与上一轮声称修好的目标正好相反。
+2. **CSP / X-Frame-Options 禁止嵌套**。`_headers` 里是
+   `frame-ancestors 'none'` + `X-Frame-Options: DENY`，**连同源嵌套也拒绝**。
+   表现为 `<iframe>` 元素在 DOM 里，但 `contentDocument` 为 `null`、内容空白。
+
+**修复**：
+
+| 改动 | 说明 |
+| --- | --- |
+| `public/math/` → `public/math-site/` | 让 `/math` 归还 SPA 路由独占；讲义仍可经 `/math-site/` 直连 |
+| `MathFrame.jsx` 的 `MATH_SRC` | 改指 `/math-site/index.html?embed=1` |
+| `_headers`：`frame-ancestors 'none'` → `'self'` | 允许**同源**嵌套，跨站嵌入仍拒绝 |
+| `_headers`：`X-Frame-Options: DENY` → `SAMEORIGIN` | 同上，两者是一对 |
+
+> 为什么之前没发现：上一轮的验收只检查了「`vite build` 通过 + `dist/math/` 下文件就位」，
+> **没有在浏览器里真的打开 `/math` 看讲义有没有出来**。本轮补上了这一步。
+
+#### 故障 2：`/lab/` 预览页同样被 `frame-ancestors 'none'` 拦住
+
+与故障 1 同一个根因，`_headers` 那一处改动同时修好两者。
+
+#### 顺带清理
+
+- `public/math/_bak/`：上一轮 agent 留下的**临时备份目录**（24KB，无任何引用），
+  但它会被 `public/` 一起发布到线上（可被 `/math-site/_bak/` 访问到）。已删除。
+- 10 份图鉴的内联 `<script>` 全部外提为同源 `.js`（CSP `script-src 'self'` 要求）。
+- `tests/spa-server.mjs` 支持 `PROBE_CSP` / `PROBE_XFO` 注入线上同款响应头，
+  并补上「目录索引」与「pretty URL（无扩展名 → .html）」两种回退，
+  对齐 Cloudflare Pages 行为 —— 否则本地永远测不出这类线上问题。
+
+### 验证（本轮全部在**带线上同款 CSP + X-Frame-Options** 的环境下实测）
+
+- `/math`：iframe 内容可读、讲义渲染（`is-embed` 生效、KaTeX 正常）；
+- `/lab/`：10 组图鉴**逐组**在页内预览成功（15/12/18/20/34/12/19/20/12/14 张卡）；
+- `/math` 不再被静态目录抢占（返回 SPA 页面，而非讲义页）；
+- 后端单测 142 项全过；`gallery` / `changelog` / `heroCarousel` 探针全过；
+  凭据扫描无泄漏。
+
 ---
 
 ## 2.37 数学讲义内嵌进站 + Notion 博客独立分区（2026-10-14，分支 feat/math-integration）
