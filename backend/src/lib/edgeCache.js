@@ -50,12 +50,15 @@ async function r2Get(env, key) {
 }
 
 async function r2Put(env, key, data, ttl) {
-  if (!env || !env.R2_BUCKET) return;
+  if (!env || !env.R2_BUCKET) return 'no-bucket';
   try {
     await env.R2_BUCKET.put(R2_PREFIX + key, JSON.stringify({ at: Date.now(), ttl, data }), {
       httpMetadata: { contentType: 'application/json' }
     });
-  } catch { /* 写失败不影响响应 */ }
+    return 'ok';
+  } catch (e) {
+    return 'err:' + (e && e.message ? e.message.slice(0, 60) : 'unknown');
+  }
 }
 
 // 过期也拿出来用（回源失败时的兜底，比白屏强）
@@ -120,16 +123,19 @@ export async function cachedData(request, env, opts) {
 
   try {
     const data = await load();
+    let r2State = 'skip';
     if (cacheable && ttl > 0) {
       // 两级都写；失败不影响响应
-      await Promise.all([
+      const [, r2res] = await Promise.all([
         cache.put(req, new Response(JSON.stringify(data), {
           headers: { 'content-type': 'application/json', 'cache-control': `max-age=${ttl}` }
         })).catch(() => {}),
         r2Put(env, fullKey, data, ttl)
       ]);
+      r2State = r2res || 'skip';
     }
-    return { data, cache: cacheable ? 'miss' : 'bypass' };
+    // 诊断用：把 R2 写入结果带出去（线上排查「为什么二级缓存没生效」）
+    return { data, cache: cacheable ? `miss(r2:${r2State})` : 'bypass' };
   } catch (err) {
     // ③ 回源失败：宁可给一份**过期的**数据，也别让页面空白
     if (cacheable && staleOnError) {
