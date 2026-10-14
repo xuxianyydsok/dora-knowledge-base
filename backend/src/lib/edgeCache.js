@@ -93,7 +93,9 @@ export async function cachedData(request, env, opts) {
   // 带 versionNs 时把版本号拼进键：写操作 bumpVersion(ns) 后旧缓存自动失效，
   // 不用逐个删（分页键是变量，没法枚举）。见文件末尾的说明。
   let fullKey = key;
-  if (versionNs) fullKey = `${key}?v=${await versionOf(versionNs)}`;
+  // 版本号写成**路径段**而不是查询串：R2 的 object key 不接受 `?`，
+  // 用 `?v=` 会让 r2Put 静默失败（实测「Cache API 未命中、R2 也没有」）。
+  if (versionNs) fullKey = `${key}/v${await versionOf(versionNs)}`;
   const req = cacheable ? cacheKeyOf(fullKey) : null;
 
   // ① Cache API（最快，但实测命中不稳定）
