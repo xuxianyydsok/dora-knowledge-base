@@ -9,7 +9,13 @@ export function invalidateBlogData() { cache = null; }
 
 // 日期口径统一放在 lib/dates.js（2026-10-14 抽出，Notion 博客分区也用它）；
 // 这里原样再导出一次，原先从本文件 import { dateOf, fmtDate } 的地方全部照旧。
-export { dateOf, fmtDate } from './dates.js';
+//
+// ⚠️ 必须先 import 再 export，不能写成 `export { ... } from './dates.js'`：
+// 那种「再导出」语法**不会在本模块作用域里创建绑定**，于是下面 useBlogData
+// 里用到的 dateOf 会抛 `ReferenceError: dateOf is not defined` —— 博客页整页白屏。
+// （2026-10-14 线上事故的根因，用户报「博客加载失败 dateOf is not defined」。）
+import { dateOf, fmtDate } from './dates.js';
+export { dateOf, fmtDate };
 
 export function useBlogData(isAuthenticated) {
   const key = isAuthenticated ? 'auth' : 'guest';

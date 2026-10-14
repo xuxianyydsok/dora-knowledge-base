@@ -11,6 +11,75 @@
 
 ---
 
+## 2.39 修博客白屏（dateOf）+ 数学讲义适配三套主题（2026-10-14）
+
+### 一、线上故障：博客页整页白屏（`dateOf is not defined`）
+
+**用户报告**：「博客加载失败 / dateOf is not defined」。
+
+**根因**：上一轮把日期函数抽到 `lib/dates.js` 时，`blogData.js` 里写成
+
+```js
+export { dateOf, fmtDate } from './dates.js';   // ❌ 再导出
+```
+
+`export { … } from '…'` 这种**再导出语法不会在本模块作用域里创建绑定** ——
+它只把名字转出去，模块内部**读不到** `dateOf`。而下面 `useBlogData()` 里
+确实调用了 `dateOf(b)`，于是运行时抛 `ReferenceError: dateOf is not defined`，
+博客列表页（`/posts`、`/blog/*` 等所有用 `useBlogData` 的页面）整页白屏。
+
+**线上证据**：`assets/index-*.js` 里 `dateOf` 只出现 1 次（在调用处），
+`dateOf=` 定义出现 **0 次** —— 变量确实没被定义。
+
+**修复**：先 import 再 export。
+
+```js
+import { dateOf, fmtDate } from './dates.js';
+export { dateOf, fmtDate };
+```
+
+**教训**：`export … from` 是「转出」不是「引入」。要在本模块里用，必须先 import。
+**另一个教训**：上一轮的验收只跑了 `vite build`，构建通过 ≠ 页面能跑 ——
+这类「构建期看不出、运行时才炸」的错误，必须真的在浏览器里打开页面。
+
+### 二、数学讲义适配主站三套主题（用户要求）
+
+**用户原话**：「数学那个页面能否适配网站的三个配色，它背景色好像一直都是白色」。
+
+**原因**：讲义与主站**用了两套不同的 CSS 变量名**，所以内嵌时讲义一直用它自己
+写死的浅色，不跟主站换主题。
+
+| | 主站 | 讲义 |
+| --- | --- | --- |
+| 页面底色 | `--bg` | `--bg` |
+| 卡片底色 | `--bg-elevated` | `--surface` |
+| 正文色 | `--text` | `--ink` |
+| 主色 | `--primary` | `--brand` |
+| 边框 | `--border` | `--line` |
+
+**做法**（两处配合，都在嵌入态生效，独立打开讲义时一行都不命中）：
+
+1. `routes/MathFrame.jsx`：用 `getComputedStyle` 读出主站**当前生效**的主题变量
+   （读的是解析后的值，所以站长自定义配色也一并生效），转成 `--dora-*`
+   写进 iframe 的 `<html>`；并用 `MutationObserver` 监听
+   `<html data-theme>` / `style` 的变化 —— 用户点右上角换主题时**实时同步**。
+2. `public/math-site/assets/css/embed.css`：在 `html.is-embed` 下把讲义变量
+   指向 `--dora-*`，且都带**默认值回退**（`var(--dora-bg, #f6f7fb)`）——
+   所以没注入时（独立打开）仍是讲义原配色。
+
+**验证（真浏览器实测）**：
+
+| 主题 | 讲义 `--bg` | 讲义 `--brand` | 讲义 body 底色 |
+| --- | --- | --- | --- |
+| 纯净 light | `#eef1f8` | `#4a6cf7` | `rgb(238, 241, 248)` |
+| 素雅 sepia | `#f2f0eb` | `#3b3833` | `rgb(242, 240, 235)` |
+| 天青 celadon | `#eef6f5` | `#0f9b8e` | `rgb(238, 246, 245)` |
+
+三套主题各不相同、均跟随主站；**独立打开讲义页仍是原配色**
+（`--bg` = `#f6f7fb`、`--brand` = `#3b5bdb`、主题开关仍在）。
+
+---
+
 ## 2.38 Notion 密码锁定案 + 特效图鉴挑选页（2026-10-14，分支 feat/notion-password-lock）
 
 ### 一、Notion 博客密码锁：**决定不做**，全部公开

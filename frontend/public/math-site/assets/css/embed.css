@@ -12,6 +12,39 @@
       免得出现「主站浅色、讲义深色」的错位。 */
 html.is-embed #theme { display: none; }
 
+/* 1.1) 主题配色联动（2026-10-14 用户要求）：
+      「数学页面能否适配网站的三个配色，它背景一直是白色」。
+
+      讲义有自己的变量名（--bg / --surface / --ink / --brand …），主站用的是
+      另一套（--bg / --bg-elevated / --text / --primary …），两套名字不同，
+      所以内嵌时讲义一直用它自己写死的浅色，不跟主站换主题。
+
+      这里做一层**变量映射**：把讲义变量指向主站变量。主站变量由 MathFrame
+      从父页面读出来、以内联 <style> 写进 iframe 的 <html>（见 MathFrame.jsx），
+      所以只要父页面换主题，讲义跟着变。
+
+      注意：下面这些 --dora-* 是 MathFrame 注入的中间变量，**没注入时**
+      var(--dora-bg, 默认值) 会回退到讲义原本的颜色 —— 独立打开讲义页
+      （不经主站）时外观与从前完全一致。 */
+html.is-embed {
+  --bg:          var(--dora-bg, #f6f7fb);
+  --surface:     var(--dora-surface, #ffffff);
+  --surface-2:   var(--dora-surface-2, #fbfbfe);
+  --ink:         var(--dora-ink, #1b2130);
+  --ink-2:       var(--dora-ink-2, #4a5468);
+  --ink-3:       var(--dora-ink-3, #7d8698);
+  --line:        var(--dora-line, #dfe3ec);
+  --line-2:      var(--dora-line-2, #eceff5);
+  --brand:       var(--dora-brand, #3b5bdb);
+  --brand-soft:  var(--dora-brand-soft, #eef2ff);
+  --shadow:      var(--dora-shadow, 0 1px 2px rgba(20, 26, 40, .05), 0 8px 24px -14px rgba(20, 26, 40, .12));
+}
+/* 顶栏与目录的底色跟着主站走（这两个原本写的是 --surface 的半透明混合，
+   在素雅/天青主题下会与主站顶栏出现色差） */
+html.is-embed .topbar {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
 /* 2) 返回键：☰ 已改成 <a class="btn-ico">，补回 <button> 与 <a> 的默认差异
       （a:hover 默认有下划线；a 的默认色是 --brand，.btn-ico 的 --ink-2 已覆盖） */
 html.is-embed .topbar a.btn-ico { text-decoration: none; }
