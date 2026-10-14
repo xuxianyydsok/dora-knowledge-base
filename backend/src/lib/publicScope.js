@@ -19,7 +19,9 @@
 //   is_public=true 的书（私人书对访客一律按「不存在」处理）。
 // 含 hero（2026-10-13）：首页轮播素材对访客只读开放 —— 首页是公开页面，
 // 访客必须能读到轮播列表（路由层只返回 is_active=true 的项）。
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers|hero)(\/|$)/;
+// 含 notion-posts（2026-10-14）：Notion 博客分区与 posts 一样是公开阅读区，
+// 路由层只放行 status='published' + is_public=true（guestPostFilters）。
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|notion-posts|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers|hero)(\/|$)/;
 
 // 站长收藏（2026-10-11 用户要求）：站长收藏的影视 / 音乐对所有人可见可播。
 // 它是一条**精确路径**（不是前缀），因此单独判定 —— 不能塞进上面的前缀正则，

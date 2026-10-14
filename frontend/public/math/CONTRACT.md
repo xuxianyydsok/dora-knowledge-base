@@ -1,11 +1,28 @@
 # 讲义写手契约（写章文件前必读）
 
+> **两个角色，别搞混（2026-10-14 补充）**
+>
+> 本契约默认写给**章节写手**：你只产出 `<学科>/js/chNN.js`，下面是给你的规矩。
+>
+> 但本讲义子站现在已经**内嵌进 Dora 主站**（`/math` 路由用 iframe 渲染）。做**站内集成**
+> 时第 0.1 条不适用——集成方**确实需要**动 `index.html` 的外壳部分与 `assets/`：
+>
+> - `index.html`：`</head>` 前的 favicon / `assets/css/embed.css` / `assets/js/embed.js` 三行，
+>   以及左上角那枚按钮（总览页是 `#app-back`、子页是 `#back-overview`，都指向返回上一级）。
+> - `assets/js/embed.js`、`assets/css/embed.css`：识别 URL 上的 `embed=1`，给整个子站加
+>   `html.is-embed` 并在内嵌模式下接管主题/返回键；`public/math/index.js` 与
+>   `assets/js/shell.js` 里的主题逻辑在 `window.__LEC_EMBED__` 为真时直接跳过。
+>
+> **无论哪种角色，章节数据的写法与位置一律不变**：写手依然只写 `<学科>/js/chNN.js`，
+> 不碰 `assets/**` 与 `index.html`。
+
 你在给一个**零基础考研生**写数学一理论讲义。读者是高二数学水平、看不懂没有刻度的图、不会自己找反例。
 页面框架已经写好，你**只写章节数据文件**：`<学科>/js/chNN.js`。
 
 ## 0. 硬性禁令
 
 1. **只改自己学科目录下的 `js/chNN.js`**。禁止修改 `assets/**`、任何 `index.html`、`tools/**`、别的学科目录。
+   （例外只有一种：站内集成方按上方「两个角色」一节的说明改外壳，那不是写手的活儿。）
 2. 禁止新增第三方库、禁止 ES module（`import`/`export`）、禁止 `fetch`/`XMLHttpRequest`（页面用 `file://` 双击打开，这些都会被浏览器拦掉）。
 3. 每个文件只调用一次 `LEC.chapter({...})`。
 4. **写完必须跑**：`node tools/check.js <你的学科目录>`，做到 0 问题。不要跑全量（并发时别人的半成品会误报）。

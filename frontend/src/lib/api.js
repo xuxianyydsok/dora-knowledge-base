@@ -582,6 +582,12 @@ export const api = {
   updatePost: (id, body) => request(`/api/posts/${id}`, { method: 'PATCH', body }),
   deletePost: (id) => request(`/api/posts/${id}`, { method: 'DELETE' }),
 
+  // —— Notion 博客分区（独立表 / 独立接口，2026-10-14）——
+  // 与上面 Halo 博客那组的区别：列表不下发正文（207 篇正文近 800 KB，列表页用不到），
+  // 正文只从 slug 端点取；分类由前端从列表里聚合，不另外请求。
+  listNotionPosts: (params = '') => request(`/api/notion-posts${params}`),
+  getNotionPostBySlug: (slug) => request(`/api/notion-posts/slug/${encodeURIComponent(slug)}`),
+
   // 图片素材（R2）
   listAssets: (params = '') => request(`/api/assets${params}`),
   deleteAsset: (id) => request(`/api/assets/${id}`, { method: 'DELETE' }),

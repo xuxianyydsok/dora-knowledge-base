@@ -11,10 +11,10 @@ const ITEMS = [
   { key: 'search', label: '搜索', icon: 'search', to: '/posts?focus=search' }
 ];
 
-export function BlogDock({ active }) {
+export function BlogDock({ active, items = ITEMS }) {
   return createPortal(
     <nav class="cs-dock" aria-label="博客导航">
-      {ITEMS.map((it) => (
+      {items.map((it) => (
         <button key={it.key} class={active === it.key ? 'on' : ''} onClick={() => route(it.to)}>
           <Icon name={it.icon} size={18} />
           <span>{it.label}</span>

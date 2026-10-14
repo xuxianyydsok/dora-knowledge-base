@@ -6139,3 +6139,107 @@ body:has(.math-frame) .app-main {
   min-height: calc(100vh - var(--header-height));
   border: 0;
 }
+
+/* ---------------- Notion 博客分区（/notion，2026-10-14）----------------
+ * 背景：Notion（NotionNext + Vercel）那批文章迁进站。用户要求：
+ *   ①「单独拿一个接口出来存 Notion 的博客内容，避免和前面的博客冲突」
+ *   ②「也要像这个博客一样做好分类、做好排布，主要排版参照现在这套 HALO 排版」
+ *
+ * 取舍：这一区**不新造视觉**——卡片直接用 components/PostCard.jsx（与 /posts 是同一个
+ * 组件、同一套 .cs-card 样式），阅读页用 components/ArticleReader.jsx（同一个骨架）。
+ * 所以下面只补「Notion 侧独有」的几件小东西：
+ *   列表页 —— 工具条（搜索 + 分类芯片 + 排序）、卡片上的子页标记、侧栏说明；
+ *   阅读页 —— 父页面面包屑、空白页/原稿备注提示、正文末尾的「本页包含 / 同目录其它页」树。
+ * 上面那些 .cs-* / .pv-* 全部来自既有样式，一行都没有另写。
+ */
+
+/* —— 博客页头那枚「Notion 博客」按钮：与「写文章」并排，压在横幅的浅色底上 —— */
+.cs-banner-links .cs-notion {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 163, 154, 0.35);
+  color: #0b3b37;
+  backdrop-filter: blur(8px);
+}
+.cs-banner-links .cs-notion:hover { border-color: var(--cs); color: var(--cs); }
+[data-theme='dark'] .cs-banner-links .cs-notion { background: rgba(0, 0, 0, 0.3); color: #e6fffb; }
+
+/* —— 列表页工具条 —— */
+.nt-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.nt-search { flex: 1 1 240px; height: 38px; }
+.nt-search input { width: 100%; }
+.nt-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex: 2 1 320px; }
+.nt-chips button {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-muted);
+  padding: 5px 12px; border-radius: var(--radius-pill); font-size: 13px; cursor: pointer;
+  transition: color var(--dur-fast), border-color var(--dur-fast), background var(--dur-fast);
+}
+.nt-chips button small { font-size: 11px; opacity: 0.65; }
+.nt-chips button:hover { border-color: var(--cs); color: var(--cs); }
+.nt-chips button.on { background: var(--cs-soft); border-color: var(--cs); color: var(--cs); font-weight: 650; }
+.nt-sort { flex: none; }
+
+/* 分组之间再拉开一点（.cs-main 自身 gap 是 14px） */
+.cs-main > .cs-list-head:not(:first-child) { margin-top: 10px; }
+
+/* —— 卡片上的小标记：子页 / 含 N 页 / 空白页 —— */
+.nt-flag {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11.5px; padding: 1px 7px; border-radius: 6px;
+  background: var(--cs-soft); color: var(--cs);
+}
+/* 阅读页头部压在深色头图上，浅底徽标会糊掉，这里换成半透明白 */
+.pv-hero:not(.is-default) .pv-meta .nt-flag { background: rgba(255, 255, 255, 0.2); color: #fff; }
+
+/* —— 侧栏说明 + 「去 Halo 博客」按钮 —— */
+.nt-note { margin: 0 0 12px; font-size: 12.5px; line-height: 1.75; color: var(--text-muted); }
+.nt-golink { width: 100%; justify-content: center; }
+
+/* —— 阅读页：父页面面包屑（放在 .pv-meta 行首）—— */
+.pv-parent {
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: inherit;
+  background: rgba(255, 255, 255, 0.18); border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 3px 10px; border-radius: var(--radius-pill); font-size: 12.5px;
+  max-width: 320px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.pv-parent:hover { border-color: currentColor; }
+.pv-hero.is-default .pv-parent { background: rgba(255, 255, 255, 0.7); border-color: rgba(15, 163, 154, 0.3); color: #0b3b37; }
+[data-theme='dark'] .pv-hero.is-default .pv-parent { background: rgba(0, 0, 0, 0.3); color: #e6fffb; }
+
+/* —— 阅读页：正文之前的提示（空白页 / 原稿备注）—— */
+.nt-notice {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 0 0 22px; padding: 11px 14px;
+  border: 1px solid var(--cs-soft); background: var(--cs-soft);
+  border-radius: var(--radius); font-size: 13px; line-height: 1.7; color: var(--text);
+}
+.nt-notice svg { flex: 0 0 auto; margin-top: 2px; color: var(--cs); }
+
+/* —— 阅读页：正文末尾的 Notion 目录树 —— */
+.nt-tree {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 30px; padding-top: 20px; border-top: 1px dashed var(--border);
+}
+.nt-tree h3 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 15px; }
+.nt-tree h3 svg { color: var(--cs); }
+.nt-tree h3 small { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.nt-tree-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.nt-tree-item {
+  display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
+  padding: 10px 13px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg-subtle); color: var(--text);
+  transition: border-color var(--dur-fast), transform var(--dur-fast);
+}
+.nt-tree-item:hover { border-color: var(--cs); transform: translateY(-1px); }
+.nt-tree-title { font-size: 13.5px; line-height: 1.5; }
+.nt-tree-item small {
+  font-size: 12px; line-height: 1.5; color: var(--text-muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .nt-tools { gap: 8px; }
+  .nt-search { flex: 1 1 100%; }
+  .nt-tree-list { grid-template-columns: 1fr; }
+  .pv-parent { max-width: 190px; }
+}

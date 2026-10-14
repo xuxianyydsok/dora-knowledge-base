@@ -8,6 +8,11 @@ import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { useBlogData, invalidateBlogData, dateOf, fmtDate } from '../lib/blogData.js';
 import { BlogDock, BlogLinks } from '../components/BlogDock.jsx';
+// 卡片与封面在 2026-10-14 抽到 components/PostCard.jsx：
+// Notion 博客分区（/notion）复用的就是同一个卡片，见该文件顶部说明。
+import { PostCard, PostCover } from '../components/PostCard.jsx';
+// 横幅与默认封面的地址统一放在 lib/blogMedia.js（原先写在本文件里）
+import { BANNERS } from '../lib/blogMedia.js';
 import { useAuth } from '../lib/auth.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -15,15 +20,6 @@ import { Icon } from '../components/Icon.jsx';
 
 const PAGE_SIZE = 10;
 const SLIDES = 5;
-
-export const DEFAULT_COVER = '/blog/default-cover.webp';   // 旧站 cosolar 默认封面（见 public/blog/NOTICE.md）
-// 高清横幅（旧站 featured-default.png 3360×1152 → 2560 宽 WebP）：首页顶部横幅、无封面文章的阅读页头图
-export const BANNER_HD = '/blog/banner-hd.webp';
-// 首页横幅背景：多于 1 张时每 8 秒淡入淡出轮换。用户以后提供自己的高清图/视频时加到这里（待办见 docs/progress.md 第 3 节）
-const BANNERS = [BANNER_HD];
-function Cover({ post }) {
-  return <img class="cs-cover-img" src={post.cover_path || DEFAULT_COVER} alt="" loading="lazy" />;
-}
 
 export function Posts({ cat: catParam, tag: tagParam, focus }) {
   const { isAuthenticated } = useAuth();
@@ -137,6 +133,13 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
           </label>
           <div class="cs-banner-links">
             <BlogLinks />
+            {/* Notion 博客入口（2026-10-14）：Notion（NotionNext）迁来的那批文章单独一区，
+                与本站 Halo 博客**数据层完全隔离**，但排版复用同一套。按钮放在「写文章」旁边，
+                走站内 SPA 路由 /notion（不是外链，参照影视页「增强版影视库」的按钮形态）。 */}
+            <a class="btn cs-notion" href="/notion" onClick={(e) => { e.preventDefault(); route('/notion'); }}
+              title="打开 Notion 迁移过来的文章（独立分区）">
+              <Icon name="sparkles" size={14} /> Notion 博客
+            </a>
             {isAuthenticated && (
               <button class="primary cs-new" onClick={() => route('/posts/new')}><Icon name="plus" size={14} /> 写文章</button>
             )}
@@ -149,7 +152,7 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
       {cur && cat === 'all' && !tag && !q && (
         <div class="cs-hero">
           <article class="cs-hero-card" onClick={() => route(`/posts/${cur.id}`)} role="button" tabindex={0}>
-            <div class="cs-hero-cover"><Cover post={cur} category={catMap.get(cur.category_id)} large /></div>
+            <div class="cs-hero-cover"><PostCover src={cur.cover_path} /></div>
             <div class="cs-hero-body">
               <span class="cs-badge">最新发布</span>
               <h2>{cur.title}</h2>
@@ -192,36 +195,21 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
           ) : shown.map((p) => {
             const c = catMap.get(p.category_id);
             return (
-              <article key={p.id} class="cs-card" role="button" tabindex={0}
-                onClick={() => route(`/posts/${p.id}`)}
-                onKeyDown={(e) => { if (e.key === 'Enter') route(`/posts/${p.id}`); }}>
-                <div class="cs-card-cover"><Cover post={p} category={c} /></div>
-                <div class="cs-card-body">
-                  <h4>{p.status !== 'published' && <span class="cs-draft">草稿</span>}{p.title}</h4>
-                  {p.excerpt && <p>{p.excerpt}</p>}
-                  <div class="cs-tags">
-                    {(p.tag_ids || []).slice(0, 3).map((id) => tagMap.get(id) && (
-                      <button key={id} class="cs-tag" onClick={(e) => { e.stopPropagation(); setTag(id); }}>
-                        # {tagMap.get(id).name}
-                      </button>
-                    ))}
-                  </div>
-                  <div class="cs-meta">
-                    {c && (
-                      <button class="cs-meta-link" onClick={(e) => { e.stopPropagation(); setCat(c.id); }}>
-                        <Icon name="layers" size={13} /> {c.name}
-                      </button>
-                    )}
-                    <span><Icon name="calendar" size={13} /> {fmtDate(dateOf(p))}</span>
-                    {isAuthenticated && (
-                      <span class="cs-admin">
-                        <button onClick={(e) => { e.stopPropagation(); route(`/posts/${p.id}/edit`); }}>编辑</button>
-                        <button class="danger" onClick={(e) => { e.stopPropagation(); remove(p.id); }}>删除</button>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </article>
+              <PostCard
+                key={p.id}
+                post={p}
+                cover={p.cover_path}
+                category={c || null}
+                tags={(p.tag_ids || []).map((id) => tagMap.get(id)).filter(Boolean)}
+                meta={<span><Icon name="calendar" size={13} /> {fmtDate(dateOf(p))}</span>}
+                onOpen={() => route(`/posts/${p.id}`)}
+                onTag={(t) => setTag(t.id)}
+                onCategory={() => setCat(c.id)}
+                admin={isAuthenticated ? {
+                  onEdit: () => route(`/posts/${p.id}/edit`),
+                  onDelete: () => remove(p.id)
+                } : null}
+              />
             );
           })}
 

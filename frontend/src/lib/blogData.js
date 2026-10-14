@@ -7,12 +7,9 @@ const TTL = 60 * 1000;
 
 export function invalidateBlogData() { cache = null; }
 
-export const dateOf = (p) => p.published_at || p.created_at;
-export function fmtDate(v) {
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+// 日期口径统一放在 lib/dates.js（2026-10-14 抽出，Notion 博客分区也用它）；
+// 这里原样再导出一次，原先从本文件 import { dateOf, fmtDate } 的地方全部照旧。
+export { dateOf, fmtDate } from './dates.js';
 
 export function useBlogData(isAuthenticated) {
   const key = isAuthenticated ? 'auth' : 'guest';

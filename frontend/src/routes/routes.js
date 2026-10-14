@@ -42,6 +42,10 @@ const AdminFeedback = lazy(() => import('./AdminFeedback.jsx').then((m) => ({ de
 // 数学讲义（考研数学一）：/math 路由用 iframe 内嵌 public/math/ 下的静态子站，
 // 让它像本站的一页而不是"跳走的外挂站"。详见 MathFrame.jsx 顶部说明。
 const MathFrame = lazy(() => import('./MathFrame.jsx').then((m) => ({ default: m.MathFrame })));
+// Notion 博客分区（2026-10-14）：独立表 / 独立接口，排版复用博客那套组件。
+// 列表与阅读页拆成两个 chunk，进列表页不会顺带把阅读页的渲染器拉下来。
+const NotionPosts = lazy(() => import('./NotionPosts.jsx').then((m) => ({ default: m.NotionPosts })));
+const NotionPostView = lazy(() => import('./NotionPostView.jsx').then((m) => ({ default: m.NotionPostView })));
 
 export {
   Categories, Tags, Login, Videos, Github, Posts, PostEdit, PostView, BlogArchive, BlogTopics,
@@ -50,5 +54,5 @@ export {
   MusicPlayer, AdminMusic,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
   Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback,
-  MathFrame
+  MathFrame, NotionPosts, NotionPostView
 };

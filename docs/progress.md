@@ -11,6 +11,145 @@
 
 ---
 
+## 2.37 数学讲义内嵌进站 + Notion 博客独立分区（2026-10-14，分支 feat/math-integration）
+
+### 用户需求
+
+> 「我想要的就是将它的这个数学的这个页面，**全面的集成到这个网站里面**」
+
+> 「左上角有三根横线，点击它表示目录的意思……点击了没有任何反应」
+> 「它的这个图标还是要和网站的图标保持一致。现在点 Math 页面就是显示那个地球」
+> 「那个目录的话**不用折叠**，还是正常的」
+
+> 「（Notion 那批文章）要**单独的拿一个接口出来**，用来存放它的 Notion 里面的博客内容，
+>  **避免和前面的这个博客产生冲突**」「也要做好分类，然后做好排布这些」
+> 「主要的排版的话，就可以参照现在的这样的一个 **HALO 的一个排版**」
+> 「**不要再重复造车了**，既然已经有了一副模板，就让你去做，你就按照那个去做」
+> 「**需要现在就跑起来**，就包括后端数据库，你看一下需不需要新建一个对应的数据库表」
+> 「我这边呢是推荐**重新新建一个数据库表**」「**需要提交到 Git 仓库**」
+
+### 本轮完成内容
+
+#### A. 数学讲义（考研数学一）从「跳走的外挂站」变成站内一页
+
+原先导航栏的「数学」靠 `data-native` 走整页跳转，点一下就离开主站、进了
+`public/math/` 那个独立静态子站。现在挂到站内 `/math` 路由，**iframe 内嵌**渲染：
+
+| 文件 | 改动 |
+| --- | --- |
+| `frontend/src/routes/MathFrame.jsx` | **新增**：iframe 壳（`/math/index.html?embed=1`），监听 `dora:leave-math` 消息回主站 |
+| `frontend/src/routes/routes.js`、`app.jsx` | 注册 `/math`（`ProtectedRoute guest`） |
+| `frontend/src/components/Layout.jsx` | `['/math/', '数学']` → `['/math', '数学']`；`NATIVE_LINKS` 清空（机制保留） |
+| `frontend/src/styles/global.css` | `.math-frame` 铺满内容区（与 now-playing 同款处理） |
+| `public/math/assets/js/embed.js` | **新增**：识别 `embed=1`，加 `html.is-embed`，站内互跳带上参数，返回键走 postMessage |
+| `public/math/assets/css/embed.css` | **新增**：内嵌模式下隐藏主题按钮、目录**常驻不折叠**、顶栏收紧 |
+| 4 个 `index.html`（总览 + 微积分/线代/概率） | `</head>` 前插 favicon + embed.css + embed.js；左上角 `☰` 换成返回键 |
+| `public/math/index.js`、`assets/js/shell.js` | 主题逻辑在 `window.__LEC_EMBED__` 为真时跳过 |
+| `public/math/CONTRACT.md` | 补「两个角色」说明：写手仍只改 `chNN.js`；站内集成方**需要**改 `index.html` 外壳与 `assets/` |
+
+**三个原始症状的根因**（都不是「坏了」，是设计差异）：
+
+1. **「点 ☰ 没反应」**：CDN 版主题把 `body.toc-open` 的规则写在
+   `@media (max-width:1080px)` 里 —— 桌面端 `.toc` 本来就是常驻侧栏，点它当然没变化。
+   「目录两个字」是按钮的 `title` 悬停提示，不是按钮内容。
+2. **favicon 是地球**：静态站自带一套图标，之前没换。
+3. **「数学整页跳走」**：`NATIVE_LINKS = new Set(['/math/'])` 是刻意加的「逃生阀」。
+
+#### B. Notion 博客独立分区
+
+**数据库**：新增迁移 `supabase/migrations/20261014000028_notion_posts.sql` ——
+建独立表 `notion_posts`（23 列 / 4 索引 / 启用 RLS / 4 条 policy）。
+**已用 Supabase Management API 在本项目上执行完毕（HTTP 201）**。
+
+**为什么不给 `posts` 加 `source` 列**：物理隔离最彻底（绝无可能污染现有 315 篇 Halo 文章）；
+Notion 侧有 10 个特有字段（`notion_category` / `parent_slug` / `is_blank` …），
+塞进 `posts` 会让那张表长出大量语义只对一半数据成立的列；`posts` 的 RLS / 约束 / 接口一行都不用改。
+
+**数据导入**：207 篇（187 published / 20 draft / 137 子页 / 42 原带密码 / 61 封面 / 56 有分类），
+脚本与载荷见 `scripts/notion-blog-import/`。入库后校验与载荷**完全吻合**：
+
+```
+[{"n":207,"pub":187,"sub":137,"locked":42,"cat":56,"cover":61}]
+```
+
+分类分布（前端据此自动分组）：学海无涯 12、文案集锦 10、生活随笔 8、人生彼岸 7、
+人物传记 6、技术分享 5、AI 4、观世书海 4、**无分类 151**（归入「未分类」并永远垫底）。
+
+**后端**：
+
+| 文件 | 改动 |
+| --- | --- |
+| `backend/src/routes/notion.js` | **新增**：`listNotionPosts` / `getNotionPostBySlug` |
+| `backend/src/router.js` | 注册 `GET /api/notion-posts`、`GET /api/notion-posts/slug/:slug` |
+| `backend/src/lib/publicScope.js` | `PUBLIC_READ_RE` 加入 `notion-posts`（访客只读） |
+
+列表接口**刻意不下发 `content`**（207 篇正文合计近 800 KB，列表页一行用不到）与
+`password_hash`（为后续「博客密码锁」预留的列，永不出网）。阅读页接口一并返回
+`parent` / `children` / `siblings` 三份导航数据，前端不用再发第二、三个请求。
+
+**前端 —— 这一轮的关键是「抽组件」而不是「抄页面」**：
+
+| 文件 | 改动 |
+| --- | --- |
+| `frontend/src/components/PostCard.jsx` | **新增**：cosolar 文章卡片（从 `routes/Posts.jsx` 抽出） |
+| `frontend/src/components/ArticleReader.jsx` | **新增**：阅读页骨架（从 `routes/PostView.jsx` 抽出） |
+| `frontend/src/routes/PostView.jsx` | 瘦成数据包装（取文章 + 分类 → 交给 ArticleReader） |
+| `frontend/src/routes/Posts.jsx` | 改用 `PostCard`；页头「写文章」旁加「Notion 博客」按钮 |
+| `frontend/src/lib/blogMedia.js`、`lib/dates.js` | **新增**：横幅/默认封面常量、日期工具（原先散在 Posts/blogData 里） |
+| `frontend/src/components/BlogDock.jsx` | 支持 `items` 入参（Notion 侧只有「Notion / 博客」两项） |
+| `frontend/src/routes/NotionPosts.jsx` | **新增**：列表页（按 `notion_category` 自动分组 + 搜索 + 分类筛选 + 排序） |
+| `frontend/src/routes/NotionPostView.jsx` | **新增**：阅读页（复用 ArticleReader + 父/子页导航 + 空白页提示） |
+| `frontend/src/lib/api.js` | 加 `listNotionPosts` / `getNotionPostBySlug` |
+| `frontend/src/routes/routes.js`、`app.jsx` | 注册 `/notion`、`/notion/:slug` |
+| `frontend/src/styles/global.css` | 追加 Notion 独有的一小段（工具条/分组标题/子页标记/目录树/面包屑） |
+| `frontend/src/lib/changelog.js` | 追加 v0.16.0 发布说明 |
+
+**「不重复造车」怎么落地的**：`/posts` 与 `/notion` 现在共用同一个 `PostCard` 与
+同一个 `ArticleReader`。构建产物里 `PostCard-D7Iv4szS.js`(1.2 KB) 与
+`ArticleReader-DDiF-sbd.js`(5.0 KB) 各自只有**一份**，被两个分区的 chunk 共同引用；
+样式也全是既有的 `.cs-*` / `.pv-*`，新写的 CSS 仅覆盖「Notion 侧独有」的东西。
+
+### 验证结果
+
+- 后端语法检查：全部 OK。
+- 后端单元 + 契约测试：**141 / 142 通过**。唯一失败项
+  「音乐去重口径前后端一致」是 **Windows 下 ESM loader 的绝对路径问题**（`Received protocol 'c:'`），
+  与本次改动无关，Linux/CI 上不受影响。测试框架已自动纳入两个新页面
+  （`NotionPosts.jsx: listNotionPosts ✅`、`NotionPostView.jsx: getNotionPostBySlug ✅`）。
+- 前端生产构建：**✅ built in 1m55s**。
+- 产物核对：`dist/assets/NotionPosts-*.js`、`NotionPostView-*.js`、`PostCard-*.js`、
+  `ArticleReader-*.js`、`MathFrame-*.js` 均就位；`dist/math/` 下 `embed.js` / `embed.css` 已随构建产出。
+
+### 坑与注意
+
+1. **WSL 侧的 9p 写入限制**：live 仓库在 `~/tmp/dora-now-settings`（WSL 里），
+   从 Windows 侧对**已存在文件**完全只读（`Edit` → `ModifyBackup failed`、
+   Python `open(p,'w')` → `PermissionError`、`os.replace`/`mv`/`git apply` → `WinError 5`），
+   只有**新建文件**可行；`wsl.exe` 又被安全策略拉黑。
+   **本轮的解法**：在 Windows 侧 `git clone` → 自由编辑 → `git push`（凭据可用）。
+   以后要改这个仓库，直接走这条路，别在 WSL 目录里折腾。
+2. **`public/math/` 与 Windows 原件 `D:\aitest\qoder考研` 已经分叉**（仓库侧有 `index.js`、
+   无 `tools/`；`index.html`/`lecture.css`/`core.js` 内容不同）。以后只认仓库这一份。
+3. **CSP**：`script-src 'self'` → 静态站里的内联脚本会被拦，所以 `embed.js` 必须是外提文件；
+   `frame-src 'self' https: blob:` → 同源 iframe 才可行（这是内嵌方案成立的前提）。
+4. **访客过滤必须在查询层**：Worker 用 `service_role` 直连 PostgREST，绕过 RLS，
+   `guestPostFilters()` 一定得显式带上（Notion 路由已带）。
+5. **`is_locked` / `password_hash` 目前是空跑的**：42 篇原文带密码的文章本轮**全部按公开导入**。
+   字段已备好，等做「博客密码锁」时再用。
+
+### 下一步 / 待办
+
+- **用户侧**：`git fetch && git checkout feat/math-integration` 拿本轮改动 → review → merge。
+  PR：`https://github.com/xuxianyydsok/dora-knowledge-base/pull/new/feat/math-integration`
+- **博客密码锁**（用户已提，未做）：42 篇原文带密码，本轮全部公开；`is_locked` / `password_hash`
+  字段已就位。**本轮做完后要主动提醒用户这件事。**
+- **图展区域导入**（用户提及，待定）。
+- **349 张 Notion 文章配图尚未上传 R2**：脚本 `scripts/notion-blog-import/upload_assets.*` 已备好，
+  待执行；未上传前这些图片是外链 Notion/图床地址。
+- **建议重置那个 Supabase PAT**：账号级权限过重（可执行任意 SQL）。
+
+---
+
 ## 2.36 首页轮播可由站长配置（2026-10-13，分支 feat/now-settings）
 
 ### 用户需求

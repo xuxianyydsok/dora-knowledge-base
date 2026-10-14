@@ -25,7 +25,7 @@ import {
   MusicPlayer, AdminMusic,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
   Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback,
-  MathFrame
+  MathFrame, NotionPosts, NotionPostView
 } from './routes/routes.js';
 
 // 真正的 404：未匹配任何路由时显示，而不是静默回落到首页
@@ -62,6 +62,12 @@ function RouterView() {
       <ProtectedRoute path="/posts/new"><PostEdit /></ProtectedRoute>
       <ProtectedRoute path="/posts/:id/edit"><PostEdit /></ProtectedRoute>
       <ProtectedRoute guest path="/posts/:id"><PostView /></ProtectedRoute>
+      {/* Notion 博客分区（2026-10-14）：数据层与上面的 Halo 博客（/posts）**完全隔离**
+          （独立表 notion_posts + 独立接口 /api/notion-posts），只在排版层面复用同一套
+          组件（PostCard / ArticleReader）。列表与阅读页都对访客只读开放；
+          未发布或非公开的文章由后端一律按「不存在」处理，不泄露存在性。 */}
+      <ProtectedRoute guest path="/notion"><NotionPosts /></ProtectedRoute>
+      <ProtectedRoute guest path="/notion/:slug"><NotionPostView /></ProtectedRoute>
       <ProtectedRoute guest path="/search"><Search /></ProtectedRoute>
       {/* 公开星图（顶栏「更多 → 图谱」）：博客图谱 / 开源项目图谱 */}
       <ProtectedRoute guest path="/graph/blog"><GraphHub mode="blog" /></ProtectedRoute>

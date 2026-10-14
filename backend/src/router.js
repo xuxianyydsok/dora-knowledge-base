@@ -8,6 +8,7 @@ import * as me from './routes/me.js';
 import * as videos from './routes/videos.js';
 import * as github from './routes/github.js';
 import * as posts from './routes/posts.js';
+import * as notion from './routes/notion.js';
 import * as mcp from './routes/mcp.js';
 import * as search from './routes/search.js';
 import * as graph from './routes/graph.js';
@@ -87,6 +88,11 @@ const routes = [
   ['GET', '/api/posts/:id', posts.getPost],
   ['PATCH', '/api/posts/:id', posts.updatePost],
   ['DELETE', '/api/posts/:id', posts.deletePost],
+
+  // Notion 博客分区（独立表，2026-10-14）：与上面的 Halo 博客（posts）**数据层完全隔离**，
+  // 只在排版层面复用前端组件。列表不下发正文，正文走 slug 端点。
+  ['GET', '/api/notion-posts', notion.listNotionPosts],
+  ['GET', '/api/notion-posts/slug/:slug', notion.getNotionPostBySlug],
 
   // 图片素材（R2）：上传/列出/删除需管理员；按 id 读取完全公开
   ['POST', '/api/assets', assets.uploadAsset],
