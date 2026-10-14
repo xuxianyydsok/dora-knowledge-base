@@ -3,7 +3,7 @@
 // 支持：标签、分类、收藏夹、全局检索、关联图谱（复用统一资源机制）
 // 权限：普通用户仅操作自己名下音乐；管理员可 ?all=true 查看全部
 
-import { ok, readJson, HttpError } from '../lib/response.js';
+import { ok, json, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { fetchMusicMeta, fetchLyrics, resolveGdstudioUrl, GD_DEFAULT_SOURCE } from '../lib/fetchers.js';
@@ -16,6 +16,7 @@ import {
   setResourceTags, withTags, getProgress, upsertProgress, validateTagIds, validateCategoryId
 } from '../lib/resources.js';
 import { guestResourceFilters, isResourceVisibleToGuest } from '../lib/publicScope.js';
+import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 import { looksLikeAudioStream, isStaleAudioUrl, resolveAudioPlayback } from '../lib/mediaUrl.js';
 import { isAdminFavorited } from './favorites.js';
 import { dedupeMusicList, findDuplicateMusic, musicIdentity, normalizeMusicText } from '../lib/musicIdentity.js';
@@ -247,16 +248,27 @@ export async function listMusic(request, env) {
   const categoryId = url.searchParams.get('category_id');
   if (categoryId) filters.category_id = `eq.${categoryId}`;
 
-  const rows = await db.select(TABLE, qs({
-    select: '*', ...filters, order: 'created_at.desc'
-  }));
-  const tagged = await withTags(db, rows);
-  const withExt = await withTrack(db, tagged);
-  // 同一首歌被重复收藏时（历史脏数据），列表层合并掉，只留最新那一条。
-  // 去重放在「扩展字段拼好之后」——歌手的唯一来源是 music_tracks.artist。
-  const deduped = dedupeMusicList(withExt);
-  // 上传曲目把 R2 内部 key 换成公开的按 id 取字节地址（见 withPublicMedia）
-  return ok(withPublicMedia(deduped, requestOrigin(request, env)), request, env);
+  // 音乐列表是首屏必需、且内部有 3 次串行查库（rows → withTags → withTrack），
+  // 实测经 Worker 要 50 秒超时 —— 用边缘缓存兜住（见 edgeCache.js）。
+  const { data, cache } = await cachedData(request, env, {
+    key: `music/${user.id}/${all ? 'all' : 'own'}/${categoryId || ''}`,
+    ttl: 300,
+    user,
+    versionNs: `music/${user.id}`,
+    load: async () => {
+      const rows = await db.select(TABLE, qs({
+        select: '*', ...filters, order: 'created_at.desc'
+      }));
+      const tagged = await withTags(db, rows);
+      const withExt = await withTrack(db, tagged);
+      // 同一首歌被重复收藏时（历史脏数据），列表层合并掉，只留最新那一条。
+      // 去重放在「扩展字段拼好之后」——歌手的唯一来源是 music_tracks.artist。
+      const deduped = dedupeMusicList(withExt);
+      // 上传曲目把 R2 内部 key 换成公开的按 id 取字节地址（见 withPublicMedia）
+      return withPublicMedia(deduped, requestOrigin(request, env));
+    }
+  });
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
 // GET /api/music/:id

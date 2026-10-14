@@ -27,6 +27,7 @@ import { ok, readJson, HttpError, corsHeaders } from '../lib/response.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { SupabaseClient, qs } from '../lib/supabase.js';
 import { requireUuid, optionalString, optionalBool, optionalInt } from '../lib/validate.js';
+import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 import {
   sniffVideoFormat, parseVideoMeta, sanitizeFilename, buildVideoKey,
   isWithinVideoLimit, VIDEO_FORMATS, MAX_VIDEO_BYTES
@@ -238,9 +239,18 @@ export async function listWallpapers(request, env) {
   // 访客只看公开条目：必须在查询层过滤（Worker 用 service_role，RLS 不替它过滤）
   if (user.isGuest) filters.is_public = 'eq.true';
 
-  const rows = await db.select(TABLE, qs(filters));
-  const items = rows.map(shape);
-  return ok({ items, count: items.length, limit, offset }, request, env);
+  const { data, cache } = await cachedData(request, env, {
+    key: `wallpapers/${user.id}/${limit}/${offset}`,
+    ttl: 300,
+    user,
+    versionNs: `wallpapers/${user.id}`,
+    load: async () => {
+      const rows = await db.select(TABLE, qs(filters));
+      const items = rows.map(shape);
+      return { items, count: items.length, limit, offset };
+    }
+  });
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
 // ---------------------------------------------------------------

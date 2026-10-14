@@ -10,6 +10,7 @@ import {
   requireString, optionalString, requireUuid, optionalBool, requireEnum, slugify
 } from '../lib/validate.js';
 import { validateCategoryId, validateTagIds } from '../lib/resources.js';
+import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 import {
   guestPostFilters, guestResourceFilters, isPostVisibleToGuest
 } from '../lib/publicScope.js';
@@ -106,25 +107,13 @@ export async function listPosts(request, env) {
   // 边缘缓存（2026-10-14 修复「博客页打不开」）：
   //   实测直连 Supabase 取 315 篇只要 4~6 秒，但**经过 Worker 出口要 28~45 秒**
   //   （Worker → Supabase 的网络路径慢），前端 20 秒就超时放弃，
-  //   于是博客页永远停在「正在载入…」。这里把结果缓存 5 分钟，首访仍慢、
-  //   之后秒回，是最快让页面可用的办法。
+  //   于是博客页永远停在「正在载入…」。用统一的边缘缓存兜住（见 lib/edgeCache.js）。
   //
-  //   只缓存**访客**（未登录）的默认列表：那是访问量最大、最慢、且所有人一致的一份。
-  //   登录用户的数据与本人相关（还有草稿），不缓存，避免串号。
-  //   写操作（create/update/delete）会按前缀失效本缓存，见 invalidatePostListCache()。
-  const cacheable = user.isGuest && !url.searchParams.get('status') && !url.searchParams.get('category_id');
-  const cache = cacheable && typeof caches !== 'undefined' ? caches.default : null;
-  const cacheKey = cacheable
-    ? new Request(`https://dora-cache.internal/post-list/${url.searchParams.get('with_tags') === 'true' ? 'tags' : 'plain'}`)
-    : null;
-  if (cache && cacheKey) {
-    const hit = await cache.match(cacheKey);
-    if (hit) {
-      const rows = await hit.json();
-      // X-List-Cache: hit 便于线上验证缓存是否真的生效
-      return json({ data: rows }, { headers: { 'X-List-Cache': 'hit' } }, request, env);
-    }
-  }
+  //   只缓存访客默认列表：登录用户的数据与本人相关（含草稿），缓存会串号。
+  //   带 status / category_id 的请求结果不同，key 里已带上，不会串。
+  const statusParam = url.searchParams.get('status') || '';
+  const categoryParam = url.searchParams.get('category_id') || '';
+  const withTags = url.searchParams.get('with_tags') === 'true';
 
   const filters = { ...userFilter(user, all) };
   const status = url.searchParams.get('status');
@@ -134,43 +123,40 @@ export async function listPosts(request, env) {
   const categoryId = url.searchParams.get('category_id');
   if (categoryId) filters.category_id = `eq.${categoryId}`;
 
-  const rows = await db.select(TABLE, qs({
-    // with_tags 时用 PostgREST 的**内嵌查询**把标签一起取回来（一次往返），
-    // 原来是「先查 posts、再查 post_tags」两次往返 —— 而 Worker→Supabase
-    // 的单次往返实测要十几秒，少一次往返就是省十几秒（见 listPosts 顶部说明）。
-    select: 'id,user_id,title,slug,excerpt,cover_path,status,category_id,is_public,published_at,created_at,updated_at'
-      + (url.searchParams.get('with_tags') === 'true' ? ',post_tags(tag_id)' : ''),
-    ...filters,
-    order: 'updated_at.desc'
-  }));
-  // 把内嵌回来的 post_tags 摊平成 tag_ids（前端要的就是这个形状）。
-  // 内嵌字段用完即删，避免把 post_tags 这层结构透给前端。
-  if (url.searchParams.get('with_tags') === 'true') {
-    for (const r of rows) {
-      r.tag_ids = Array.isArray(r.post_tags) ? r.post_tags.map((t) => t.tag_id) : [];
-      delete r.post_tags;
+  const { data, cache } = await cachedData(request, env, {
+    key: `posts/${user.id}/${all ? 'all' : 'own'}/${statusParam}/${categoryParam}/${withTags ? 'tags' : 'plain'}`,
+    ttl: 300,
+    user,
+    versionNs: 'posts',
+    load: async () => {
+      const rows = await db.select(TABLE, qs({
+        // with_tags 时用 PostgREST 的**内嵌查询**把标签一起取回来（一次往返），
+        // 原来是「先查 posts、再查 post_tags」两次往返 —— 而 Worker→Supabase
+        // 的单次往返实测要十几秒，少一次往返就是省十几秒。
+        select: 'id,user_id,title,slug,excerpt,cover_path,status,category_id,is_public,published_at,created_at,updated_at'
+          + (withTags ? ',post_tags(tag_id)' : ''),
+        ...filters,
+        order: 'updated_at.desc'
+      }));
+      // 把内嵌回来的 post_tags 摊平成 tag_ids（前端要的就是这个形状）。
+      if (withTags) {
+        for (const r of rows) {
+          r.tag_ids = Array.isArray(r.post_tags) ? r.post_tags.map((t) => t.tag_id) : [];
+          delete r.post_tags;
+        }
+      }
+      return rows;
     }
-  }
-  if (cache && cacheKey) {
-    // 缓存 5 分钟：新发文章最多 5 分钟后出现在博客页（写操作会主动失效，见下）
-    await cache.put(cacheKey, new Response(JSON.stringify(rows), {
-      headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' }
-    }));
-  }
-  // 诊断头：一眼看出这次请求走没走缓存路径（miss / bypass）
-  return json({ data: rows }, {
-    headers: { 'X-List-Cache': cache ? 'miss' : (cacheable ? 'no-cache-api' : 'bypass') }
-  }, request, env);
+  });
+  // X-List-Cache 诊断头：一眼看出走没走缓存（hit / miss / bypass / stale）
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
-// 博客列表缓存失效：发 / 改 / 删文章后调用，让下一次读拿到新数据。
-// 为什么不用「按 URL 失效」：缓存键是自造的（见 listPosts），这里直接删这两个固定键。
+// 博客列表缓存失效：发 / 改 / 删文章后调用。
+// 用**版本号**失效（见 edgeCache.js）：缓存键里带版本号，bump 后旧键自动失效，
+// 不用把各种参数组合逐个删掉。
 export async function invalidatePostListCache() {
-  if (typeof caches === 'undefined') return;
-  const cache = caches.default;
-  await Promise.all(['tags', 'plain'].map((k) =>
-    cache.delete(new Request(`https://dora-cache.internal/post-list/${k}`)).catch(() => {})
-  ));
+  await bumpVersion('posts');
 }
 
 // GET /api/posts/:id

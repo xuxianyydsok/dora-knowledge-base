@@ -15,10 +15,11 @@
 // 再交给 timelineMerge 用复合游标做精确过滤（不会重复、不会跳条）。
 // 每类多取 limit*4+10 条，抵消同日多条被精确层过滤掉的情况。
 
-import { ok } from '../lib/response.js';
+import { ok, json } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { mergeTimeline, TIMELINE_MAX_LIMIT } from '../lib/timelineMerge.js';
+import { cachedData } from '../lib/edgeCache.js';
 
 // 游标格式 `<ISO 时间>|<id>`。粗过滤只取「时间」部分，精确的「是否在游标之后」
 // 交给 mergeTimeline 判断；粗过滤必须**放宽**（多取）而不是收紧，否则会漏条。
@@ -123,7 +124,7 @@ export function bookFilters(user, before, perSource) {
 const SINGLE_TYPES = new Set(['post', 'github', 'gallery', 'music', 'movie', 'book']);
 
 // GET /api/timeline?limit=20&before=<ISO>&type=post
-export async function listTimeline(request, env) {
+async function buildTimeline(request, env) {
   const { db, user } = await requireAuth(request, env);
   const url = new URL(request.url);
 
@@ -196,5 +197,22 @@ export async function listTimeline(request, env) {
   // 单类型时把白名单交给 mergeTimeline：万一某张表里混进了别的类型，也不会串味。
   const result = mergeTimeline({ posts, resources, gallery, progress, books: bookRows },
     { limit, before, types: type ? [type] : null });
-  return ok(result, request, env);
+  return result;
+}
+
+// 时间轴是**公开只读聚合页**（四路并发查库，最慢的接口之一），
+// 用边缘缓存包一层：命中时完全不回源。缓存键带上影响结果的全部参数。
+export async function listTimeline(request, env) {
+  const { user } = await requireAuth(request, env);
+  const url = new URL(request.url);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 20, 1), TIMELINE_MAX_LIMIT);
+  const before = url.searchParams.get('before') || '';
+  const type = url.searchParams.get('type') || '';
+  const { data, cache } = await cachedData(request, env, {
+    key: `timeline/${user.id}/${limit}/${before}/${type}`,
+    ttl: 300,
+    user,
+    load: () => buildTimeline(request, env)
+  });
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }

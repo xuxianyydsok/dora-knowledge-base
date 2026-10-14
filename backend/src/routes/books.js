@@ -61,6 +61,7 @@ import {
   MAX_COVER_BYTES, BOOK_FORMATS
 } from '../lib/bookType.js';
 import { extractBookMeta } from '../lib/bookCover.js';
+import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 
 const TABLE = 'books';
 const FALLBACK_PUBLIC_BASE = 'https://api.xuguochen.de5.net';
@@ -515,9 +516,18 @@ export async function listBooks(request, env) {
   if (user.isGuest) filters.is_public = 'eq.true';
   if (format && BOOK_FORMATS[format]) filters.format = `eq.${format}`;
 
-  const rows = await db.select(TABLE, qs(filters));
-  const items = rows.map(shape);
-  return ok({ items, count: items.length, limit, offset }, request, env);
+  const { data, cache } = await cachedData(request, env, {
+    key: `books/${user.id}/${limit}/${offset}/${format || ''}`,
+    ttl: 300,
+    user,
+    versionNs: `books/${user.id}`,
+    load: async () => {
+      const rows = await db.select(TABLE, qs(filters));
+      const items = rows.map(shape);
+      return { items, count: items.length, limit, offset };
+    }
+  });
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
 // 读取单本可读的书：公开书人人可读；私人书只有本人能读。

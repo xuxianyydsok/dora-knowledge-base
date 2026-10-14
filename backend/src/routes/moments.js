@@ -20,11 +20,12 @@
 //   PATCH  /api/moments/:id  改正文 / 公开状态 / 配图（requireAdmin，仅本人）
 //   DELETE /api/moments/:id  删除（requireAdmin，仅本人；只删关联，绝不删 R2 素材）
 
-import { ok, readJson, HttpError } from '../lib/response.js';
+import { ok, json, readJson, HttpError } from '../lib/response.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { momentGuestFilters, MAX_MOMENT_ASSETS, MAX_MOMENT_FILES } from '../lib/publicScope.js';
 import { requireUuid, requireString, optionalBool } from '../lib/validate.js';
+import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 
 const TABLE = 'moments';
 const LINKS = 'moment_assets';
@@ -232,9 +233,18 @@ export async function listMoments(request, env) {
   // 访客只看公开碎念：必须在查询层过滤，不能先拉全部再前端过滤
   if (user.isGuest) Object.assign(filters, momentGuestFilters());
 
-  const rows = await db.select(TABLE, qs(filters));
-  const items = await decorate(db, rows, { userId: user.id, guest: !!user.isGuest });
-  return ok({ items, count: items.length, limit, offset }, request, env);
+  const { data, cache } = await cachedData(request, env, {
+    key: `moments/${user.id}/${limit}/${offset}`,
+    ttl: 300,
+    user,
+    versionNs: `moments/${user.id}`,
+    load: async () => {
+      const rows = await db.select(TABLE, qs(filters));
+      const items = await decorate(db, rows, { userId: user.id, guest: !!user.isGuest });
+      return { items, count: items.length, limit, offset };
+    }
+  });
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
 // POST /api/moments

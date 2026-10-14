@@ -1,12 +1,14 @@
 // 分类 CRUD 接口
 // 权限：普通用户仅能读写自己名下分类；管理员可传 ?all=true 查看全部
 
-import { ok, fail, readJson, HttpError } from '../lib/response.js';
+import { ok, json, fail, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { requireString, optionalString, optionalInt, requireUuid, slugify } from '../lib/validate.js';
+import { cachedData, bumpCache } from '../lib/edgeCache.js';
 
 const TABLE = 'categories';
+const CACHE_TTL = 300;   // 5 分钟：分类很少变，且是首屏必需（见 edgeCache.js 的背景说明）
 
 // GET /api/categories
 export async function listCategories(request, env) {
@@ -14,14 +16,22 @@ export async function listCategories(request, env) {
   const url = new URL(request.url);
   const all = url.searchParams.get('all') === 'true' && user.isAdmin;
 
-  const query = qs({
-    // 访客只返回安全字段，不暴露 user_id / created_at / updated_at 等内部字段
-    select: user.isGuest ? 'id,name,slug,description,sort_order' : '*',
-    ...(all ? {} : { user_id: `eq.${user.id}` }),
-    order: 'sort_order.asc,created_at.desc'
+  // 缓存键要带上会改变结果的参数（all），否则两种结果会互相覆盖
+  const { data, cache } = await cachedData(request, env, {
+    key: `categories/${user.id}/${all ? 'all' : 'own'}`,
+    ttl: CACHE_TTL,
+    user,
+    load: async () => {
+      const query = qs({
+        // 访客只返回安全字段，不暴露 user_id / created_at / updated_at 等内部字段
+        select: user.isGuest ? 'id,name,slug,description,sort_order' : '*',
+        ...(all ? {} : { user_id: `eq.${user.id}` }),
+        order: 'sort_order.asc,created_at.desc'
+      });
+      return db.select(TABLE, query);
+    }
   });
-  const rows = await db.select(TABLE, query);
-  return ok(rows, request, env);
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
 // POST /api/categories
@@ -39,6 +49,7 @@ export async function createCategory(request, env) {
     description: optionalString(body.description, 'description') ?? null,
     sort_order: optionalInt(body.sort_order, 'sort_order') ?? 0
   });
+  await bumpCache(`categories/${user.id}/own`);
   return ok(rows[0], request, env, 201);
 }
 
@@ -61,6 +72,7 @@ export async function updateCategory(request, env, id) {
 
   const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   if (!rows.length) throw new HttpError(404, '分类不存在或无权限');
+  await bumpCache(`categories/${user.id}/own`);
   return ok(rows[0], request, env);
 }
 
@@ -70,5 +82,6 @@ export async function deleteCategory(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   if (!rows.length) throw new HttpError(404, '分类不存在或无权限');
+  await bumpCache(`categories/${user.id}/own`);
   return ok({ id }, request, env);
 }

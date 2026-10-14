@@ -18,14 +18,16 @@
 //   PATCH  /api/gallery/:id  改元数据 / 公开状态（requireAdmin）
 //   DELETE /api/gallery/:id  移出展览（requireAdmin，只删条目，绝不删 R2 素材）
 
-import { ok, readJson, HttpError } from '../lib/response.js';
+import { ok, json, readJson, HttpError } from '../lib/response.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import {
   requireUuid, optionalString, optionalInt, optionalBool, optionalDateString
 } from '../lib/validate.js';
+import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 
 const TABLE = 'gallery_items';
+const LIST_TTL = 300;   // 5 分钟：图展列表是首屏必需，且变更不频繁（见 edgeCache.js）
 const ASSETS = 'assets';
 // 只取展示需要的列：绝不带 object_key / sha256，也不带 original_name
 // （原始文件名属内部信息，公开访客不应看到；alt 一律用策展标题）。
@@ -104,9 +106,20 @@ export async function listGalleryItems(request, env) {
   // 访客只看公开条目：必须在查询层过滤，不能先拉全部再前端过滤
   if (user.isGuest) filters.is_public = 'eq.true';
 
-  const items = await db.select(TABLE, qs(filters));
-  const out = await decorate(db, items, { userId: user.id, guest: !!user.isGuest });
-  return ok({ items: out, count: out.length, limit, offset }, request, env);
+  // 缓存键带上 limit/offset（分页不同结果不同），否则会串页
+  const { data, cache } = await cachedData(request, env, {
+    key: `gallery/${user.id}/${limit}/${offset}`,
+    ttl: LIST_TTL,
+    user,
+    // 分页键是变量（limit/offset 组合很多），写操作没法逐个删 —— 用版本号失效
+    versionNs: `gallery/${user.id}`,
+    load: async () => {
+      const items = await db.select(TABLE, qs(filters));
+      const out = await decorate(db, items, { userId: user.id, guest: !!user.isGuest });
+      return { items: out, count: out.length, limit, offset };
+    }
+  });
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
 // POST /api/gallery
@@ -147,6 +160,7 @@ export async function createGalleryItem(request, env) {
     throw err;
   }
 
+  await bumpVersion(`gallery/${user.id}`);
   return ok(shape(row, asset), request, env, 201);
 }
 
@@ -181,6 +195,7 @@ export async function updateGalleryItem(request, env, id) {
   const updated = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   const asset = await findOwnAsset(db, user.id, updated[0].asset_id);
   if (!asset) throw new HttpError(404, '关联素材不存在或无权限');
+  await bumpVersion(`gallery/${user.id}`);
   return ok(shape(updated[0], asset), request, env);
 }
 
@@ -190,5 +205,6 @@ export async function deleteGalleryItem(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   if (!rows.length) throw new HttpError(404, '展览条目不存在或无权限');
+  await bumpVersion(`gallery/${user.id}`);
   return ok({ id, removed: true }, request, env);
 }

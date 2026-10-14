@@ -2,15 +2,17 @@
 // 权限：普通用户仅能读写自己名下标签；管理员可传 ?all=true 查看全部
 // 标签支持自定义颜色（#RRGGBB）
 
-import { ok, readJson, HttpError } from '../lib/response.js';
+import { ok, json, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import {
   requireString, optionalString, requireHexColor, requireUuid, slugify
 } from '../lib/validate.js';
+import { cachedData, bumpCache } from '../lib/edgeCache.js';
 
 const TABLE = 'tags';
 const DEFAULT_COLOR = '#6b7280';
+const CACHE_TTL = 300;   // 5 分钟：标签很少变，且是首屏必需（见 edgeCache.js 说明）
 
 // GET /api/tags
 export async function listTags(request, env) {
@@ -18,13 +20,18 @@ export async function listTags(request, env) {
   const url = new URL(request.url);
   const all = url.searchParams.get('all') === 'true' && user.isAdmin;
 
-  const rows = await db.select(TABLE, qs({
-    // 访客只返回安全字段，不暴露 user_id / created_at / updated_at 等内部字段
-    select: user.isGuest ? 'id,name,slug,color' : '*',
-    ...(all ? {} : { user_id: `eq.${user.id}` }),
-    order: 'name.asc'
-  }));
-  return ok(rows, request, env);
+  const { data, cache } = await cachedData(request, env, {
+    key: `tags/${user.id}/${all ? 'all' : 'own'}`,
+    ttl: CACHE_TTL,
+    user,
+    load: async () => db.select(TABLE, qs({
+      // 访客只返回安全字段，不暴露 user_id / created_at / updated_at 等内部字段
+      select: user.isGuest ? 'id,name,slug,color' : '*',
+      ...(all ? {} : { user_id: `eq.${user.id}` }),
+      order: 'name.asc'
+    }))
+  });
+  return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
 // POST /api/tags
@@ -41,6 +48,7 @@ export async function createTag(request, env) {
     slug: optionalString(body.slug) ? slugify(body.slug) : slugify(name),
     color
   });
+  await bumpCache(`tags/${user.id}/own`);
   return ok(rows[0], request, env, 201);
 }
 
@@ -62,6 +70,7 @@ export async function updateTag(request, env, id) {
 
   const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   if (!rows.length) throw new HttpError(404, '标签不存在或无权限');
+  await bumpCache(`tags/${user.id}/own`);
   return ok(rows[0], request, env);
 }
 
@@ -71,6 +80,7 @@ export async function deleteTag(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   if (!rows.length) throw new HttpError(404, '标签不存在或无权限');
+  await bumpCache(`tags/${user.id}/own`);
   return ok({ id }, request, env);
 }
 
@@ -101,6 +111,7 @@ export async function batchCreateTags(request, env) {
     body: rows,
     prefer: 'return=representation,resolution=merge-duplicates'
   });
+  await bumpCache(`tags/${user.id}/own`);
   return ok(created, request, env, 201);
 }
 
@@ -129,6 +140,7 @@ export async function batchUpdateTags(request, env) {
     const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
     if (rows.length) updated.push(rows[0]);
   }
+  await bumpCache(`tags/${user.id}/own`);
   return ok(updated, request, env);
 }
 
@@ -144,5 +156,6 @@ export async function batchDeleteTags(request, env) {
   ids.forEach((id, idx) => requireUuid(id, `ids[${idx}]`));
 
   const rows = await db.remove(TABLE, qs({ id: `in.(${ids.join(',')})`, user_id: `eq.${user.id}` }));
+  await bumpCache(`tags/${user.id}/own`);
   return ok({ deleted: rows.length, ids: rows.map((r) => r.id) }, request, env);
 }

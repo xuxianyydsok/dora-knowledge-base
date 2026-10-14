@@ -1852,17 +1852,20 @@ async function videoTypeUnit() {
   });
 
   // ---- 博客列表接口（2026-10-14 修「博客页打不开」） ----
-  await test('博客列表 · 访客走边缘缓存、写操作失效缓存、标签一次往返取回', () => {
+  await test('博客列表 · 走边缘缓存、写操作失效、标签一次往返取回', () => {
     const src = readFileSync(join(BACKEND, 'src', 'routes', 'posts.js'), 'utf8');
-    // 1) 缓存只对访客开（登录用户数据与本人相关，缓存会串号）
-    assert(/const cacheable = user\.isGuest/.test(src), '缓存必须限定访客');
-    // 2) 带 status / category_id 的请求不进缓存键，所以必须排除掉，
-    //    否则「筛过的结果」会被当成「全量结果」缓存，串给下一个请求。
-    assert(/cacheable = user\.isGuest && !url\.searchParams\.get\('status'\) && !url\.searchParams\.get\('category_id'\)/.test(src),
-      '带筛选参数的请求不能进缓存（否则会把筛过的结果当全量缓存）');
-    // 3) 写操作要失效缓存，否则新文章 5 分钟不出现
+    // 1) 用统一工具 cachedData（只缓存访客的逻辑在 edgeCache.js 里统一实现）
+    assert(/cachedData\(request, env, \{/.test(src), '应走统一的 cachedData');
+    // 2) 缓存键必须带上所有会改变结果的参数（status / category / with_tags / all）
+    const keyLine = (src.match(/key: `posts\/[^`]*`/) || [''])[0];
+    for (const p of ['user.id', 'all', 'statusParam', 'categoryParam', 'withTags']) {
+      assert(keyLine.includes(p), `缓存键漏了 ${p}（不同参数会串数据）：${keyLine}`);
+    }
+    // 3) 写操作要失效缓存（版本号失效），否则新文章 5 分钟不出现
     const invalidations = (src.match(/await invalidatePostListCache\(\)/g) || []).length;
     assert(invalidations >= 3, `create/update/delete 三处都要失效缓存，实际 ${invalidations} 处`);
+    assert(/invalidatePostListCache\(\)[\s\S]{0,120}bumpVersion\('posts'\)/.test(src),
+      '失效应走 bumpVersion（版本号失效）');
     // 4) 标签用 PostgREST 内嵌查询（一次往返），不是再查一次 post_tags 全表
     assert(/post_tags\(tag_id\)/.test(src), 'with_tags 应走内嵌查询');
     // 只针对 listPosts 的函数体：那里不应再单独查一次 post_tags（那是两次往返）。
@@ -1870,7 +1873,25 @@ async function videoTypeUnit() {
     const listBody = src.slice(src.indexOf('export async function listPosts'), src.indexOf('// 博客列表缓存失效'));
     assert(!/db\.select\('post_tags'/.test(listBody),
       'listPosts 里不应再单独查一次 post_tags（那是两次往返）');
-    return `访客缓存 + ${invalidations} 处失效 + 标签内嵌一次往返`;
+    return `cachedData + 键含 5 个参数 + ${invalidations} 处版本号失效 + 标签内嵌一次往返`;
+  });
+
+  // ---- 高频读接口的边缘缓存（2026-10-14 修「整站接口 50 秒超时」） ----
+  await test('高频读接口都接了边缘缓存（categories/tags/gallery/music/books/moments/timeline/wallpapers/posts）', () => {
+    const targets = ['categories', 'tags', 'gallery', 'music', 'books', 'moments', 'timeline', 'wallpapers', 'posts'];
+    const missing = [];
+    for (const f of targets) {
+      const src = readFileSync(join(BACKEND, 'src', 'routes', `${f}.js`), 'utf8');
+      if (!/cachedData\(request, env, \{/.test(src)) missing.push(f);
+    }
+    assert(missing.length === 0, `这些接口还没接边缘缓存：${missing.join(', ')}`);
+
+    // 缓存工具本身：只缓存访客（默认）、带 TTL、支持版本号失效
+    const util = readFileSync(join(BACKEND, 'src', 'lib', 'edgeCache.js'), 'utf8');
+    assert(/onlyGuest = true/.test(util), '默认只缓存访客（登录用户数据会串号）');
+    assert(/export async function bumpVersion/.test(util), '要有版本号失效能力');
+    assert(/staleOnError/.test(util), '回源失败要能用过期缓存兜底（宁可旧数据也别白屏）');
+    return `${targets.length} 个接口已接入 + 工具含访客限定/版本号/过期兜底`;
   });
 }
 

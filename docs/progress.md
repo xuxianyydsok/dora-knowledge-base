@@ -11,6 +11,63 @@
 
 ---
 
+## 2.41 全站高频读接口接边缘缓存（2026-10-14）
+
+### 背景：不是博客一个接口的问题
+
+排查「博客页一直转圈」时做了对照测量，发现**整站接口都在退化**：
+
+| 路径 | 耗时 |
+| --- | --- |
+| 直连 Supabase（1 条） | **1.5 ~ 2.5 秒** |
+| 经 Worker 的 `/api/categories` | **50 秒超时** |
+| 经 Worker 的 `/api/tags` | **15.9 秒失败** |
+| 经 Worker 的 `/api/music` | **50 秒超时** |
+| 经 Worker 的 `/api/posts` | 28~45 秒（加缓存后命中 7.6 秒） |
+
+**数据库很快（1.5 秒），但 Cloudflare Worker → Supabase 这段网络慢 10~30 倍**，
+还频繁超时。这是环境/基础设施问题，代码改不动网络；能做的是**让 Worker 尽量少回源**。
+
+### 做法：统一的边缘缓存工具
+
+新增 `backend/src/lib/edgeCache.js`，把缓存逻辑收在一处（原先 douban / musicCharts / news
+各写一遍），提供三件事：
+
+| 能力 | 说明 |
+| --- | --- |
+| `cachedData(request, env, {key, ttl, load, user})` | 读接口包一层即可缓存。**默认只缓存访客**（登录用户数据与本人相关，缓存会串号） |
+| `bumpCache(keys)` / `bumpVersion(ns)` | 写操作后失效。分页键是变量没法逐个删，用**版本号**：键里带版本，bump 后旧键自然失效 |
+| 过期兜底 | 回源失败时返回**过期缓存**，宁可给旧数据也不白屏 |
+
+### 已接入的 9 个高频读接口
+
+`categories` / `tags` / `gallery` / `music` / `books` / `moments` / `timeline` /
+`wallpapers` / `posts` —— 全是 5 分钟 TTL，响应带 `X-List-Cache: hit|miss|bypass|stale`
+诊断头，便于线上确认。
+
+**缓存键都带上了所有会改变结果的参数**（如 posts 的 `status`/`category_id`/`with_tags`/`all`，
+gallery 的 `limit`/`offset`），否则不同筛选条件会互相串数据 —— 这一点有单测锁死。
+
+### 写操作失效
+
+各接口的 create / update / delete 都会 `bumpVersion(ns)`（或 `bumpCache`），
+所以新内容不会等满 5 分钟才出现。
+
+### 验证
+
+- 后端单测 **144 项全过**（新增 1 项：锁死 9 个接口都已接入 + 缓存键含全部参数 +
+  工具含访客限定/版本号/过期兜底）；
+- 无 `caches` 环境（Node 直接跑）优雅降级为 `bypass`，不抛错；
+- 线上实测：`/api/posts` 出现 `X-List-Cache: hit`，命中时 **7.6 秒**（未命中 28~45 秒）。
+
+### 遗留（需要用户在 Cloudflare / Supabase 后台看）
+
+**缓存命中仍要 7.6 秒** —— 说明 Worker 到 Supabase 的单次往返本身就慢。
+缓存能避免「50 秒超时」，但不能消除基础网络延迟。若要根治，方向是：
+Cloudflare Hyperdrive（连接池直连）或构建期预生成静态数据。
+
+---
+
 ## 2.40 博客列表接口提速（缓存 + 一次往返 + 前端降级）（2026-10-14）
 
 ### 现象
