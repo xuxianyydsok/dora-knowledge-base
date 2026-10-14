@@ -174,22 +174,33 @@ Notion 侧有 10 个特有字段（`notion_category` / `parent_slug` / `is_blank
 | `GET /api/media?path=notion/Art/zzz-not-exist.png`（对象不存在） | 404 |
 | `GET /api/media?path=posts/x.png`（非公开前缀） | 404 |
 | `GET /api/media`（缺 `path`） | 400 |
-| `GET /api/notion-posts` | 200，**187 条**，**无 `content` 字段**、41 条带 `cover_url`、`parent_slug` 带尾横线 0 条 |
+| `GET /api/notion-posts` | 200，**无 `content` 字段**、`parent_slug` 带尾横线 0 条、有 `cover_path` 的都有 `cover_url` |
 | `GET /api/notion-posts/slug/:slug`（子页） | 无 `password_hash`、有 `content`、`parent` 指向目录页、`siblings` 9 条 |
 | `GET /api/notion-posts/slug/:slug`（目录页） | `children` 10 条（「本页包含」正确） |
+| 站点 `https://dora.xuguochen.de5.net/notion` | 200 `text/html`（SPA 回退生效） |
+| 站点 `/math` → `/math/`、与三科子页 | 308 → 200 `text/html` |
+| 跨域（带 `Origin: https://dora.xuguochen.de5.net`） | `Access-Control-Allow-Origin` 正确、OPTIONS 预检 204 |
+
+**发布态**（用户拍板后）：20 篇 draft 里**有正文的 14 篇一并公开**
+（9 个目录容器页 + 网站聚合-网页书签 15 421 字 / 微积分的发展历史 8 676 字 /
+本博客搭建教程 / 生活日常分享-不定时更新 / 全栈），
+在 Notion 里就没写正文的 6 篇空页（编程学习 / 万物终极 / 重构个人认知-知识-体系 /
+人工智能-侧重理论 / 量子纠缠 / 英语）保留 draft。
+公开后 **201 published / 6 drafts**，**137/137** 子页的父页全部可见。
+分类分布：未分类 150 / 文案集锦 10 / 学海无涯 10 / 生活随笔 8 / 人物传记 6 /
+技术分享 5 / 人生彼岸 5 / 观世书海 4 / AI 3。
 
 ### 下一步 / 待办
 
-- **用户侧**：`git fetch && git checkout feat/math-integration` 拿本轮改动 → review → merge。
-  PR：`https://github.com/xuxianyydsok/dora-knowledge-base/pull/new/feat/math-integration`
-- **前端尚未部署**：本轮只跑了 `npm run build` 做本地校验，线上前端仍是 `7c8c8d2`，
-  所以 `/notion` 这两个路由目前**线上还访问不到**（后端接口已经通了）。
-- **20 篇 draft 的分类是上游给的、需要你拍板**：其中 9 篇其实是 Notion 的**目录容器页**
-  （`notion-数学`、`notion-影视动漫-尚未完善`、`notion-中国科学家传记` 等），名下挂着 60 篇已发布的子页 ——
-  容器不公开 → 那 60 篇的面包屑就没有着落。另有 `notion-微积分的发展历史`（8 676 字）、
-  `notion-网站聚合-网页书签`（15 421 字）这类明显是正文的文章也被标成了 draft。
+- **已合并到 `main` 并部署**（用户选择走 CI）：`7c8c8d2..d883224` 快进推送，
+  5 个 workflow 全绿 —— Deploy Frontend / Deploy Backend / Supabase DB Migrate /
+  Quality Checks / Secret Scan。前端版本与 `d883224` 一致。
+  迁移脚本是幂等的（`create table if not exists` / `drop policy if exists`），
+  所以 `supabase db push` 重跑没有副作用。
+  注意：本地 clone 是**浅克隆（depth 1）**，`origin/main` 只看得到 1 个提交，
+  所以走的是「分支直接快进推到 main」而不是本地 merge。
 - **博客密码锁**（用户已提，未做）：42 篇原文带密码，本轮全部公开；`is_locked` / `password_hash`
-  字段已就位。**本轮做完后要主动提醒用户这件事。**
+  字段已就位。**要主动提醒用户这件事。**
 - **图展区域导入**（用户提及，待定）。
 - **建议重置那个 Supabase PAT**：账号级权限过重（可执行任意 SQL）。
 
