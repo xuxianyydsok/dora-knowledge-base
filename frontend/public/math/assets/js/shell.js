@@ -71,6 +71,8 @@
   }
 
   function theme() {
+    // 嵌入主站时主题由 assets/js/embed.js 决定（主站已无深色），这里不再自管
+    if (global.__LEC_EMBED__) return;
     var btn = document.getElementById('theme');
     if (!btn) return;
     function apply(t) {

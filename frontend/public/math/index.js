@@ -25,16 +25,21 @@ var TREE = {
 document.addEventListener('DOMContentLoaded', function () {
   MindMap.render(document.getElementById('map-all'), TREE, { colGap: 250 });
   LEC.renderMath(document.body);
-  var t = document.getElementById('theme');
-  function apply(v) { document.documentElement.dataset.theme = v; t.textContent = v === 'dark' ? '☀' : '☾'; }
-  var s = null; try { s = localStorage.getItem('lec-theme'); } catch (e) {}
-  apply(s || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-  t.addEventListener('click', function () {
-    var n = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    try { localStorage.setItem('lec-theme', n); } catch (e) {}
-    apply(n);
-  });
-  document.getElementById('toc-btn').addEventListener('click', function () { document.body.classList.toggle('toc-open'); });
+  // 嵌入主站时主题由 assets/js/embed.js 统一决定（主站已无深色），
+  // 这里不再自管；独立打开（file:// 或直接访问）时行为不变。
+  if (!window.__LEC_EMBED__) {
+    var t = document.getElementById('theme');
+    function apply(v) { document.documentElement.dataset.theme = v; t.textContent = v === 'dark' ? '☀' : '☾'; }
+    var s = null; try { s = localStorage.getItem('lec-theme'); } catch (e) {}
+    apply(s || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+    t.addEventListener('click', function () {
+      var n = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem('lec-theme', n); } catch (e) {}
+      apply(n);
+    });
+  }
+  // 原「☰ 目录」开关已移除：目录改为常驻不折叠（见 assets/css/embed.css），
+  // 顶栏左上角那个位置改成「返回」（总览页回主站 /，子讲义页回总览）。
   var links = Array.prototype.slice.call(document.querySelectorAll('.chapter'));
   var toc = document.getElementById('toc');
   toc.innerHTML = '<h4>目录</h4><ol>' + links.map(function (c) {

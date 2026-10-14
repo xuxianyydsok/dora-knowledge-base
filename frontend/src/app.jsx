@@ -24,7 +24,8 @@ import {
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer, AdminMusic,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback
+  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback,
+  MathFrame
 } from './routes/routes.js';
 
 // 真正的 404：未匹配任何路由时显示，而不是静默回落到首页
@@ -94,6 +95,10 @@ function RouterView() {
       <ProtectedRoute guest path="/changelog"><Changelog /></ProtectedRoute>
       {/* 共创（2026-10-12）：公开只读介绍 + 访客可提交的反馈表单 */}
       <ProtectedRoute guest path="/coop"><Coop /></ProtectedRoute>
+      {/* 数学讲义（考研数学一）：iframe 内嵌 public/math/ 下的静态子站，
+          取代原先"整页跳走"的 data-native 跳转，让内容直接出现在导航下方。
+          静态站内三页（微积分/线代/概率）在 iframe 内部跳转，不再离开主站。 */}
+      <ProtectedRoute guest path="/math"><MathFrame /></ProtectedRoute>
       {/* 共创反馈管理：仅站长（不带 guest，未登录会被重定向到登录页） */}
       <ProtectedRoute path="/admin/feedback"><AdminFeedback /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>

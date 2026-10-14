@@ -8,11 +8,16 @@
 <link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
 <link rel="stylesheet" href="../assets/css/lecture.css">
 <style>:root{--brand:#a61e4d;--brand-soft:#fdeaef}</style>
+<!-- 主站适配层：被主站 iframe 内嵌（?embed=1）时收掉冗余 UI；独立打开不生效，见 assets/js/embed.js -->
+<link rel="stylesheet" href="../assets/css/embed.css">
+<!-- 站点图标：与主站 Dora 的 favicon 保持一致。此前缺这一行，标签页只显示默认地球 -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<script src="../assets/js/embed.js"></script>
 </head>
 <body>
 <div class="progress" id="bar"></div>
 <header class="topbar">
-  <button class="btn-ico" id="toc-btn" title="目录">☰</button>
+  <a class="btn-ico" id="back-overview" href="../index.html" title="返回讲义总览" aria-label="返回讲义总览">←</a>
   <div class="crumb">数学一 · <b>概率论与数理统计</b></div>
   <nav>
     <a href="../index.html">总览</a>

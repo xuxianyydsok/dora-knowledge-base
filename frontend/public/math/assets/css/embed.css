@@ -1,0 +1,51 @@
+/* ============================================================
+   embed.css —— 被 Dora 主站 iframe 内嵌时的适配样式（2026-10-14 新增）
+
+   全部规则都挂在 html.is-embed 下，而 .is-embed 由 assets/js/embed.js
+   仅在 URL 带 ?embed=1 时挂上。所以**独立打开（双击 index.html）时
+   本文一行都不命中，外观与从前完全一致**。
+
+   载入顺序：本文件排在 lecture.css 之后，用于覆盖而非替换。
+   ============================================================ */
+
+/* 1) 主题按钮：嵌入态主题由主站决定（且主站已无深色），收掉这个开关，
+      免得出现「主站浅色、讲义深色」的错位。 */
+html.is-embed #theme { display: none; }
+
+/* 2) 返回键：☰ 已改成 <a class="btn-ico">，补回 <button> 与 <a> 的默认差异
+      （a:hover 默认有下划线；a 的默认色是 --brand，.btn-ico 的 --ink-2 已覆盖） */
+html.is-embed .topbar a.btn-ico { text-decoration: none; }
+html.is-embed .topbar a.btn-ico:hover { text-decoration: none; }
+
+/* 3) 目录：嵌入态**不折叠**（用户明确要求）。
+      桌面端 .toc 本来就是常驻侧栏，无需处理；
+      窄屏原本靠 body.toc-open 从左侧抽屉滑出，而 ☰ 已改成返回键、没有开关了，
+      因此改为常驻文档流，并封顶高度，避免 27 章的目录把正文挤到屏幕外。 */
+@media (max-width: 1080px) {
+  html.is-embed .toc {
+    position: static;
+    inset: auto;
+    transform: none;
+    width: auto;
+    max-height: 42vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    box-shadow: none;
+  }
+  html.is-embed .toc .toc-toggle { display: none; }
+}
+
+/* 4) 顶栏收紧：主站顶栏已经在上面，这里只承担「面包屑 + 分册导航 + 返回」，
+      不需要再占一条和主站等高的横条。 */
+html.is-embed .topbar { padding: 7px 20px; gap: 12px; }
+html.is-embed .topbar .crumb { font-size: 13px; }
+html.is-embed .topbar nav a { padding: 5px 11px; font-size: 13px; }
+
+/* 5) 锚点跳转的让位高度跟着顶栏一起收紧（原为 84px，是给独立打开时的高顶栏留的） */
+html.is-embed { scroll-padding-top: 64px; }
+
+@media (max-width: 640px) {
+  /* 极窄屏：分册导航允许换行，不撑破视口 */
+  html.is-embed .topbar { flex-wrap: wrap; }
+  html.is-embed .topbar nav { margin-left: 0; flex-wrap: wrap; }
+}

@@ -6113,3 +6113,29 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .mv-board .spacer { flex: 1 1 auto; }
 .mv-note { font-size: 12px; color: var(--text-muted); }
 @media (max-width: 640px) { .mv-note { display: none; } }
+
+/* ---------------- 数学讲义（/math，iframe 内嵌）----------------
+ * 2026-10-14：/math 是挂在 public/math/ 下的独立静态讲义子站（考研数学一）。
+ * 原先导航项靠 data-native 走整页跳转，点一下就离开主站；用户要求
+ * 「点开就在导航下面，而不是跳走」。现在改成本站 /math 路由 + iframe 内嵌，
+ * 组件见 routes/MathFrame.jsx，静态站侧的适配见 public/math/assets/。
+ *
+ * 这里只做一件事：把 iframe 从 .app-main 的居中留白容器里「放出来」，铺满内容区。
+ * 与 now-playing / lyric-page 同款处理（padding:0 + max-width:none），区别是
+ * 这里把 .app-main 变成纵向 flex，让 iframe 吃掉顶栏以下的全部高度 ——
+ * 滚动交给 iframe 内部，主站自身不再产生第二条滚动条。
+ */
+body:has(.math-frame) .app-main {
+  padding: 0;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+}
+.math-frame {
+  flex: 1 1 auto;
+  display: block;
+  width: 100%;
+  /* 顶栏（--header-height）以下全高；flex 撑不满时兜底 */
+  min-height: calc(100vh - var(--header-height));
+  border: 0;
+}

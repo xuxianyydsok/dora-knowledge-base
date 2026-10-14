@@ -7,11 +7,16 @@
 <meta name="description" content="数学一复习资料总入口：微积分、线性代数、概率论与数理统计的定义、定理与可交互几何直观">
 <link rel="stylesheet" href="assets/vendor/katex/katex.min.css">
 <link rel="stylesheet" href="assets/css/lecture.css">
+<!-- 主站适配层：被主站 iframe 内嵌（?embed=1）时收掉冗余 UI；独立打开不生效，见 assets/js/embed.js -->
+<link rel="stylesheet" href="assets/css/embed.css">
+<!-- 站点图标：与主站 Dora 的 favicon 保持一致。此前缺这一行，标签页只显示默认地球 -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<script src="assets/js/embed.js"></script>
 </head>
 <body>
 <div class="progress" id="bar"></div>
 <header class="topbar">
-  <button class="btn-ico" id="toc-btn" title="目录">☰</button>
+  <button class="btn-ico" id="app-back" type="button" title="返回 Dora 主站" aria-label="返回主站">←</button>
   <div class="crumb">考研数学一 · <b>讲义总览</b></div>
   <nav>
     <a href="index.html" aria-current="page">总览</a>
