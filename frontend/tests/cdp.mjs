@@ -31,10 +31,27 @@ export async function withPage(url, fn, { port = 9333, width = 1440, height = 10
     ws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 
+    // 收集页面异常与 console 报错（供排查「#app 空白」这类挂载前崩溃）
+    const pageErrors = [];
     let id = 0;
     const pending = new Map();
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
+      if (msg.method === 'Runtime.exceptionThrown') {
+        const d = msg.params && msg.params.exceptionDetails;
+        pageErrors.push((d && d.exception && (d.exception.description || d.exception.value)) || (d && d.text) || 'unknown');
+      }
+      if (msg.method === 'Network.responseReceived') {
+        const r = msg.params.response;
+        if (r && r.url && /\/api\//.test(r.url)) pageErrors.push('net ' + r.status + ' ' + r.url.slice(0, 120));
+      }
+      if (msg.method === 'Network.loadingFailed') {
+        const p2 = msg.params;
+        pageErrors.push('net-fail ' + (p2.errorText || '') + ' ' + String(p2.requestId));
+      }
+      if (msg.method === 'Log.entryAdded' && msg.params && msg.params.entry.level === 'error') {
+        pageErrors.push('log: ' + msg.params.entry.text);
+      }
       if (msg.id && pending.has(msg.id)) {
         const { res, rej } = pending.get(msg.id);
         pending.delete(msg.id);
@@ -49,6 +66,7 @@ export async function withPage(url, fn, { port = 9333, width = 1440, height = 10
 
     await send('Page.enable');
     await send('Runtime.enable');
+    await send('Log.enable').catch(() => {});
     // 关掉 HTTP 缓存：本地探针反复重建 dist 后，浏览器若命中旧缓存
     // 会拿到上一次的 CSS/JS，让「改完没效果」的假象反复出现。
     await send('Network.enable');
@@ -64,7 +82,7 @@ export async function withPage(url, fn, { port = 9333, width = 1440, height = 10
       return r.result.value;
     };
 
-    return await fn(evaluate);
+    return await fn(evaluate, pageErrors);
   } finally {
     try { ws?.close(); } catch { /* ignore */ }
     try { chrome.kill('SIGKILL'); } catch { /* ignore */ }

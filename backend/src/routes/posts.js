@@ -103,6 +103,28 @@ export async function listPosts(request, env) {
   const url = new URL(request.url);
   const all = url.searchParams.get('all') === 'true';
 
+  // 边缘缓存（2026-10-14 修复「博客页打不开」）：
+  //   实测直连 Supabase 取 315 篇只要 4~6 秒，但**经过 Worker 出口要 28~45 秒**
+  //   （Worker → Supabase 的网络路径慢），前端 20 秒就超时放弃，
+  //   于是博客页永远停在「正在载入…」。这里把结果缓存 5 分钟，首访仍慢、
+  //   之后秒回，是最快让页面可用的办法。
+  //
+  //   只缓存**访客**（未登录）的默认列表：那是访问量最大、最慢、且所有人一致的一份。
+  //   登录用户的数据与本人相关（还有草稿），不缓存，避免串号。
+  //   写操作（create/update/delete）会按前缀失效本缓存，见 invalidatePostListCache()。
+  const cacheable = user.isGuest && !url.searchParams.get('status') && !url.searchParams.get('category_id');
+  const cache = cacheable && typeof caches !== 'undefined' ? caches.default : null;
+  const cacheKey = cacheable
+    ? new Request(`https://dora-cache.internal/post-list/${url.searchParams.get('with_tags') === 'true' ? 'tags' : 'plain'}`)
+    : null;
+  if (cache && cacheKey) {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      const rows = await hit.json();
+      return ok(rows, request, env);
+    }
+  }
+
   const filters = { ...userFilter(user, all) };
   const status = url.searchParams.get('status');
   // 访客只看「已发布 + 公开」；私密文章即使已发布也不外泄
@@ -112,21 +134,39 @@ export async function listPosts(request, env) {
   if (categoryId) filters.category_id = `eq.${categoryId}`;
 
   const rows = await db.select(TABLE, qs({
-    select: 'id,user_id,title,slug,excerpt,cover_path,status,category_id,is_public,published_at,created_at,updated_at',
+    // with_tags 时用 PostgREST 的**内嵌查询**把标签一起取回来（一次往返），
+    // 原来是「先查 posts、再查 post_tags」两次往返 —— 而 Worker→Supabase
+    // 的单次往返实测要十几秒，少一次往返就是省十几秒（见 listPosts 顶部说明）。
+    select: 'id,user_id,title,slug,excerpt,cover_path,status,category_id,is_public,published_at,created_at,updated_at'
+      + (url.searchParams.get('with_tags') === 'true' ? ',post_tags(tag_id)' : ''),
     ...filters,
     order: 'updated_at.desc'
   }));
-  // 博客首页（cosolar 风格）卡片要显示标签：一次性取出这些文章的 tag_id（2026-10-09）
-  if (url.searchParams.get('with_tags') === 'true' && rows.length) {
-    const links = await db.select('post_tags', qs({ select: 'post_id,tag_id', ...userFilter(user, all) }));
-    const byPost = new Map();
-    for (const l of links) {
-      if (!byPost.has(l.post_id)) byPost.set(l.post_id, []);
-      byPost.get(l.post_id).push(l.tag_id);
+  // 把内嵌回来的 post_tags 摊平成 tag_ids（前端要的就是这个形状）。
+  // 内嵌字段用完即删，避免把 post_tags 这层结构透给前端。
+  if (url.searchParams.get('with_tags') === 'true') {
+    for (const r of rows) {
+      r.tag_ids = Array.isArray(r.post_tags) ? r.post_tags.map((t) => t.tag_id) : [];
+      delete r.post_tags;
     }
-    for (const r of rows) r.tag_ids = byPost.get(r.id) || [];
+  }
+  if (cache && cacheKey) {
+    // 缓存 5 分钟：新发文章最多 5 分钟后出现在博客页（写操作会主动失效，见下）
+    await cache.put(cacheKey, new Response(JSON.stringify(rows), {
+      headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' }
+    }));
   }
   return ok(rows, request, env);
+}
+
+// 博客列表缓存失效：发 / 改 / 删文章后调用，让下一次读拿到新数据。
+// 为什么不用「按 URL 失效」：缓存键是自造的（见 listPosts），这里直接删这两个固定键。
+export async function invalidatePostListCache() {
+  if (typeof caches === 'undefined') return;
+  const cache = caches.default;
+  await Promise.all(['tags', 'plain'].map((k) =>
+    cache.delete(new Request(`https://dora-cache.internal/post-list/${k}`)).catch(() => {})
+  ));
 }
 
 // GET /api/posts/:id
@@ -208,6 +248,7 @@ export async function createPost(request, env) {
 
   const linked = await loadLinkedResources(db, post.id);
   const tags = await loadPostTags(db, post.id);
+  await invalidatePostListCache();   // 新文章要尽快出现在博客列表（见该函数说明）
   return ok({ ...post, tags, linked_resources: linked, heavy_tags: detectHeavyTags(content) }, request, env, 201);
 }
 
@@ -267,6 +308,7 @@ export async function updatePost(request, env, id) {
   const post = rows[0];
   const linked = await loadLinkedResources(db, post.id);
   const tags = await loadPostTags(db, post.id);
+  await invalidatePostListCache();   // 改了文章（含发布/取消公开）要失效列表缓存
   return ok({ ...post, tags, linked_resources: linked, heavy_tags: detectHeavyTags(post.content) }, request, env);
 }
 
@@ -286,5 +328,6 @@ export async function deletePost(request, env, id) {
     user_id: `eq.${user.id}`
   }));
   if (!rows.length) throw new HttpError(404, '文章不存在或无权限');
+  await invalidatePostListCache();   // 删了文章要失效列表缓存
   return ok({ id }, request, env);
 }

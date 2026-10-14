@@ -28,7 +28,16 @@ export function useBlogData(isAuthenticated) {
     if (!force && cache && cache.key === key && Date.now() - cache.at < TTL) { setData(cache.data); setLoading(false); return; }
     setLoading(true); setError('');
     try {
-      const [p, c, t] = await Promise.all([api.listPosts('?with_tags=true'), api.listCategories(), api.listTags()]);
+      // 三个请求**各自降级**（2026-10-14 修「博客页一直转圈」）：
+      //   原来用 Promise.all —— 只要有一个失败（或慢到超时），整页就永远
+      //   停在「正在载入…」，用户看不到任何内容。
+      //   现在文章是必需的（拿不到才算失败），分类/标签是辅助的（挂了就退化成空数组，
+      //   页面照样能读文章，只是侧栏没有分类/标签）。
+      const [p, c, t] = await Promise.all([
+        api.listPosts('?with_tags=true'),                 // 必需
+        api.listCategories().catch(() => []),             // 可选：失败不影响正文
+        api.listTags().catch(() => [])                    // 可选
+      ]);
       const posts = (p || [])
         .filter((x) => isAuthenticated || x.status === 'published')
         .sort((a, b) => new Date(dateOf(b)) - new Date(dateOf(a)));

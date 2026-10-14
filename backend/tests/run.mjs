@@ -1850,6 +1850,28 @@ async function videoTypeUnit() {
       '建 trigger 前必须先 drop if exists（迁移要能安全重跑）');
     return '两张素材表均 cascade，来源一致性有约束，不存文件字节，RLS 与幂等均已锁定';
   });
+
+  // ---- 博客列表接口（2026-10-14 修「博客页打不开」） ----
+  await test('博客列表 · 访客走边缘缓存、写操作失效缓存、标签一次往返取回', () => {
+    const src = readFileSync(join(BACKEND, 'src', 'routes', 'posts.js'), 'utf8');
+    // 1) 缓存只对访客开（登录用户数据与本人相关，缓存会串号）
+    assert(/const cacheable = user\.isGuest/.test(src), '缓存必须限定访客');
+    // 2) 带 status / category_id 的请求不进缓存键，所以必须排除掉，
+    //    否则「筛过的结果」会被当成「全量结果」缓存，串给下一个请求。
+    assert(/cacheable = user\.isGuest && !url\.searchParams\.get\('status'\) && !url\.searchParams\.get\('category_id'\)/.test(src),
+      '带筛选参数的请求不能进缓存（否则会把筛过的结果当全量缓存）');
+    // 3) 写操作要失效缓存，否则新文章 5 分钟不出现
+    const invalidations = (src.match(/await invalidatePostListCache\(\)/g) || []).length;
+    assert(invalidations >= 3, `create/update/delete 三处都要失效缓存，实际 ${invalidations} 处`);
+    // 4) 标签用 PostgREST 内嵌查询（一次往返），不是再查一次 post_tags 全表
+    assert(/post_tags\(tag_id\)/.test(src), 'with_tags 应走内嵌查询');
+    // 只针对 listPosts 的函数体：那里不应再单独查一次 post_tags（那是两次往返）。
+    // 详情页的 loadPostTags 按 post_id 精确查一条，是合理的，不算在内。
+    const listBody = src.slice(src.indexOf('export async function listPosts'), src.indexOf('// 博客列表缓存失效'));
+    assert(!/db\.select\('post_tags'/.test(listBody),
+      'listPosts 里不应再单独查一次 post_tags（那是两次往返）');
+    return `访客缓存 + ${invalidations} 处失效 + 标签内嵌一次往返`;
+  });
 }
 
 // ---------------------------------------------------------------- UNIT · GitHub AI 解读

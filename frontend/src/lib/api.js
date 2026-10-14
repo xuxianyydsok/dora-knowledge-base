@@ -575,7 +575,10 @@ export const api = {
   syncGithub: (page, run) => request('/api/github/sync', { method: 'POST', body: { page, run } }),
 
   // 博客
-  listPosts: (params = '') => request(`/api/posts${params}`),
+  // 博客列表单独放宽超时（2026-10-14）：Worker→Supabase 的往返实测可达 30~45 秒
+  // （后端已加 5 分钟边缘缓存，命中时是毫秒级；这里放宽是为了**首次冷启动**
+  // 不要被默认 20 秒掐断，否则页面会一直停在「正在载入…」）。
+  listPosts: (params = '') => request(`/api/posts${params}`, { timeout: 45000 }),
   getPost: (id) => request(`/api/posts/${id}`),
   getPostBySlug: (slug) => request(`/api/posts/slug/${encodeURIComponent(slug)}`),
   createPost: (body) => request('/api/posts', { method: 'POST', body }),
