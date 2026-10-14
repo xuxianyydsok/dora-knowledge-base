@@ -1,14 +1,12 @@
 # Cloudflare Pages 重写规则（构建后原样发布到站点根）
 #
-# 背景：本站前端是 Preact SPA，Pages 对「既无静态文件、又无扩展名」的路径会
-# 回退到最近一层的 index.html —— 子目录静态站（挂在 public/math/ 下的考研数学
-# 讲义站）若命中这条回退，/math/ 就会被吞成主站首页（title 变回 Dora）。
+# ⚠️ 2026-10-14 修正：讲义子站目录已由 public/math/ 改名为 public/math-site/。
+#   原因：public/math/ 这个**静态目录**会被 Pages 优先匹配，把本站的 /math
+#   **路由**整个吃掉（点导航「数学」时浏览器直接加载讲义页、整页跳走）。
+#   改名后 /math 归还给 SPA 路由独占，讲义改由 /math-site/ 直接访问。
 #
-# 这里对 /math 做**显式重写**：无论带不带尾斜杠，都直接指向子站的 index.html，
-# 优先级高于 Pages 的隐式回退。`200` 表示 rewrite（URL 不变），不是 302 跳转。
+# 所以这里不再需要 /math 的重写规则 —— 加了反而会把 SPA 路由抢回去。
+# 三科子页（/math-site/calculus/ 等）本身带 index.html，Pages 能正确解析，
+# 无需任何额外规则。
 #
-# 说明：三科子页（/math/calculus/ 等）本身带 index.html，Pages 能正确解析，
-# 故无需逐条列出；只固定入口即可。
-
-/math        /math/index.html   200
-/math/       /math/index.html   200
+# 本文件保留（Pages 读到空规则不影响行为），方便日后有别的静态子站时再加。
