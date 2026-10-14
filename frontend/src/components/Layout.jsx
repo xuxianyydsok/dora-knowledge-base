@@ -20,11 +20,21 @@ const PRIMARY = [
   ['/books', '图书'],
   ['/gallery', '图展'], ['/timeline', '时间轴'], ['/moments', '碎念'],
   ['/graph/blog', '图谱'], ['/favorites', '收藏'],
+  // 「数学」2026-10-13 新增：指向 public/math/ 下的**静态讲义子站**
+  // （考研数学一：微积分 / 线性代数 / 概率统计，27 章、可交互图）。
+  // 注意它不是本站的 Preact 路由 —— 是独立的多页静态站，整站挂在 /math/ 下。
+  // 因此这里用普通 <a href> 即可：preact-router 只接管自己的路由，
+  // 点击后由浏览器整页跳转（进入静态站后就不再回到 SPA）。
+  ['/math/', '数学'],
   // 「更新 / 共创」2026-10-13 曾收进「更多」下拉，同日用户改主意：
   // 「还是不要添加那个更多的那个按钮，还是把更新和共创放出来，在那个导航栏上」。
   // 所以恢复成一级导航项（导航栏本来就支持横向滚动，窄屏不会挤坏）。
   ['/changelog', '更新'], ['/coop', '共创']
 ];
+
+// 需要「整页跳转」而不是 SPA 内部路由的入口（见 link() 里的说明）。
+// 目前只有 /math/ —— 它是挂在 public/math/ 下的独立静态讲义子站，不属于 SPA。
+const NATIVE_LINKS = new Set(['/math/']);
 
 // 「图谱」是一级导航（指向 /graph/blog）；两种图谱在页面内用标签切换（博客图谱 / 开源项目图谱）。
 // 旧入口 /graph 是站长个人控制台（AI 解读进度等私有数据），仍可直接访问，但不出现在顶栏。
@@ -89,6 +99,11 @@ export function Layout({ children }) {
   const link = (href, label) => (
     <a
       href={href}
+      // 静态子站（/math/）必须走浏览器整页跳转：preact-router 会全局拦截 <a> 点击
+      // 并把同源路径当作 SPA 路由处理，那样 /math/ 会被吞成 404。
+      // `data-native` 是 preact-router 的逃生阀（见其 handleLink 里对
+      // data-native / native 属性的判断），加上它就会放行原生导航。
+      {...(NATIVE_LINKS.has(href) ? { 'data-native': '' } : {})}
       class={isActive(href) ? 'active' : ''}
       aria-current={isActive(href) ? 'page' : undefined}
     >{label}</a>

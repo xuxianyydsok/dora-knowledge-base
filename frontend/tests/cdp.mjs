@@ -49,6 +49,10 @@ export async function withPage(url, fn, { port = 9333, width = 1440, height = 10
 
     await send('Page.enable');
     await send('Runtime.enable');
+    // 关掉 HTTP 缓存：本地探针反复重建 dist 后，浏览器若命中旧缓存
+    // 会拿到上一次的 CSS/JS，让「改完没效果」的假象反复出现。
+    await send('Network.enable');
+    await send('Network.setCacheDisabled', { cacheDisabled: true });
     await send('Page.navigate', { url });
     await sleep(waitMs);
 
