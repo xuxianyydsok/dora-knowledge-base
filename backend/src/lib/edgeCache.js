@@ -132,7 +132,9 @@ export async function cachedData(request, env, opts) {
         })).catch(() => {}),
         r2Put(env, fullKey, data, ttl)
       ]);
-      r2State = r2res || 'skip';
+      // 写完立刻回读一次：确认「写入成功」不是假象（曾出现 r2:ok 但外部读不到）
+      const back = await r2Get(env, fullKey);
+      r2State = `${r2res || 'skip'}/${back === null ? 'readback-null' : 'readback-ok'}`;
     }
     // 诊断用：把 R2 写入结果带出去（线上排查「为什么二级缓存没生效」）
     return { data, cache: cacheable ? `miss(r2:${r2State})` : 'bypass' };
