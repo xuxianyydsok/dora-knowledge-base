@@ -32,9 +32,10 @@ const PRIMARY = [
 ];
 
 // 需要「整页跳转」而不是 SPA 内部路由的入口（配合 link() 里的 data-native）。
-// 2026-10-14 起**已无成员**：原先唯一的 /math/ 改成了本站路由（见 PRIMARY 里的说明），
-// 这里保留机制本身，日后若再有真正的静态子站可以直接加进来。
-const NATIVE_LINKS = new Set();
+// 需要「整页跳转」而不是 SPA 内部路由的入口。
+// /lab/ 是 public/lab/ 下的静态挑选页（特效图鉴合并页，站长挑组件用），
+// 不属于 SPA，必须让浏览器整页导航。
+const NATIVE_LINKS = new Set(['/lab/']);
 
 // 「图谱」是一级导航（指向 /graph/blog）；两种图谱在页面内用标签切换（博客图谱 / 开源项目图谱）。
 // 旧入口 /graph 是站长个人控制台（AI 解读进度等私有数据），仍可直接访问，但不出现在顶栏。
@@ -82,7 +83,14 @@ function Dropdown({ trigger, triggerClass = 'menu-trigger', children, align = 'r
 
 function MenuLink({ href, icon, children }) {
   return (
-    <a class="menu-item" href={href} role="menuitem">
+    <a
+      class="menu-item"
+      href={href}
+      role="menuitem"
+      // 与顶栏 link() 同一套逃生阀：静态子站（/lab/）要整页跳转，
+      // 否则会被 preact-router 当成 SPA 路由吞掉。
+      {...(NATIVE_LINKS.has(href) ? { 'data-native': '' } : {})}
+    >
       {icon && <Icon name={icon} size={16} />}
       <span>{children}</span>
     </a>
@@ -185,6 +193,10 @@ export function Layout({ children }) {
             {isAdmin && <MenuLink href="/admin/feedback" icon="heart">共创反馈</MenuLink>}
             {/* 源健康中心：仅管理员可见（原先挂在已删除的「更多」下拉里） */}
             {isAdmin && <MenuLink href="/sources" icon="wave">源状态</MenuLink>}
+            {/* 特效图鉴挑选页（2026-10-14）：把十份动效图鉴合并成带编号的一页，
+                站长挑完再决定把哪些嵌进站点。**仅站长可见**，是内部工具页，
+                所以不进一级导航（那里已经 14 项很挤了）。 */}
+            {isAdmin && <MenuLink href="/lab/" icon="sparkles">特效图鉴</MenuLink>}
             <div class="menu-sep" />
             <button type="button" class="menu-item danger" onClick={signOut}>
               <Icon name="logout" size={16} />

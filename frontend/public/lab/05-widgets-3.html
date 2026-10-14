@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>点缀小组件图鉴 III</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+@property --a{syntax:"<angle>";initial-value:0deg;inherits:false}
+:root{--bg:#f6f4ef;--fg:#1b1a17;--mut:#7a766c;--card:#fffdf8;--line:#e3dfd3;--acc:#d9482b;--acc2:#2b6bd9;
+--serif:"Noto Serif SC","Songti SC",serif;--sans:"Noto Sans SC","PingFang SC",sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;--ease:cubic-bezier(.22,1,.36,1);--spring:cubic-bezier(.34,1.56,.64,1);
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--fg:#efece4;--mut:#8f8b80;--card:#1b1b1a;--line:#2c2b28;--acc:#ff6a4a;--acc2:#6fa0ff}}
+:root[data-theme="dark"]{--bg:#121212;--fg:#efece4;--mut:#8f8b80;--card:#1b1b1a;--line:#2c2b28;--acc:#ff6a4a;--acc2:#6fa0ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.6 var(--sans)}
+.wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px}
+h1{font:900 34px var(--serif);margin:0 0 4px}
+.top{display:flex;justify-content:space-between;align-items:end;gap:12px;margin-bottom:28px}
+.top p{margin:0;color:var(--mut);font-size:14px}
+button{font-family:var(--sans);color:inherit}
+.tb{font:14px var(--sans);padding:8px 14px;border-radius:99px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:14px}
+.f{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.f .lb{display:flex;justify-content:space-between;padding:8px 14px;font:11px var(--mono);color:var(--mut);border-bottom:1px solid var(--line);gap:8px}
+.f .lb b{color:var(--acc);font-weight:400}
+.st{min-height:130px;display:flex;align-items:center;justify-content:center;gap:12px;padding:16px;position:relative;overflow:hidden}
+@keyframes sp{to{transform:rotate(360deg)}}
+@keyframes bl{50%{opacity:.2}}
+
+/* 66-71 按钮 */
+.b66{border:0;background:#8b2a14;border-radius:12px;padding:0;cursor:pointer}
+.b66 span{display:block;padding:12px 26px;border-radius:12px;background:var(--acc);color:#fff;font-weight:700;transform:translateY(-6px);transition:transform .15s}
+.b66:active span{transform:translateY(-1px)}
+.b67{padding:13px 28px;border:0;border-radius:99px;color:#fff;font-weight:700;cursor:pointer;background:linear-gradient(90deg,var(--acc),#f0b429,var(--acc2),var(--acc)) 0/300% 100%;transition:background-position .8s var(--ease),transform .2s}
+.b67:hover{background-position:100%;transform:scale(1.05)}
+.b68{height:44px;overflow:hidden;padding:0 24px;border:1.5px solid var(--fg);border-radius:10px;background:none;font-weight:700;cursor:pointer}
+.b68 div{transition:transform .4s var(--ease)}.b68 span{display:block;line-height:41px}.b68 span+span{color:var(--acc)}
+.b68:hover div{transform:translateY(-41px)}
+.b69{padding:14px 28px;border:0;background:linear-gradient(var(--acc),var(--acc)) top left/0 2px no-repeat,linear-gradient(var(--acc),var(--acc)) top right/2px 0 no-repeat,linear-gradient(var(--acc),var(--acc)) bottom right/0 2px no-repeat,linear-gradient(var(--acc),var(--acc)) bottom left/2px 0 no-repeat;box-shadow:inset 0 0 0 1px var(--line);font-weight:700;cursor:pointer;transition:background-size .3s linear}
+.b69:hover{background-size:100% 2px,2px 100%,100% 2px,2px 100%}
+.b70{padding:13px 28px;border:0;border-radius:99px;background:var(--acc);color:#fff;font-weight:700;cursor:pointer;animation:gl 2s infinite}
+@keyframes gl{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 60%,transparent)}70%{box-shadow:0 0 0 16px transparent}}
+.b71{position:relative;min-width:120px;height:46px;border:0;border-radius:99px;background:var(--fg);color:var(--bg);font-weight:700;cursor:pointer;transition:min-width .4s var(--ease),width .4s;overflow:hidden}
+.b71 i{position:absolute;inset:0;display:grid;place-items:center;opacity:0;transform:scale(.4);transition:.3s}
+.b71 i::before{content:"";width:20px;height:20px;border-radius:50%;border:3px solid #fff5;border-top-color:#fff;animation:sp .7s linear infinite}
+.b71.ld{min-width:46px;width:46px;color:transparent}.b71.ld i{opacity:1;transform:none}
+.b71.ok{background:#2fb45a;color:transparent}.b71.ok i{opacity:1;transform:none}.b71.ok i::before{animation:none;border:0;width:12px;height:7px;border-left:3px solid #fff;border-bottom:3px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
+/* 72-73 链接 */
+.l72,.l73{font:700 22px var(--serif);cursor:pointer;text-decoration:none;color:inherit}
+.l72{background:linear-gradient(var(--acc),var(--acc)) 50% 100%/0 3px no-repeat;transition:background-size .4s var(--ease);padding-bottom:3px}.l72:hover{background-size:100% 3px}
+.l73{background:linear-gradient(color-mix(in srgb,var(--acc) 45%,transparent),color-mix(in srgb,var(--acc) 45%,transparent)) 0 85%/0 .5em no-repeat;transition:background-size .5s var(--ease)}.l73:hover{background-size:100% .5em}
+/* 74-77 卡片 */
+.c74{width:150px;border-radius:14px;border:1px solid var(--line);overflow:hidden;transition:transform .4s var(--ease),box-shadow .4s;cursor:pointer}
+.c74 div{height:80px;background:linear-gradient(135deg,var(--acc),var(--acc2));transition:transform .6s var(--ease)}.c74 p{margin:0;padding:10px 12px;font-weight:700;font-size:13px;position:relative;background:var(--card)}
+.c74:hover{transform:translateY(-8px);box-shadow:0 18px 30px -10px #0004}.c74:hover div{transform:scale(1.15)}
+.c75{width:150px;height:100px;border-radius:14px;background:linear-gradient(135deg,var(--fg),#555);color:var(--bg);display:grid;place-items:center;font:900 20px var(--serif);transition:transform .15s ease-out;transform-style:preserve-3d}
+.c76{--a:0deg;width:150px;height:96px;border:2px solid transparent;border-radius:14px;display:grid;place-items:center;font:900 18px var(--serif);background:linear-gradient(var(--card),var(--card)) padding-box,conic-gradient(from var(--a),var(--acc),transparent 30%,var(--acc2) 55%,transparent 80%,var(--acc)) border-box;animation:ro 4s linear infinite}
+@keyframes ro{to{--a:360deg}}
+.c77{position:relative;width:150px;height:96px;border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#6fa0ff,#9b6bff);color:#fff;display:grid;place-items:center;font:900 18px var(--serif)}
+.c77::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,#fff7,transparent);transform:skewX(-20deg);transition:left .8s var(--ease)}
+.c77:hover::after{left:130%}
+/* 78 昼夜 */
+.dn{position:relative;width:78px;height:38px;cursor:pointer}.dn input{display:none}
+.dn s{position:absolute;inset:0;border-radius:99px;background:linear-gradient(#6fc3ff,#b8e6ff);transition:background .6s}
+.dn s::after{content:"";position:absolute;left:4px;top:4px;width:30px;height:30px;border-radius:50%;background:#ffd44d;box-shadow:0 0 14px #ffd44d;transition:transform .6s var(--spring),background .6s,box-shadow .6s}
+.dn input:checked+s{background:linear-gradient(#14163a,#2b2f6b)}
+.dn input:checked+s::after{transform:translateX(40px);background:#e8e8f0;box-shadow:inset -8px -2px 0 #b8b8c8}
+/* 79 分段 */
+.sg{position:relative;display:inline-flex;padding:4px;border-radius:99px;background:var(--line);isolation:isolate}
+.sg input{display:none}.sg label{padding:7px 16px;font-weight:700;font-size:13px;cursor:pointer;color:var(--mut);transition:color .3s;width:62px;text-align:center}
+.sg::before{content:"";position:absolute;z-index:-1;left:4px;top:4px;bottom:4px;width:62px;border-radius:99px;background:var(--fg);transition:transform .5s var(--spring)}
+.sg input:checked+label{color:var(--bg)}
+.sg:has(#sg2:checked)::before{transform:translateX(100%)}.sg:has(#sg3:checked)::before{transform:translateX(200%)}
+/* 80-82 输入 */
+.in80{position:relative;width:190px}.in80 input{width:100%;padding:18px 12px 6px;border:1.5px solid var(--line);border-radius:10px;background:none;font:15px var(--sans);color:var(--fg);outline:0;transition:border-color .3s}
+.in80 label{position:absolute;left:12px;top:13px;color:var(--mut);pointer-events:none;transition:all .3s var(--ease);transform-origin:left}
+.in80 input:focus{border-color:var(--acc)}.in80 input:focus+label,.in80 input:not(:placeholder-shown)+label{top:4px;transform:scale(.72);color:var(--acc)}
+.in81{position:relative;width:190px;border-bottom:1.5px solid var(--line)}.in81 input{width:100%;padding:8px 2px;border:0;background:none;font:15px var(--sans);color:var(--fg);outline:0}
+.in81::after{content:"";position:absolute;left:0;bottom:-1.5px;height:2px;width:100%;background:linear-gradient(90deg,var(--acc),var(--acc2));transform:scaleX(0);transition:transform .5s var(--ease)}.in81:focus-within::after{transform:scaleX(1)}
+.in82{display:flex;gap:8px}.in82 input{width:120px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:none;font:14px var(--sans);color:var(--fg);outline:0}
+.in82 input.err{border-color:#e5384a;animation:sh .45s}.in82 button{padding:0 16px;border:0;border-radius:10px;background:var(--fg);color:var(--bg);font-weight:700;cursor:pointer}
+@keyframes sh{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+/* 83-84 徽章 */
+.bd{position:relative;display:inline-block;padding:5px 14px;border-radius:99px;font:700 12px var(--mono);overflow:hidden}
+.bd.n{background:var(--acc);color:#fff}.bd.n::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,#fff8,transparent);transform:skewX(-20deg);animation:ss 2.6s infinite}
+@keyframes ss{0%{left:-60%}60%,100%{left:140%}}
+.bd.lv{background:#e5384a22;color:#e5384a;padding-left:26px}.bd.lv::before{content:"";position:absolute;left:11px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:#e5384a;animation:bl 1s infinite}
+/* 85-89 加载 */
+.s85{width:44px;height:44px;border-radius:50%;background:conic-gradient(transparent 10%,var(--acc));-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 6px),#000 calc(100% - 5px));mask:radial-gradient(farthest-side,transparent calc(100% - 6px),#000 calc(100% - 5px));animation:sp .9s linear infinite}
+.s86{display:grid;grid-template-columns:repeat(3,14px);gap:4px}.s86 i{height:14px;border-radius:3px;background:var(--acc);animation:s86 1.2s ease-in-out infinite;animation-delay:var(--d)}
+@keyframes s86{0%,70%,100%{transform:scale(1);opacity:1}35%{transform:scale(.3);opacity:.3}}
+.s87 span{display:inline-block;font:700 22px var(--mono);animation:s87 1.2s ease-in-out infinite;animation-delay:calc(var(--i)*.1s)}
+@keyframes s87{0%,60%,100%{transform:none}30%{transform:translateY(-10px);color:var(--acc)}}
+.s88{position:relative;width:80px;height:80px}.s88 i{position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px;border-radius:50%;background:var(--acc);animation:sp var(--d) linear infinite;transform-origin:0 0}
+.s88 i::after{content:"";position:absolute;left:var(--r);width:10px;height:10px;border-radius:50%;background:inherit;margin:-5px}
+.s88 i{background:none}.s88 i::after{background:var(--c)}
+.s89{position:relative;width:52px;height:52px}.s89 i{position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:var(--acc);animation:sp 1s linear infinite}
+.s89 i+i{inset:9px;border-top-color:var(--acc2);animation-direction:reverse;animation-duration:.7s}
+/* 90-93 */
+.d90{width:100%;height:3px;border-radius:3px;background:linear-gradient(90deg,transparent,var(--acc),var(--acc2),transparent) 0/200% 100%;animation:d90 2.4s linear infinite}
+@keyframes d90{to{background-position:-200% 0}}
+.m91{width:26px;height:42px;border:2px solid var(--fg);border-radius:14px;position:relative}.m91::after{content:"";position:absolute;left:50%;top:8px;width:4px;height:8px;margin-left:-2px;border-radius:2px;background:var(--acc);animation:m91 1.6s var(--ease) infinite}
+@keyframes m91{0%{opacity:0;transform:translateY(-4px)}30%{opacity:1}100%{opacity:0;transform:translateY(14px)}}
+.v92{display:flex;flex-direction:column;align-items:center}.v92 i{width:16px;height:16px;border-right:3px solid var(--acc);border-bottom:3px solid var(--acc);transform:rotate(45deg);margin-top:-6px;animation:v92 1.5s infinite;animation-delay:calc(var(--i)*.2s)}
+@keyframes v92{0%{opacity:0;transform:translateY(-8px) rotate(45deg)}50%{opacity:1}100%{opacity:0;transform:translateY(8px) rotate(45deg)}}
+.t93{font:700 18px var(--mono);overflow:hidden;white-space:nowrap;border-right:3px solid var(--acc);width:0;animation:t93 4s steps(12) infinite,tc .7s steps(1) infinite}
+@keyframes t93{0%{width:0}60%,100%{width:12ch}}@keyframes tc{50%{border-color:transparent}}
+/* 94 时钟 */
+.ck94{position:relative;width:96px;height:96px;border-radius:50%;border:3px solid var(--fg)}
+.ck94 i{position:absolute;left:50%;bottom:50%;transform-origin:bottom;border-radius:3px;background:var(--fg)}
+.ck94 i:nth-child(1){width:3px;height:26px;margin-left:-1.5px;animation:sp 60s linear infinite}
+.ck94 i:nth-child(2){width:3px;height:36px;margin-left:-1.5px;background:var(--acc);width:2px;animation:sp 6s linear infinite}
+.ck94::after{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-4.5px;border-radius:50%;background:var(--fg)}
+/* 95 心电 */
+.e95{width:100%;height:70px}.e95 path{fill:none;stroke:var(--acc);stroke-width:2.500;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:e95 2.4s linear infinite}
+@keyframes e95{0%{stroke-dashoffset:1}70%{stroke-dashoffset:0}100%{stroke-dashoffset:-1}}
+/* 96 点浪 */
+.w96{display:flex;gap:5px;align-items:center;height:60px}.w96 i{width:8px;height:8px;border-radius:50%;background:var(--acc2);animation:w96 1.6s ease-in-out infinite;animation-delay:calc(var(--i)*.1s)}
+@keyframes w96{0%,100%{transform:translateY(-18px) scale(.8)}50%{transform:translateY(18px) scale(1.2);background:var(--acc)}}
+/* 97 雷达 */
+.r97{position:relative;width:100px;height:100px;border-radius:50%;border:2px solid var(--line);background:radial-gradient(transparent 30%,var(--line) 31%,transparent 32%,transparent 60%,var(--line) 61%,transparent 62%)}
+.r97::before{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,transparent 70%,color-mix(in srgb,var(--acc) 55%,transparent));animation:sp 2.4s linear infinite}
+.r97 i{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--acc);animation:bl 2.4s infinite}
+/* 98 闪星 */
+.sp98{position:relative;padding:12px 30px;border-radius:12px;background:var(--fg);color:var(--bg);font-weight:700;cursor:pointer}
+.sp98 i{position:absolute;font-style:normal;color:#f0b429;font-size:16px;opacity:0;transform:scale(0) rotate(0);transition:all .5s var(--spring)}
+.sp98 i:nth-child(1){left:-8px;top:-8px}.sp98 i:nth-child(2){right:-6px;top:-12px;font-size:20px}.sp98 i:nth-child(3){right:10px;bottom:-12px}
+.sp98:hover i{opacity:1;transform:scale(1) rotate(180deg)}.sp98:hover i:nth-child(2){transition-delay:.08s}.sp98:hover i:nth-child(3){transition-delay:.16s}
+/* 99 彩带 */
+.cf99{padding:13px 26px;border:0;border-radius:99px;background:var(--acc2);color:#fff;font-weight:700;cursor:pointer;position:relative}
+.cf i{position:fixed;width:8px;height:12px;pointer-events:none;z-index:99;animation:cf 1.2s cubic-bezier(.1,.7,.3,1) forwards}
+@keyframes cf{to{transform:translate(var(--x),var(--y)) rotate(var(--r));opacity:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top"><div><h1>点缀小组件图鉴 III</h1><p>66–99，共 34 款。</p></div><button class="tb" id="th">切换主题</button></div>
+<div class="g">
+
+<div class="f"><div class="lb"><b>66</b><span>3D 按下</span></div><div class="st"><button class="b66"><span>按下我</span></button></div></div>
+<div class="f"><div class="lb"><b>67</b><span>渐变位移</span></div><div class="st"><button class="b67">悬停</button></div></div>
+<div class="f"><div class="lb"><b>68</b><span>文字上翻</span></div><div class="st"><button class="b68"><div><span>立即订阅</span><span>立即订阅 →</span></div></button></div></div>
+<div class="f"><div class="lb"><b>69</b><span>边框描绘</span></div><div class="st"><button class="b69">悬停描边</button></div></div>
+<div class="f"><div class="lb"><b>70</b><span>呼吸光晕</span></div><div class="st"><button class="b70">现在体验</button></div></div>
+<div class="f"><div class="lb"><b>71</b><span>点击 → 加载 → 成功</span></div><div class="st"><button class="b71" id="b71">提交<i></i></button></div></div>
+<div class="f"><div class="lb"><b>72</b><span>中心展开下划线</span></div><div class="st"><a class="l72">探索更多</a></div></div>
+<div class="f"><div class="lb"><b>73</b><span>荧光笔划过</span></div><div class="st"><a class="l73">重点文字</a></div></div>
+<div class="f"><div class="lb"><b>74</b><span>抬升卡片</span></div><div class="st"><div class="c74"><div></div><p>新专辑</p></div></div></div>
+<div class="f"><div class="lb"><b>75</b><span>3D 倾斜卡片</span></div><div class="st"><div class="c75" data-tilt>TILT</div></div></div>
+<div class="f"><div class="lb"><b>76</b><span>旋转渐变边框</span></div><div class="st"><div class="c76">ORBIT</div></div></div>
+<div class="f"><div class="lb"><b>77</b><span>光泽扫过</span></div><div class="st"><div class="c77">GLASS</div></div></div>
+<div class="f"><div class="lb"><b>78</b><span>日夜切换</span></div><div class="st"><label class="dn"><input type="checkbox"><s></s></label></div></div>
+<div class="f"><div class="lb"><b>79</b><span>滑动分段选择</span></div><div class="st"><div class="sg"><input type="radio" name="sg" id="sg1" checked><label for="sg1">日</label><input type="radio" name="sg" id="sg2"><label for="sg2">周</label><input type="radio" name="sg" id="sg3"><label for="sg3">月</label></div></div></div>
+<div class="f"><div class="lb"><b>80</b><span>浮动标签</span></div><div class="st"><div class="in80"><input id="i80" placeholder=" "><label for="i80">邮箱</label></div></div></div>
+<div class="f"><div class="lb"><b>81</b><span>底线展开</span></div><div class="st"><div class="in81"><input placeholder="搜索…"></div></div></div>
+<div class="f"><div class="lb"><b>82</b><span>错误抖动</span></div><div class="st"><div class="in82"><input id="i82" placeholder="必填"><button id="b82">提交</button></div></div></div>
+<div class="f"><div class="lb"><b>83</b><span>NEW 扫光徽章</span></div><div class="st"><span class="bd n">NEW</span></div></div>
+<div class="f"><div class="lb"><b>84</b><span>LIVE 闪烁徽章</span></div><div class="st"><span class="bd lv">LIVE</span></div></div>
+<div class="f"><div class="lb"><b>85</b><span>渐变环</span></div><div class="st"><div class="s85"></div></div></div>
+<div class="f"><div class="lb"><b>86</b><span>方块波</span></div><div class="st"><div class="s86"><i style="--d:0s"></i><i style="--d:.1s"></i><i style="--d:.2s"></i><i style="--d:.1s"></i><i style="--d:.2s"></i><i style="--d:.3s"></i><i style="--d:.2s"></i><i style="--d:.3s"></i><i style="--d:.4s"></i></div></div></div>
+<div class="f"><div class="lb"><b>87</b><span>Loading 跳字</span></div><div class="st"><div class="s87"><span style="--i:0">L</span><span style="--i:1">o</span><span style="--i:2">a</span><span style="--i:3">d</span><span style="--i:4">i</span><span style="--i:5">n</span><span style="--i:6">g</span></div></div></div>
+<div class="f"><div class="lb"><b>88</b><span>行星轨道</span></div><div class="st"><div class="s88"><i style="--d:2s;--r:14px;--c:var(--acc)"></i><i style="--d:3.2s;--r:26px;--c:var(--acc2)"></i><i style="--d:4.6s;--r:38px;--c:#f0b429"></i></div></div></div>
+<div class="f"><div class="lb"><b>89</b><span>双环反转</span></div><div class="st"><div class="s89"><i></i><i></i></div></div></div>
+<div class="f"><div class="lb"><b>90</b><span>流光分隔线</span></div><div class="st"><div class="d90"></div></div></div>
+<div class="f"><div class="lb"><b>91</b><span>滚动提示</span></div><div class="st"><div class="m91"></div></div></div>
+<div class="f"><div class="lb"><b>92</b><span>向下箭头流动</span></div><div class="st"><div class="v92"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i></div></div></div>
+<div class="f"><div class="lb"><b>93</b><span>打字 + 光标</span></div><div class="st"><div class="t93">Now Playing…</div></div></div>
+<div class="f"><div class="lb"><b>94</b><span>模拟时钟</span></div><div class="st"><div class="ck94"><i></i><i></i></div></div></div>
+<div class="f"><div class="lb"><b>95</b><span>心电图</span></div><div class="st"><svg class="e95" viewBox="0 0 200 70"><path pathLength="1" d="M0 36H50L58 36L66 12L76 60L86 28L92 36H120L128 36L136 20L144 50L150 36H200"/></svg></div></div>
+<div class="f"><div class="lb"><b>96</b><span>点阵波浪</span></div><div class="st"><div class="w96"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i><i style="--i:5"></i><i style="--i:6"></i><i style="--i:7"></i><i style="--i:8"></i><i style="--i:9"></i></div></div></div>
+<div class="f"><div class="lb"><b>97</b><span>雷达扫描</span></div><div class="st"><div class="r97"><i style="left:30px;top:24px"></i><i style="left:64px;top:58px;animation-delay:-.8s"></i><i style="left:22px;top:66px;animation-delay:-1.6s"></i></div></div></div>
+<div class="f"><div class="lb"><b>98</b><span>闪星（悬停）</span></div><div class="st"><div class="sp98">魔法按钮<i>✦</i><i>✦</i><i>✦</i></div></div></div>
+<div class="f"><div class="lb"><b>99</b><span>彩带爆裂（点击）</span></div><div class="st"><button class="cf99" id="cf">庆祝一下</button></div></div>
+
+</div></div>
+<script src="05-widgets-3.js"></script>
+</body>
+</html>

@@ -6,6 +6,9 @@ import { join, extname, normalize } from 'node:path';
 
 const ROOT = process.argv[2] || 'dist';
 const PORT = Number(process.argv[3] || 5173);
+// 可选：给所有响应加 CSP（用线上 `_headers` 里那条），用于验证「子站/图鉴在
+// 真实 CSP 下还能不能跑」。默认不加，避免影响其它探针。
+const CSP = process.env.PROBE_CSP || '';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -21,7 +24,9 @@ createServer(async (req, res) => {
   const file = join(ROOT, rel);
   try {
     const buf = await readFile(file);
-    res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream' });
+    const h = { 'Content-Type': MIME[extname(file)] || 'application/octet-stream' };
+    if (CSP) h['Content-Security-Policy'] = CSP;
+    res.writeHead(200, h);
     res.end(buf);
   } catch {
     // 目录请求（如 /math/）→ 取目录下的 index.html。
@@ -31,13 +36,17 @@ createServer(async (req, res) => {
     try {
       const idx = join(file, 'index.html');
       const buf = await readFile(idx);
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      const h2 = { 'Content-Type': 'text/html; charset=utf-8' };
+      if (CSP) h2['Content-Security-Policy'] = CSP;
+      res.writeHead(200, h2);
       res.end(buf);
       return;
     } catch { /* 不是目录，继续走 SPA 回退 */ }
     try {
       const buf = await readFile(join(ROOT, 'index.html'));
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      const h3 = { 'Content-Type': 'text/html; charset=utf-8' };
+      if (CSP) h3['Content-Security-Policy'] = CSP;
+      res.writeHead(200, h3);
       res.end(buf);
     } catch {
       res.writeHead(404); res.end('not found');

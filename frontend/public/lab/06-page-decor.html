@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>页面级点缀组件图鉴</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+:root{--bg:#f6f4ef;--fg:#1b1a17;--mut:#7a766c;--card:#fffdf8;--line:#e3dfd3;--acc:#d9482b;--acc2:#2b6bd9;
+--h0:#ebe8f3;--h1:#d3d6ff;--h2:#a9aefc;--h3:#7c6df0;--h4:#5230c9;
+--serif:"Noto Serif SC","Songti SC",serif;--sans:"Noto Sans SC","PingFang SC",sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;--ease:cubic-bezier(.22,1,.36,1);
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--fg:#efece4;--mut:#8f8b80;--card:#1b1b1a;--line:#2c2b28;--acc:#ff6a4a;--acc2:#6fa0ff;--h0:#25252e;--h1:#33376b;--h2:#4a52b8;--h3:#7a68f2;--h4:#b49cff}}
+:root[data-theme="dark"]{--bg:#121212;--fg:#efece4;--mut:#8f8b80;--card:#1b1b1a;--line:#2c2b28;--acc:#ff6a4a;--acc2:#6fa0ff;--h0:#25252e;--h1:#33376b;--h2:#4a52b8;--h3:#7a68f2;--h4:#b49cff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.6 var(--sans)}
+.wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px}
+h1{font:900 34px var(--serif);margin:0 0 4px}
+.top{display:flex;justify-content:space-between;align-items:end;gap:12px;margin-bottom:28px}
+.top p{margin:0;color:var(--mut);font-size:14px}
+.tb{font:14px var(--sans);padding:8px 14px;border-radius:99px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:16px}
+.f{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.f.w{grid-column:1/-1}
+.f .lb{display:flex;justify-content:space-between;padding:10px 16px;font:12px var(--mono);color:var(--mut);border-bottom:1px solid var(--line)}
+.f .lb b{color:var(--acc);font-weight:400}
+.st{min-height:280px;display:flex;align-items:center;justify-content:center;padding:20px;position:relative;overflow:hidden}
+.dk{background:#0d0e14;color:#fff}
+canvas{display:block;max-width:100%}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* 100 彩球 */
+.orbw{position:relative;width:200px;height:200px}
+.orbw::before{content:"";position:absolute;inset:14px;border-radius:50%;background:conic-gradient(#ff6a4a,#f0b429,#2fb45a,#6fa0ff,#9b6bff,#ff6a4a);filter:blur(34px);opacity:.7;animation:sp 8s linear infinite}
+.orb{position:absolute;inset:0;border-radius:50%;overflow:hidden;box-shadow:inset -14px -18px 36px #0006,inset 10px 10px 26px #fff6}
+.orb i{position:absolute;inset:-40%;background:conic-gradient(from 0deg,#ff6a4a,#f0b429,#2fb45a,#33d6e8,#6fa0ff,#9b6bff,#ff4fa3,#ff6a4a);filter:blur(22px);animation:sp 7s linear infinite}
+.orb i+i{inset:10%;background:conic-gradient(from 90deg,#ffffff00,#fff9,#ffffff00 40%,#ffffff00 60%,#fff6,#ffffff00);filter:blur(14px);animation-duration:11s;animation-direction:reverse}
+.orb::after{content:"";position:absolute;left:18%;top:12%;width:34%;height:22%;border-radius:50%;background:radial-gradient(#fffc,transparent 70%);transform:rotate(-30deg)}
+.orbw{animation:fl 5s ease-in-out infinite}
+@keyframes fl{50%{transform:translateY(-10px)}}
+/* 102 热力图 */
+.hm{width:100%;overflow-x:auto;padding-bottom:6px}
+.hmi{position:relative;min-width:max-content;padding:20px 0 0 30px;margin:0 auto;width:max-content}
+.hg{display:grid;grid-template-rows:repeat(7,13px);grid-auto-flow:column;gap:3px}
+.hg i{width:13px;height:13px;border-radius:3px;background:var(--h0);animation:cp .5s var(--ease) both;animation-delay:var(--d);transition:transform .15s,outline-color .15s;outline:2px solid transparent}
+.hg i[data-l="1"]{background:var(--h1)}.hg i[data-l="2"]{background:var(--h2)}.hg i[data-l="3"]{background:var(--h3)}.hg i[data-l="4"]{background:var(--h4)}
+.hg i:hover{transform:scale(1.5);outline-color:var(--fg);z-index:2;position:relative}
+.hg i.fu{visibility:hidden}
+@keyframes cp{from{opacity:0;transform:scale(.1)}}
+.ml{position:absolute;top:0;left:30px;height:16px;font:11px var(--mono);color:var(--mut)}.ml span{position:absolute;white-space:nowrap}
+.wl{position:absolute;left:0;top:20px;font:10px var(--mono);color:var(--mut)}.wl span{position:absolute;left:0}
+.hf{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 20px 18px;color:var(--mut);font-size:13px}
+.lg{display:flex;align-items:center;gap:4px}.lg i{width:13px;height:13px;border-radius:3px;display:block}
+#tip{position:fixed;z-index:50;padding:6px 10px;border-radius:8px;background:var(--fg);color:var(--bg);font-size:12px;pointer-events:none;opacity:0;transform:translate(-50%,-8px) scale(.9);transition:opacity .15s,transform .2s var(--ease);white-space:nowrap}
+#tip.on{opacity:1;transform:translate(-50%,-14px)}
+/* 103 轨道 */
+.sys{position:relative;width:260px;height:260px}
+.sys .c{position:absolute;inset:100px;border-radius:50%;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font:900 15px var(--serif);color:#fff;box-shadow:0 0 30px color-mix(in srgb,var(--acc) 50%,transparent)}
+.sys .r{position:absolute;left:50%;top:50%;border:1px dashed var(--line);border-radius:50%;animation:sp var(--d) linear infinite}
+.sys .r b{position:absolute;left:50%;top:-16px;margin-left:-16px;width:32px;height:32px;border-radius:50%;background:var(--card);border:2px solid var(--c);display:grid;place-items:center;font:700 13px var(--serif);animation:sp var(--d) linear infinite reverse}
+/* 106 波浪 */
+.wv{position:absolute;left:0;bottom:0;width:100%;height:150px;overflow:hidden}
+.wv svg{position:absolute;bottom:0;left:0;width:200%;height:100%}
+.wv svg:nth-child(1){animation:wm 14s linear infinite;opacity:.35}
+.wv svg:nth-child(2){animation:wm 9s linear infinite;opacity:.55}
+.wv svg:nth-child(3){animation:wm 6s linear infinite}
+@keyframes wm{to{transform:translateX(-50%)}}
+/* 107 活动环 */
+.ar{position:relative;width:200px;height:200px}.ar svg{transform:rotate(-90deg)}
+.ar circle{fill:none;stroke-width:16;stroke-linecap:round}
+.ar .t{opacity:.15}.ar .v{stroke-dasharray:var(--c);stroke-dashoffset:var(--c);transition:stroke-dashoffset 1.6s var(--ease)}
+.ar .lg2{position:absolute;inset:0;display:grid;place-items:center;text-align:center;font:700 13px var(--mono);color:var(--mut)}
+.ar .lg2 b{display:block;font:900 30px var(--serif);color:var(--fg)}
+/* 108 折线 */
+.sl{width:100%;max-width:340px}.sl svg{width:100%;overflow:visible}
+.sl .ln{fill:none;stroke:var(--acc2);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:dl 5s var(--ease) infinite}
+.sl .ar2{fill:url(#sg);opacity:0;animation:fa 5s var(--ease) infinite}
+.sl .dt{fill:var(--acc2);animation:dd 5s infinite}
+.sl .dt2{fill:none;stroke:var(--acc2);animation:pl 5s infinite;transform-box:fill-box;transform-origin:center}
+@keyframes dl{0%{stroke-dashoffset:1}45%,85%{stroke-dashoffset:0}100%{stroke-dashoffset:0;opacity:0}}
+@keyframes fa{0%,30%{opacity:0}55%,85%{opacity:1}100%{opacity:0}}
+@keyframes dd{0%,40%{opacity:0}50%,85%{opacity:1}100%{opacity:0}}
+@keyframes pl{0%,45%{opacity:0;transform:scale(1)}55%{opacity:.8}85%{opacity:0;transform:scale(3.5)}100%{opacity:0}}
+/* 109 柱状 */
+.br{display:flex;align-items:flex-end;gap:7px;height:190px;width:100%;max-width:340px;border-bottom:1px solid var(--line)}
+.br i{flex:1;border-radius:6px 6px 0 0;background:linear-gradient(var(--acc2),color-mix(in srgb,var(--acc2) 40%,transparent));height:var(--h);transition:height 1s var(--ease);transition-delay:calc(var(--i)*60ms);position:relative;cursor:pointer}
+.br i:hover{background:linear-gradient(var(--acc),var(--acc2))}
+.br i::after{content:attr(data-v);position:absolute;top:-22px;left:50%;transform:translateX(-50%);font:700 11px var(--mono);opacity:0;transition:opacity .2s}.br i:hover::after{opacity:1}
+/* 110 立方体 */
+.cb{perspective:700px}.cb div{position:relative;width:130px;height:130px;transform-style:preserve-3d;animation:cu 14s linear infinite}
+.cb:hover div{animation-play-state:paused}
+.cb span{position:absolute;inset:0;display:grid;place-items:center;font:900 24px var(--serif);border:1.5px solid #fff6;background:linear-gradient(135deg,#ff6a4a99,#6fa0ff99);backdrop-filter:blur(2px);color:#fff}
+.cb span:nth-child(1){transform:translateZ(65px)}.cb span:nth-child(2){transform:rotateY(180deg) translateZ(65px)}
+.cb span:nth-child(3){transform:rotateY(90deg) translateZ(65px)}.cb span:nth-child(4){transform:rotateY(-90deg) translateZ(65px)}
+.cb span:nth-child(5){transform:rotateX(90deg) translateZ(65px)}.cb span:nth-child(6){transform:rotateX(-90deg) translateZ(65px)}
+@keyframes cu{to{transform:rotateX(360deg) rotateY(360deg)}}
+/* 113 封面墙 */
+.cw{position:absolute;inset:-30%;display:flex;gap:14px;justify-content:center;transform:rotate(-14deg)}
+.cw div{display:flex;flex-direction:column;gap:14px;width:84px;animation:cwu 26s linear infinite}
+.cw div:nth-child(even){animation-direction:reverse;margin-top:-60px}.cw div:nth-child(3n){animation-duration:34s}
+.cw i{display:block;width:84px;height:84px;border-radius:10px;flex:none;box-shadow:0 6px 14px #0004}
+@keyframes cwu{to{transform:translateY(-50%)}}
+.cwm{position:absolute;inset:0;background:radial-gradient(circle,transparent 20%,var(--card) 80%)}
+.ov{position:relative;font:900 28px var(--serif);text-align:center;text-shadow:0 2px 14px var(--card)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top"><div><h1>页面级点缀组件图鉴</h1><p>编号 100 起，都是能占一块版面的大装饰。选好告诉我编号。</p></div><button class="tb" id="th">切换主题</button></div>
+<div class="g">
+
+<div class="f w"><div class="lb"><b>102</b><span>紫蓝热力图（博客发文日历，悬停看详情）</span></div>
+<div class="st" style="display:block;padding:20px 0 0;min-height:0"><div class="hm"><div class="hmi" id="hmi"><div class="ml" id="ml"></div><div class="wl"><span style="top:13px">一</span><span style="top:42px">三</span><span style="top:71px">五</span></div><div class="hg" id="hg"></div></div></div>
+<div class="hf"><span id="hs"></span><span class="lg">少<i style="background:var(--h0)"></i><i style="background:var(--h1)"></i><i style="background:var(--h2)"></i><i style="background:var(--h3)"></i><i style="background:var(--h4)"></i>多 <button class="tb" id="rp" style="margin-left:10px;padding:4px 12px">重播</button></span></div></div></div>
+
+<div class="f"><div class="lb"><b>100</b><span>多彩流光旋转球</span></div><div class="st"><div class="orbw"><div class="orb"><i></i><i></i></div></div></div></div>
+<div class="f"><div class="lb"><b>101</b><span>彩色点阵 3D 地球</span></div><div class="st dk"><canvas id="gl" width="300" height="300"></canvas></div></div>
+<div class="f"><div class="lb"><b>103</b><span>轨道星系（标签自转保持正立）</span></div><div class="st"><div class="sys"><div class="c">博客</div>
+<div class="r" style="--d:14s;width:140px;height:140px;margin:-70px 0 0 -70px"><b style="--c:var(--acc)">音</b></div>
+<div class="r" style="--d:22s;width:200px;height:200px;margin:-100px 0 0 -100px"><b style="--c:var(--acc2)">影</b></div>
+<div class="r" style="--d:32s;width:260px;height:260px;margin:-130px 0 0 -130px"><b style="--c:#f0b429">读</b></div></div></div></div>
+
+<div class="f"><div class="lb"><b>104</b><span>粒子连线（鼠标靠近会聚拢）</span></div><div class="st dk" id="pw" style="padding:0"><canvas id="pc"></canvas><div class="ov" style="position:absolute;color:#fff;text-shadow:none;pointer-events:none">Connect</div></div></div>
+<div class="f"><div class="lb"><b>105</b><span>环形音频频谱</span></div><div class="st dk"><canvas id="sc" width="300" height="300"></canvas></div></div>
+<div class="f"><div class="lb"><b>106</b><span>三层流动波浪</span></div><div class="st" style="align-items:flex-start"><div class="ov" style="margin-top:50px;font-size:26px;text-shadow:none">平静的一天</div>
+<div class="wv"><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path fill="#6fa0ff" d="M0,50 C100,10 100,90 200,50 S300,10 400,50 S500,90 600,50 S700,10 800,50 V120 H0Z"/></svg><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path fill="#9b6bff" d="M0,60 C100,95 100,25 200,60 S300,95 400,60 S500,25 600,60 S700,95 800,60 V120 H0Z"/></svg><svg viewBox="0 0 800 120" preserveAspectRatio="none"><path fill="#5230c9" d="M0,76 C100,50 100,100 200,76 S300,50 400,76 S500,100 600,76 S700,50 800,76 V120 H0Z"/></svg></div></div></div>
+
+<div class="f"><div class="lb"><b>107</b><span>三环活动统计</span></div><div class="st"><div class="ar" id="ar"><svg width="200" height="200" viewBox="0 0 200 200"><circle class="t" cx="100" cy="100" r="86" stroke="#ff6a4a"/><circle class="v" id="r1" cx="100" cy="100" r="86" stroke="#ff6a4a" style="--c:540"/><circle class="t" cx="100" cy="100" r="64" stroke="#2fb45a"/><circle class="v" id="r2" cx="100" cy="100" r="64" stroke="#2fb45a" style="--c:402"/><circle class="t" cx="100" cy="100" r="42" stroke="#6fa0ff"/><circle class="v" id="r3" cx="100" cy="100" r="42" stroke="#6fa0ff" style="--c:264"/></svg><div class="lg2"><div><b id="rn">0%</b>本月目标</div></div></div></div></div>
+<div class="f"><div class="lb"><b>108</b><span>折线面积图绘制（循环）</span></div><div class="st"><div class="sl"><svg viewBox="0 0 340 170"><defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b6bd9" stop-opacity=".45"/><stop offset="1" stop-color="#2b6bd9" stop-opacity="0"/></linearGradient></defs><path class="ar2" d="M0,130 C40,120 50,60 90,80 S150,140 190,90 S260,20 340,40 V170 H0Z"/><path class="ln" pathLength="1" d="M0,130 C40,120 50,60 90,80 S150,140 190,90 S260,20 340,40"/><circle class="dt2" cx="340" cy="40" r="6"/><circle class="dt" cx="340" cy="40" r="5"/></svg></div></div></div>
+<div class="f"><div class="lb"><b>109</b><span>柱状图生长（点击重排）</span></div><div class="st"><div class="br" id="br"></div></div></div>
+
+<div class="f"><div class="lb"><b>110</b><span>3D 玻璃立方体（悬停暂停）</span></div><div class="st dk"><div class="cb"><div><span>音乐</span><span>影视</span><span>订阅</span><span>博客</span><span>相册</span><span>关于</span></div></div></div></div>
+<div class="f"><div class="lb"><b>113</b><span>封面墙（上下反向无限流动）</span></div><div class="st" style="min-height:300px;padding:0"><div class="cw" id="cw"></div><div class="cwm"></div><div class="ov">我的媒体库</div></div></div>
+
+</div></div>
+<div id="tip"></div>
+<script src="06-page-decor.js"></script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>炫彩特效图鉴</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+:root{--bg:#f6f4ef;--fg:#1b1a17;--mut:#7a766c;--card:#fffdf8;--line:#e3dfd3;--acc:#d9482b;--ink:#2b2350;
+--serif:"Noto Serif SC","Songti SC",serif;--sans:"Noto Sans SC","PingFang SC",sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--fg:#efece4;--mut:#8f8b80;--card:#1b1b1a;--line:#2c2b28;--acc:#ff6a4a}}
+:root[data-theme="dark"]{--bg:#121212;--fg:#efece4;--mut:#8f8b80;--card:#1b1b1a;--line:#2c2b28;--acc:#ff6a4a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.6 var(--sans)}
+.wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px}
+h1{font:900 34px var(--serif);margin:0 0 4px}
+.top{display:flex;justify-content:space-between;align-items:end;gap:12px;margin-bottom:28px}
+.top p{margin:0;color:var(--mut);font-size:14px}
+.tb{font:14px var(--sans);padding:8px 14px;border-radius:99px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:16px}
+.f{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.f .lb{display:flex;justify-content:space-between;gap:8px;padding:10px 16px;font:12px var(--mono);color:var(--mut);border-bottom:1px solid var(--line)}
+.f .lb b{color:var(--acc);font-weight:400}
+.st{min-height:300px;display:flex;align-items:center;justify-content:center;padding:20px;position:relative;overflow:hidden;color:var(--ink)}
+.st>canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.p1{background:linear-gradient(135deg,#ffe3f1,#e1ecff)}.p2{background:linear-gradient(135deg,#fff3c4,#ffd6e8)}
+.p3{background:linear-gradient(135deg,#d6f5ff,#e8dcff)}.p4{background:linear-gradient(135deg,#d9ffe9,#fff4c9)}
+.vv{background:linear-gradient(135deg,#6a4cff,#e04bd0 60%,#ff9a5c);color:#fff}
+.vb{background:linear-gradient(135deg,#2bd1ff,#6a5cff 60%,#c04bff);color:#fff}
+.hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;font:12px var(--mono);color:#fff;opacity:.9;pointer-events:none;text-shadow:0 1px 4px #0004;z-index:3}
+.hint.d{color:var(--ink);text-shadow:none;opacity:.6}
+@keyframes sp{to{transform:rotate(360deg)}}
+@keyframes hr{to{filter:hue-rotate(360deg)}}
+
+/* 136 光环 */
+.halo{position:relative;width:200px;height:200px;display:grid;place-items:center}
+.halo i{position:absolute;inset:0;border-radius:50%;background:conic-gradient(#ff4f6d,#ffb03c,#ffe14d,#4ade80,#38bdf8,#8b6bff,#ff4fa3,#ff4f6d);-webkit-mask:radial-gradient(farthest-side,#0000 calc(100% - 14px),#000 calc(100% - 13px));mask:radial-gradient(farthest-side,#0000 calc(100% - 14px),#000 calc(100% - 13px));animation:sp 4s linear infinite}
+.halo i:nth-child(2){filter:blur(16px);opacity:.95}
+.halo i:nth-child(3){inset:28px;animation-direction:reverse;animation-duration:6s;-webkit-mask:radial-gradient(farthest-side,#0000 calc(100% - 8px),#000 calc(100% - 7px));mask:radial-gradient(farthest-side,#0000 calc(100% - 8px),#000 calc(100% - 7px))}
+.halo u{position:absolute;left:50%;top:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:#fff;box-shadow:0 0 14px 5px #fff;transform-origin:50% 106px;animation:sp 4s linear infinite}
+.halo b{text-align:center;font:900 28px/1.15 var(--sans);text-shadow:0 2px 12px #0004}.halo small{display:block;font:700 12px var(--sans);letter-spacing:.3em;opacity:.9}
+/* 137 彩虹字 */
+.rt{position:relative;text-align:center;animation:hr 6s linear infinite}
+.rt span{display:inline-block;font:900 50px/1.1 var(--sans);text-shadow:0 4px 0 #0002;-webkit-text-stroke:2px #fff;paint-order:stroke fill;animation:bn 1.6s ease-in-out infinite;animation-delay:calc(var(--i)*.1s)}
+@keyframes bn{50%{transform:translateY(-12px) rotate(-3deg)}}
+.rt+small{position:absolute;left:0;right:0;top:58%;text-align:center;font:700 16px var(--sans);letter-spacing:.6em;color:var(--ink);padding-top:30px}
+.sk{position:absolute;color:#ff4fa3;animation:tw 2s ease-in-out infinite;pointer-events:none;font-size:18px}
+@keyframes tw{0%,100%{opacity:.2;transform:scale(.5) rotate(0)}50%{opacity:1;transform:scale(1.2) rotate(90deg)}}
+/* 142 棱镜环 */
+.sc3{perspective:900px;width:100%;height:240px;display:grid;place-items:center}
+.ti{transform-style:preserve-3d;transform:rotateX(-16deg)}
+.rg3{position:relative;width:76px;height:116px;transform-style:preserve-3d;animation:ry 14s linear infinite}
+.rg3 div{position:absolute;inset:0;transform:rotateY(calc(var(--i)*36deg)) translateZ(124px);display:grid;place-items:center;font:900 20px var(--serif);color:#fff;border:1.5px solid #fff9;border-radius:8px;background:linear-gradient(160deg,hsla(var(--h),95%,66%,.9),hsla(calc(var(--h) + 50),90%,52%,.9));box-shadow:0 0 22px hsla(var(--h),95%,60%,.6),inset 0 0 14px #fff6;text-shadow:0 1px 4px #0004}
+@keyframes ry{to{transform:rotateY(360deg)}}
+.core{position:absolute;left:50%;top:50%;width:100px;height:100px;margin:-50px;border-radius:50%;background:radial-gradient(#fff,#ffd93caa 40%,transparent 70%);animation:pu 2s ease-in-out infinite}
+@keyframes pu{50%{transform:scale(1.35);opacity:.7}}
+/* 143 灯牌 */
+.sign{position:relative;width:280px;height:170px;border-radius:18px;background:#fff;box-shadow:0 14px 30px -10px #0004,inset 0 0 0 3px #ffd93c}
+.sign i{position:absolute;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:var(--c);animation:bb 1s ease-in-out infinite}
+@keyframes bb{0%,100%{opacity:.3;transform:scale(.75);box-shadow:none}50%{opacity:1;transform:scale(1.2);box-shadow:0 0 12px 4px var(--c)}}
+.pn{position:absolute;inset:18px;border-radius:12px;background:linear-gradient(135deg,#ff4fa3,#7b61ff 60%,#38bdf8);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;overflow:hidden}
+.pn b{font:900 46px/1 var(--mono);letter-spacing:.08em;animation:fk 3s infinite;text-shadow:0 0 12px #fff,0 0 28px #ff4fa3}
+.pn small{font-weight:700;letter-spacing:.3em;margin-top:8px}
+.pn::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,#fff7,transparent);transform:skewX(-20deg);animation:ss 3s infinite}
+@keyframes fk{0%,90%,95%,100%{opacity:1}92%,97%{opacity:.35}}
+@keyframes ss{0%{left:-60%}50%,100%{left:140%}}
+/* 144 彩虹浪 */
+.rw svg{position:absolute;left:0;bottom:0;width:200%;height:var(--h);animation:wm var(--d) linear infinite;animation-delay:var(--dl)}
+@keyframes wm{to{transform:translateX(-50%)}}
+.rw~i{position:absolute;bottom:-20px;border-radius:50%;background:#fff8;border:1.5px solid #fffc;animation:bu linear infinite}
+@keyframes bu{to{transform:translateY(-340px);opacity:0}}
+/* 146 光斑 */
+.ab{position:absolute;left:0;top:0;width:160px;height:160px;border-radius:50%;background:var(--c);filter:blur(30px);opacity:.85;mix-blend-mode:multiply;will-change:transform}
+.big{position:relative;font:900 30px var(--serif);text-align:center;pointer-events:none}
+/* 147 仪表 */
+.gw{position:relative;width:300px}.gw svg{width:100%;display:block}
+.gv{position:absolute;left:0;right:0;bottom:-6px;text-align:center;line-height:1}.gv b{font:900 40px var(--mono)}.gv span{display:block;font:700 12px var(--sans);color:var(--ink);opacity:.7;margin-top:4px}
+/* 150 融球 */
+.goo{position:absolute;inset:0;filter:url(#goo)}
+.goo i{position:absolute;left:50%;top:50%;width:var(--s);height:var(--s);margin:calc(var(--s)/-2) 0 0 calc(var(--s)/-2);border-radius:50%;background:var(--c);animation:g var(--d) ease-in-out infinite}
+.goo i.mb{animation:none;background:#ffd93c}
+@keyframes g{0%,100%{transform:translate(var(--x1),var(--y1))}50%{transform:translate(var(--x2),var(--y2)) scale(1.25)}}
+/* 151 彩影字 */
+.wg{text-align:center;animation:hr 6s linear infinite}
+.wg span{display:inline-block;font:900 64px/1.15 var(--sans);color:#fff;text-shadow:1px 1px 0 #ff4f6d,2px 2px 0 #ff9a3c,3px 3px 0 #ffd93c,4px 4px 0 #4ade80,5px 5px 0 #38bdf8,6px 6px 0 #6a5cff,7px 7px 0 #c04bff,8px 8px 14px #0003;animation:wg 1.4s ease-in-out infinite;animation-delay:calc(var(--i)*.12s)}
+@keyframes wg{0%,100%{transform:translateY(0) rotate(-5deg)}50%{transform:translateY(-16px) rotate(5deg) scale(1.1)}}
+#c152{transition:opacity .8s}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top"><div><h1>炫彩特效图鉴</h1><p>编号 133–152，共 20 款。全部明亮多彩，没有黑底。选好告诉我编号。</p></div><button class="tb" id="th">切换主题</button></div>
+<div class="g">
+
+<div class="f"><div class="lb"><b>133</b><span>彩色烟花（点击放一发）</span></div><div class="st vv"><canvas id="c133"></canvas><span class="hint">点击任意位置放烟花</span></div></div>
+<div class="f"><div class="lb"><b>134</b><span>彩虹粒子漩涡（鼠标是旋涡中心）</span></div><div class="st p3"><canvas id="c134"></canvas><span class="hint d">移动鼠标</span></div></div>
+<div class="f"><div class="lb"><b>135</b><span>彩虹泡泡（点击戳破）</span></div><div class="st p1"><canvas id="c135"></canvas><span class="hint d">戳泡泡</span></div></div>
+
+<div class="f"><div class="lb"><b>136</b><span>多彩霓虹光环</span></div><div class="st vb"><div class="halo"><i></i><i></i><i></i><u></u><b>LIVE<small>多彩光环</small></b></div></div></div>
+<div class="f"><div class="lb"><b>137</b><span>彩虹流动大字 + 闪星</span></div><div class="st p2"><div class="rt" id="rt"></div><small>多 彩 世 界</small>
+<span class="sk" style="left:12%;top:18%">✦</span><span class="sk" style="right:10%;top:24%;animation-delay:-.7s;color:#38bdf8">✦</span><span class="sk" style="left:20%;bottom:20%;animation-delay:-1.2s;color:#ffb03c">✦</span><span class="sk" style="right:16%;bottom:16%;animation-delay:-.3s;color:#8b6bff">✦</span></div></div>
+<div class="f"><div class="lb"><b>138</b><span>三色彩虹拖尾</span></div><div class="st p1"><canvas id="c138"></canvas><span class="hint d">移动鼠标画彩虹</span></div></div>
+
+<div class="f"><div class="lb"><b>139</b><span>万花筒</span></div><div class="st p4"><canvas id="c139"></canvas></div></div>
+<div class="f"><div class="lb"><b>140</b><span>多彩叠加波浪（正片叠底）</span></div><div class="st p2"><canvas id="c140"></canvas></div></div>
+<div class="f"><div class="lb"><b>141</b><span>弹跳彩球物理（点击加球、鼠标会推开）</span></div><div class="st p3"><canvas id="c141"></canvas><span class="hint d">点击加球 · 鼠标推球</span></div></div>
+
+<div class="f"><div class="lb"><b>142</b><span>3D 彩色棱镜环</span></div><div class="st vv"><div class="core"></div><div class="sc3"><div class="ti"><div class="rg3" id="rg3"></div></div></div></div></div>
+<div class="f"><div class="lb"><b>143</b><span>剧院灯泡灯牌（彩灯追逐）</span></div><div class="st p2"><div class="sign" id="sign"><div class="pn"><b>OPEN</b><small>多彩音乐厅</small></div></div></div></div>
+<div class="f"><div class="lb"><b>144</b><span>彩虹七层浪 + 气泡</span></div><div class="st p3" id="s144"><div class="rw" id="rw"></div></div></div>
+
+<div class="f"><div class="lb"><b>145</b><span>闪耀星星（移动 / 点击撒星）</span></div><div class="st vv"><canvas id="c145"></canvas><span class="hint">移动、点击试试</span></div></div>
+<div class="f"><div class="lb"><b>146</b><span>极光光斑跟随鼠标</span></div><div class="st p1" id="st146"><i class="ab" style="--c:#ff6ab0"></i><i class="ab" style="--c:#ffd93c"></i><i class="ab" style="--c:#4ade80"></i><i class="ab" style="--c:#38bdf8"></i><i class="ab" style="--c:#a78bfa"></i><div class="big">Aurora</div></div></div>
+<div class="f"><div class="lb"><b>147</b><span>彩虹仪表盘（指针弹簧回摆）</span></div><div class="st p4"><div class="gw"><svg id="g147" viewBox="0 0 300 190"></svg><div class="gv"><b id="gvn">0</b><span>播放热度</span></div></div></div></div>
+
+<div class="f"><div class="lb"><b>148</b><span>彩带纸屑（点击放礼炮）</span></div><div class="st p2"><canvas id="c148"></canvas><span class="hint d">点击放礼炮</span></div></div>
+<div class="f"><div class="lb"><b>149</b><span>彩虹频谱柱 + 倒影</span></div><div class="st p4"><canvas id="c149"></canvas></div></div>
+<div class="f"><div class="lb"><b>150</b><span>融球 Gooey（鼠标是黄色球）</span></div><div class="st p1" id="st150"><svg width="0" height="0" style="position:absolute"><defs><filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b"/><feColorMatrix in="b" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -10"/></filter></defs></svg>
+<div class="goo"><i style="--c:#ff4f6d;--s:96px;--x1:-90px;--y1:-30px;--x2:60px;--y2:50px;--d:6s"></i><i style="--c:#38bdf8;--s:80px;--x1:80px;--y1:-50px;--x2:-60px;--y2:40px;--d:7s"></i><i style="--c:#4ade80;--s:70px;--x1:-30px;--y1:70px;--x2:40px;--y2:-60px;--d:5s"></i><i style="--c:#ffb03c;--s:88px;--x1:20px;--y1:-70px;--x2:-80px;--y2:20px;--d:8s"></i><i style="--c:#a78bfa;--s:74px;--x1:100px;--y1:50px;--x2:-40px;--y2:-20px;--d:6.5s"></i><i style="--c:#ff4fa3;--s:60px;--x1:-110px;--y1:30px;--x2:90px;--y2:-30px;--d:5.5s"></i><i class="mb" id="mb" style="--c:#ffd93c;--s:70px"></i></div></div></div>
+
+<div class="f"><div class="lb"><b>151</b><span>彩虹层叠摇摆字</span></div><div class="st vv"><div class="wg" id="wg"></div></div></div>
+<div class="f"><div class="lb"><b>152</b><span>万花尺螺旋画（自动绘制，循环换款）</span></div><div class="st p3"><canvas id="c152"></canvas></div></div>
+
+</div></div>
+<script src="08-colorful.js"></script>
+</body>
+</html>
