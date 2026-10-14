@@ -3,7 +3,7 @@
 // 支持关联资源（视频/GitHub/音乐/影视）与分类、标签
 // 权限：普通用户仅操作自己的文章；管理员可 ?all=true 查看全部
 
-import { ok, readJson, HttpError } from '../lib/response.js';
+import { ok, json, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import {
@@ -121,7 +121,8 @@ export async function listPosts(request, env) {
     const hit = await cache.match(cacheKey);
     if (hit) {
       const rows = await hit.json();
-      return ok(rows, request, env);
+      // X-List-Cache: hit 便于线上验证缓存是否真的生效
+      return json({ data: rows }, { headers: { 'X-List-Cache': 'hit' } }, request, env);
     }
   }
 
@@ -156,7 +157,10 @@ export async function listPosts(request, env) {
       headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' }
     }));
   }
-  return ok(rows, request, env);
+  // 诊断头：一眼看出这次请求走没走缓存路径（miss / bypass）
+  return json({ data: rows }, {
+    headers: { 'X-List-Cache': cache ? 'miss' : (cacheable ? 'no-cache-api' : 'bypass') }
+  }, request, env);
 }
 
 // 博客列表缓存失效：发 / 改 / 删文章后调用，让下一次读拿到新数据。
