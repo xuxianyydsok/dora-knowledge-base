@@ -23,9 +23,50 @@
 //   · 写操作请调用 bump() 主动失效对应 key，别等 TTL 过期。
 
 const CACHE_ORIGIN = 'https://dora-cache.internal';
+// R2 里的缓存前缀。用 R2 做**第二级**缓存的原因（2026-10-14 实测）：
+//   Cloudflare Cache API 的命中不稳定 —— 同一条 /api/categories，
+//   连续 5 次实测是 miss(3.7s) / 超时 / hit(3.4s) / 超时 / 超时。
+//   而走 R2 的接口（/api/assets）实测稳定 2.7 秒。所以把「已算好的结果」
+//   也存一份到 R2：Cache API 未命中时先看 R2，命中就直接返回，完全绕开 Supabase。
+const R2_PREFIX = 'system/cache/';
 
 function cacheApi() {
   return typeof caches !== 'undefined' ? caches.default : null;
+}
+
+// R2 二级缓存：读写都吞异常（缓存坏了不该影响主流程）
+async function r2Get(env, key) {
+  if (!env || !env.R2_BUCKET) return null;
+  try {
+    const obj = await env.R2_BUCKET.get(R2_PREFIX + key);
+    if (!obj) return null;
+    const txt = await obj.text();
+    const parsed = JSON.parse(txt);
+    // 存的是 { at, ttl, data }，过期就不认
+    if (!parsed || typeof parsed.ttl !== 'number') return null;
+    if (Date.now() - parsed.at > parsed.ttl * 1000) return null;
+    return parsed.data;
+  } catch { return null; }
+}
+
+async function r2Put(env, key, data, ttl) {
+  if (!env || !env.R2_BUCKET) return;
+  try {
+    await env.R2_BUCKET.put(R2_PREFIX + key, JSON.stringify({ at: Date.now(), ttl, data }), {
+      httpMetadata: { contentType: 'application/json' }
+    });
+  } catch { /* 写失败不影响响应 */ }
+}
+
+// 过期也拿出来用（回源失败时的兜底，比白屏强）
+async function r2GetStale(env, key) {
+  if (!env || !env.R2_BUCKET) return null;
+  try {
+    const obj = await env.R2_BUCKET.get(R2_PREFIX + key);
+    if (!obj) return null;
+    const parsed = JSON.parse(await obj.text());
+    return parsed && parsed.data !== undefined ? parsed.data : null;
+  } catch { return null; }
 }
 
 // 缓存键：固定 origin + 路径。参数由调用方拼进 path。
@@ -55,6 +96,7 @@ export async function cachedData(request, env, opts) {
   if (versionNs) fullKey = `${key}?v=${await versionOf(versionNs)}`;
   const req = cacheable ? cacheKeyOf(fullKey) : null;
 
+  // ① Cache API（最快，但实测命中不稳定）
   if (cacheable) {
     const hit = await cache.match(req);
     if (hit) {
@@ -63,24 +105,38 @@ export async function cachedData(request, env, opts) {
         return { data: body, cache: 'hit' };
       } catch { /* 缓存坏了就当未命中 */ }
     }
+    // ② R2（稳定，实测 ~2.7 秒；命中时完全绕开 Supabase）
+    const fromR2 = await r2Get(env, fullKey);
+    if (fromR2 !== null) {
+      // 顺手回填 Cache API，下次更快
+      cache.put(req, new Response(JSON.stringify(fromR2), {
+        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${ttl}` }
+      })).catch(() => {});
+      return { data: fromR2, cache: 'r2' };
+    }
   }
 
   try {
     const data = await load();
     if (cacheable && ttl > 0) {
-      // 写缓存失败不该影响响应
-      await cache.put(req, new Response(JSON.stringify(data), {
-        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${ttl}` }
-      })).catch(() => {});
+      // 两级都写；失败不影响响应
+      await Promise.all([
+        cache.put(req, new Response(JSON.stringify(data), {
+          headers: { 'content-type': 'application/json', 'cache-control': `max-age=${ttl}` }
+        })).catch(() => {}),
+        r2Put(env, fullKey, data, ttl)
+      ]);
     }
     return { data, cache: cacheable ? 'miss' : 'bypass' };
   } catch (err) {
-    // 回源失败：宁可给一份**过期的**数据，也别让页面空白
+    // ③ 回源失败：宁可给一份**过期的**数据，也别让页面空白
     if (cacheable && staleOnError) {
       const stale = await cache.match(req).catch(() => null);
       if (stale) {
         try { return { data: await stale.json(), cache: 'stale' }; } catch { /* 落到抛错 */ }
       }
+      const staleR2 = await r2GetStale(env, fullKey);
+      if (staleR2 !== null) return { data: staleR2, cache: 'stale-r2' };
     }
     throw err;
   }
@@ -121,13 +177,35 @@ export async function versionOf(ns) {
   } catch { return '0'; }
 }
 
-export async function bumpVersion(ns) {
+export async function bumpVersion(ns, env) {
   const cache = cacheApi();
-  if (!cache) return;
   try {
     const cur = Number(await versionOf(ns)) || 0;
-    await cache.put(cacheKeyOf(`__ver__/${ns}`), new Response(String(cur + 1), {
-      headers: { 'content-type': 'text/plain', 'cache-control': `max-age=${VER_TTL}` }
-    }));
+    if (cache) {
+      await cache.put(cacheKeyOf(`__ver__/${ns}`), new Response(String(cur + 1), {
+        headers: { 'content-type': 'text/plain', 'cache-control': `max-age=${VER_TTL}` }
+      }));
+    }
+    // R2 侧的旧版本数据不会被自动回收（键里带版本号，旧键没人再读）。
+    // 按前缀列出并删除该命名空间下的旧对象，避免无限堆积。
+    // 删失败无所谓：数据不会错，只是多占一点空间。
+    await r2DeletePrefix(env, `${ns}/`);
   } catch { /* 失败最多让旧缓存多活一个 TTL */ }
+}
+
+// 按前缀删除 R2 对象（用于缓存失效后清理旧版本快照）。
+// R2 list 一次最多 1000 条，缓存键数量远小于此，一页足够；仍做分页以防万一。
+async function r2DeletePrefix(env, prefix) {
+  if (!env || !env.R2_BUCKET) return;
+  const full = R2_PREFIX + prefix;
+  try {
+    let cursor;
+    do {
+      const page = await env.R2_BUCKET.list({ prefix: full, cursor, limit: 500 });
+      if (page.objects && page.objects.length) {
+        await Promise.all(page.objects.map((o) => env.R2_BUCKET.delete(o.key).catch(() => {})));
+      }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+  } catch { /* 忽略 */ }
 }

@@ -5,7 +5,7 @@ import { ok, json, fail, readJson, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { requireString, optionalString, optionalInt, requireUuid, slugify } from '../lib/validate.js';
-import { cachedData, bumpCache } from '../lib/edgeCache.js';
+import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 
 const TABLE = 'categories';
 const CACHE_TTL = 300;   // 5 分钟：分类很少变，且是首屏必需（见 edgeCache.js 的背景说明）
@@ -49,7 +49,7 @@ export async function createCategory(request, env) {
     description: optionalString(body.description, 'description') ?? null,
     sort_order: optionalInt(body.sort_order, 'sort_order') ?? 0
   });
-  await bumpCache(`categories/${user.id}/own`);
+  await bumpVersion(`categories/${user.id}`, env);
   return ok(rows[0], request, env, 201);
 }
 
@@ -72,7 +72,7 @@ export async function updateCategory(request, env, id) {
 
   const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   if (!rows.length) throw new HttpError(404, '分类不存在或无权限');
-  await bumpCache(`categories/${user.id}/own`);
+  await bumpVersion(`categories/${user.id}`, env);
   return ok(rows[0], request, env);
 }
 
@@ -82,6 +82,6 @@ export async function deleteCategory(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   if (!rows.length) throw new HttpError(404, '分类不存在或无权限');
-  await bumpCache(`categories/${user.id}/own`);
+  await bumpVersion(`categories/${user.id}`, env);
   return ok({ id }, request, env);
 }

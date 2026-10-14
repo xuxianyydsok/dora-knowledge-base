@@ -1864,8 +1864,8 @@ async function videoTypeUnit() {
     // 3) 写操作要失效缓存（版本号失效），否则新文章 5 分钟不出现
     const invalidations = (src.match(/await invalidatePostListCache\(\)/g) || []).length;
     assert(invalidations >= 3, `create/update/delete 三处都要失效缓存，实际 ${invalidations} 处`);
-    assert(/invalidatePostListCache\(\)[\s\S]{0,120}bumpVersion\('posts'\)/.test(src),
-      '失效应走 bumpVersion（版本号失效）');
+    assert(/invalidatePostListCache\(\)[\s\S]{0,120}bumpVersion\('posts', env\)/.test(src),
+      '失效应走 bumpVersion（版本号失效，且要传 env 才能清 R2 旧快照）');
     // 4) 标签用 PostgREST 内嵌查询（一次往返），不是再查一次 post_tags 全表
     assert(/post_tags\(tag_id\)/.test(src), 'with_tags 应走内嵌查询');
     // 只针对 listPosts 的函数体：那里不应再单独查一次 post_tags（那是两次往返）。
@@ -1891,7 +1891,23 @@ async function videoTypeUnit() {
     assert(/onlyGuest = true/.test(util), '默认只缓存访客（登录用户数据会串号）');
     assert(/export async function bumpVersion/.test(util), '要有版本号失效能力');
     assert(/staleOnError/.test(util), '回源失败要能用过期缓存兜底（宁可旧数据也别白屏）');
-    return `${targets.length} 个接口已接入 + 工具含访客限定/版本号/过期兜底`;
+    // R2 二级缓存：Cache API 命中不稳定（实测 miss/超时/hit 交替），
+    // 所以要把结果也存 R2，命中时完全绕开 Supabase。
+    assert(/R2_PREFIX/.test(util) && /r2Get\(env, fullKey\)/.test(util),
+      '要有 R2 二级缓存（Cache API 命中不稳定）');
+    // 每个接了缓存的接口，写操作都要能失效（否则改了数据要等满 TTL）。
+    // 例外：timeline 是**纯聚合读接口**（自己不写，数据来自 posts/resources/
+    // gallery/books/user_progress），没有可 bump 的写操作；它靠 5 分钟 TTL
+    // 自然更新，对聚合页来说够用。
+    const NO_WRITE = new Set(['timeline']);
+    const noBump = [];
+    for (const f of targets) {
+      if (NO_WRITE.has(f)) continue;
+      const src = readFileSync(join(BACKEND, 'src', 'routes', `${f}.js`), 'utf8');
+      if (!/bumpVersion\(/.test(src)) noBump.push(f);
+    }
+    assert(noBump.length === 0, `这些接口接了缓存但写操作不失效：${noBump.join(', ')}`);
+    return `${targets.length} 个接口已接入（timeline 纯聚合靠 TTL）+ 工具含访客限定/版本号/R2 二级/过期兜底`;
   });
 }
 

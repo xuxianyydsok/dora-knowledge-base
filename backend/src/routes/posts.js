@@ -156,7 +156,7 @@ export async function listPosts(request, env) {
 // 用**版本号**失效（见 edgeCache.js）：缓存键里带版本号，bump 后旧键自动失效，
 // 不用把各种参数组合逐个删掉。
 export async function invalidatePostListCache() {
-  await bumpVersion('posts');
+  await bumpVersion('posts', env);
 }
 
 // GET /api/posts/:id

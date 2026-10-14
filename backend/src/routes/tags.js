@@ -8,7 +8,7 @@ import { qs } from '../lib/supabase.js';
 import {
   requireString, optionalString, requireHexColor, requireUuid, slugify
 } from '../lib/validate.js';
-import { cachedData, bumpCache } from '../lib/edgeCache.js';
+import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 
 const TABLE = 'tags';
 const DEFAULT_COLOR = '#6b7280';
@@ -48,7 +48,7 @@ export async function createTag(request, env) {
     slug: optionalString(body.slug) ? slugify(body.slug) : slugify(name),
     color
   });
-  await bumpCache(`tags/${user.id}/own`);
+  await bumpVersion(`tags/${user.id}`, env);
   return ok(rows[0], request, env, 201);
 }
 
@@ -70,7 +70,7 @@ export async function updateTag(request, env, id) {
 
   const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   if (!rows.length) throw new HttpError(404, '标签不存在或无权限');
-  await bumpCache(`tags/${user.id}/own`);
+  await bumpVersion(`tags/${user.id}`, env);
   return ok(rows[0], request, env);
 }
 
@@ -80,7 +80,7 @@ export async function deleteTag(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   if (!rows.length) throw new HttpError(404, '标签不存在或无权限');
-  await bumpCache(`tags/${user.id}/own`);
+  await bumpVersion(`tags/${user.id}`, env);
   return ok({ id }, request, env);
 }
 
@@ -111,7 +111,7 @@ export async function batchCreateTags(request, env) {
     body: rows,
     prefer: 'return=representation,resolution=merge-duplicates'
   });
-  await bumpCache(`tags/${user.id}/own`);
+  await bumpVersion(`tags/${user.id}`, env);
   return ok(created, request, env, 201);
 }
 
@@ -140,7 +140,7 @@ export async function batchUpdateTags(request, env) {
     const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
     if (rows.length) updated.push(rows[0]);
   }
-  await bumpCache(`tags/${user.id}/own`);
+  await bumpVersion(`tags/${user.id}`, env);
   return ok(updated, request, env);
 }
 
@@ -156,6 +156,6 @@ export async function batchDeleteTags(request, env) {
   ids.forEach((id, idx) => requireUuid(id, `ids[${idx}]`));
 
   const rows = await db.remove(TABLE, qs({ id: `in.(${ids.join(',')})`, user_id: `eq.${user.id}` }));
-  await bumpCache(`tags/${user.id}/own`);
+  await bumpVersion(`tags/${user.id}`, env);
   return ok({ deleted: rows.length, ids: rows.map((r) => r.id) }, request, env);
 }

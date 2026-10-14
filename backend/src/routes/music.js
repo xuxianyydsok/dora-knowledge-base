@@ -451,6 +451,7 @@ export async function createMusic(request, env) {
   const [tagged] = await withTags(db, [resource]);
   const { resource_id, user_id, created_at, updated_at, ...track } = ext[0];
   const [shaped] = withPublicMedia([{ ...tagged, track }], requestOrigin(request, env));
+  await bumpVersion(`music/${user.id}`, env);
   return ok(shaped, request, env, 201);
 }
 
@@ -548,6 +549,7 @@ export async function updateMusic(request, env, id) {
   const [tagged] = await withTags(db, rows);
   const [withExt] = await withTrack(db, tagged);
   const [shaped] = withPublicMedia([withExt], requestOrigin(request, env));
+  await bumpVersion(`music/${user.id}`, env);
   return ok(shaped, request, env);
 }
 
@@ -578,6 +580,7 @@ export async function deleteMusic(request, env, id) {
     user_id: `eq.${user.id}`
   }));   // 扩展记录（外键也会级联）
   await db.remove(TABLE, qs(scope));
+  await bumpVersion(`music/${user.id}`, env);
   return ok({ id }, request, env);
 }
 

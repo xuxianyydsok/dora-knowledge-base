@@ -395,6 +395,7 @@ export async function createBookMultipart(request, env) {
   // ticket 里只放 object key / uid / 过期时间；object key 绝不直接下发
   const ticket = await signBookTicket(ticketSecret(env), { key: objectKey, uid: user.id });
 
+  await bumpVersion(`books/${user.id}`, env);
   return ok({
     upload_id: upload.uploadId,
     ticket,
@@ -679,6 +680,7 @@ export async function updateBook(request, env, id) {
 
   const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   if (!rows.length) throw new HttpError(404, '图书不存在或无权限');
+  await bumpVersion(`books/${user.id}`, env);
   return ok(shape(rows[0]), request, env);
 }
 
@@ -706,6 +708,7 @@ export async function deleteBook(request, env, id) {
 
   await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   console.log(`books 删除: id=${id} key=${book.object_key}`);
+  await bumpVersion(`books/${user.id}`, env);
   return ok({ id, deleted: true }, request, env);
 }
 

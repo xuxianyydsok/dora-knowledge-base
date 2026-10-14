@@ -160,7 +160,7 @@ export async function createGalleryItem(request, env) {
     throw err;
   }
 
-  await bumpVersion(`gallery/${user.id}`);
+  await bumpVersion(`gallery/${user.id}`, env);
   return ok(shape(row, asset), request, env, 201);
 }
 
@@ -195,7 +195,7 @@ export async function updateGalleryItem(request, env, id) {
   const updated = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   const asset = await findOwnAsset(db, user.id, updated[0].asset_id);
   if (!asset) throw new HttpError(404, '关联素材不存在或无权限');
-  await bumpVersion(`gallery/${user.id}`);
+  await bumpVersion(`gallery/${user.id}`, env);
   return ok(shape(updated[0], asset), request, env);
 }
 
@@ -205,6 +205,6 @@ export async function deleteGalleryItem(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   if (!rows.length) throw new HttpError(404, '展览条目不存在或无权限');
-  await bumpVersion(`gallery/${user.id}`);
+  await bumpVersion(`gallery/${user.id}`, env);
   return ok({ id, removed: true }, request, env);
 }

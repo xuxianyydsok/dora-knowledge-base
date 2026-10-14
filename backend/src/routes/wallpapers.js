@@ -361,6 +361,7 @@ export async function updateWallpaper(request, env, id) {
 
   const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   if (!rows.length) throw new HttpError(404, '动态壁纸不存在或无权限');
+  await bumpVersion(`wallpapers/${user.id}`, env);
   return ok(shape(rows[0]), request, env);
 }
 
@@ -384,5 +385,6 @@ export async function deleteWallpaper(request, env, id) {
     }
   }
   console.log(`wallpapers 删除: id=${id} key=${row.object_key}`);
+  await bumpVersion(`wallpapers/${user.id}`, env);
   return ok({ id, deleted: true }, request, env);
 }

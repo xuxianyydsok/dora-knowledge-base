@@ -274,6 +274,7 @@ export async function createMoment(request, env) {
     throw err;
   }
   const [item] = await decorate(db, [row], { userId: user.id, guest: false });
+  await bumpVersion(`moments/${user.id}`, env);
   return ok(item, request, env, 201);
 }
 
@@ -310,6 +311,7 @@ export async function updateMoment(request, env, id) {
   else if ('is_public' in patch) await syncLinkedFilesPublic(db, id, user.id, row.is_public);
 
   const [item] = await decorate(db, [row], { userId: user.id, guest: false });
+  await bumpVersion(`moments/${user.id}`, env);
   return ok(item, request, env);
 }
 
@@ -319,5 +321,6 @@ export async function deleteMoment(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   if (!rows.length) throw new HttpError(404, '碎念不存在或无权限');
+  await bumpVersion(`moments/${user.id}`, env);
   return ok({ id, removed: true }, request, env);
 }
