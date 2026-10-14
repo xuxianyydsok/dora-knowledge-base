@@ -55,6 +55,20 @@ function coverUrlOf(v) {
   return null;
 }
 
+// parent_slug 读时归一（2026-10-14 实测发现的一个真实断链）：
+// 上游导入脚本的兜底分支把「父标题」直接当 slug 用，而父标题本身可能以 '-' 收尾
+// （Notion 扁平键的目录分隔残留），于是 parent_slug 落库成 `notion-xxx-`，
+// 比父行真实 slug 多一根尾横线，父子关系整个断掉 —— 51 行受影响、涉及 4 个目录页，
+// 表现为子页面包屑消失、目录页卡片上的「含 N 页」恒为 0。
+// 判据：全表**没有任何一行**自身 slug 以 '-' 结尾，所以尾横线必为伪影；
+// 去尾后 137/137 子页 100% 命中父行。数据已就地修正，这里再做一层读时防御，
+// 免得日后重新从 Notion 导入时同一个坑再踩一次。
+const normParentSlug = (v) => {
+  const s = v ? String(v).trim() : '';
+  if (!s) return null;
+  return s.replace(/-+$/, '') || null;
+};
+
 // 单条可见性：访客必须同时满足 published + is_public，
 // 否则一律按「不存在」处理（不泄露存在性，与 posts.js 一致）。
 function assertVisible(post, user) {
@@ -95,8 +109,13 @@ export async function listNotionPosts(request, env) {
     // 没有发布时间的（draft）用 nullslast 推到末尾，不让它们顶到最前面。
     order: 'sort_order.asc,published_at.desc.nullslast,created_at.desc'
   }));
-  // 顺手把封面归一化，前端拿到 cover_url 直接可用（null 即用默认封面）
-  return ok(rows.map((r) => ({ ...r, cover_url: coverUrlOf(r.cover_path) })), request, env);
+  // 顺手把封面归一化，前端拿到 cover_url 直接可用（null 即用默认封面）；
+  // parent_slug 也一并归一，前端 childCount 才能正确数出「含 N 页」
+  return ok(rows.map((r) => ({
+    ...r,
+    parent_slug: normParentSlug(r.parent_slug),
+    cover_url: coverUrlOf(r.cover_path)
+  })), request, env);
 }
 
 // GET /api/notion-posts/slug/:slug —— 按 slug 读取正文（Notion 侧 slug 天然唯一且可读）
@@ -119,6 +138,9 @@ export async function getNotionPostBySlug(request, env, slug) {
   // password_hash 即使全是 null 也不下发（避免日后接入密码锁时漏出去）
   const { password_hash, ...safe } = post;
 
+  // 归一后才是可用于关联的父 slug（见 normParentSlug 的说明）
+  const parentSlug = normParentSlug(post.parent_slug);
+
   const visibility = user.isGuest ? guestPostFilters() : {};
   const children = await db.select(TABLE, qs({
     select: NAV_COLUMNS,
@@ -128,25 +150,30 @@ export async function getNotionPostBySlug(request, env, slug) {
     order: 'sort_order.asc,published_at.asc.nullslast,created_at.asc'
   }));
 
-  const parent = post.parent_slug
+  const parent = parentSlug
     ? (await db.select(TABLE, qs({
         select: NAV_COLUMNS,
         user_id: `eq.${post.user_id}`,
-        slug: `eq.${post.parent_slug}`,
+        slug: `eq.${parentSlug}`,
         ...visibility
       })))[0] || null
     : null;
 
-  const siblings = post.parent_slug
+  const siblings = parentSlug
     ? await db.select(TABLE, qs({
         select: NAV_COLUMNS,
         user_id: `eq.${post.user_id}`,
-        parent_slug: `eq.${post.parent_slug}`,
+        parent_slug: `eq.${parentSlug}`,
         slug: `neq.${post.slug}`,
         ...visibility,
         order: 'sort_order.asc,published_at.asc.nullslast'
       }))
     : [];
 
-  return ok({ ...safe, cover_url: coverUrlOf(safe.cover_path), parent, children, siblings }, request, env);
+  return ok({
+    ...safe,
+    parent_slug: parentSlug,
+    cover_url: coverUrlOf(safe.cover_path),
+    parent, children, siblings
+  }, request, env);
 }

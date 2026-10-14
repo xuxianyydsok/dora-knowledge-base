@@ -137,40 +137,60 @@ Notion 侧有 10 个特有字段（`notion_category` / `parent_slug` / `is_blank
    `guestPostFilters()` 一定得显式带上（Notion 路由已带）。
 5. **`is_locked` / `password_hash` 目前是空跑的**：42 篇原文带密码的文章本轮**全部按公开导入**。
    字段已备好，等做「博客密码锁」时再用。
-6. **图片全在 R2 之外（实测踩到，代码已就位，只差上传）**：两类图都得先传进 R2 才看得到 ——
+6. **图片曾全在 R2 之外，本轮已补齐（430 个文件全部上传）**：两类图本来都得先传进 R2 才看得到 ——
    - **封面**：`notion_posts.cover_path` 存的是**对象键**（如 `covers/notion/跨年2026，博客上线.jpg`），
      不是网址。原样塞进 `<img src>` 会让 61 篇集体破图。后端 `coverUrlOf()` 已把它转成
      `/api/media?path=<URL 编码后的键>`，前端 `PostCover.usableCover()` 再挡一道。
    - **正文插图**：349 张，原稿里的地址本来就是 `/api/media?path=notion/<标题>/<文件>`，
      所以 `backend/src/routes/media.js` 这个按 key 读 R2 的路由是**必需**的（不是可选项）。
    - 键位与 `scripts/notion-blog-import/deliverables/upload_assets.*` **逐一对应**（349/349 已验证）。
-   - **只差跑一次上传**（见「下一步」）。上传完不用改任何代码，封面与插图自动出现；
-     上传前也不会出现破图（封面回退默认图、失败的插图由 `ArticleReader` 收起）。
-   - 顺带说明：`posts.cover_path` 315 行**全是 null**，所以 Halo 博客一直用的就是默认封面。
-7. **`/api/media` 按 key 读取，天然可枚举**：所以匿名只放行
+   - 上传脚本 `r2_upload.mjs` 用 `wrangler r2 object put <bucket>/<key> --file=... --content-type=... --remote`
+     并发 4 路执行，**430/430 成功、0 失败**（约 15 分钟）。**注意 `--remote` 不能省**：
+     不加的话 wrangler 会静默写进本地 miniflare 存储，命令行只回一句 "Resource location: local"，
+     看上去像成功、线上却什么都没有。
+7. **`parent_slug` 的尾横线伪影（本轮实测发现并修掉的真实断链）**：
+   上游 `build_import_payload.py` 的兜底分支把「父标题」直接当 slug 用，而父标题本身以 `-` 收尾，
+   于是 51 行的 `parent_slug` 落库成 `notion-xxx-`，比父行真实 slug 多一根尾横线 —— **51 行受影响、
+   涉及 4 个目录页**（`notion-文案摘抄-{启智_修心篇,国内_国际篇,情感_心理篇,认知_成长篇}`），
+   表现为子页面包屑消失、目录页卡片上的「含 N 页」恒为 0。
+   判据：**全表没有任何一行自身 slug 以 `-` 结尾**，所以尾横线必为伪影；去尾后 **137/137** 子页 100% 命中父行。
+   已就地 `UPDATE` 修正（51 → 0），并在 `backend/src/routes/notion.js` 加了读时归一 `normParentSlug()`
+   做防御，免得日后重新从 Notion 导入时同一个坑再踩一次。
+   另：`notion-posts` 列表与详情返回的 `parent_slug` 现在都是归一后的值。
+8. **`/api/media` 按 key 读取，天然可枚举**：所以匿名只放行
    `MEDIA_PUBLIC_PREFIXES`（`notion/` 与 `covers/notion/`）这两个迁移配图前缀，
    其余前缀一律登录后可读 —— 与 `/api/assets` 用 uuid 的设计取向一致（见 `docs/storage.md`）。
+9. **本机 curl 走代理，验收会被干扰**：本机环境变量里有代理，直连反而慢（9 MB 封面 30 s 只下 1.2 MB）。
+   验收时要么 `--noproxy '*'` + 挑小对象，要么就用代理但把断言对准响应头。**别用大文件做连通性断言**。
+
+### 线上验收（本轮已跑完，全绿）
+
+| 项 | 结果 |
+| --- | --- |
+| 后端部署 | Worker `knowledge-base-api`，Version ID `686305b9-5f82-41c6-aed5-36b01760fc8f` |
+| R2 上传 | **430 / 430** 成功（`upload_done.json`），0 失败 |
+| `GET /api/media?path=notion/...`（公开前缀） | 200 + `image/jpeg` |
+| `GET /api/media?path=covers/notion/...`（公开前缀） | 200 + `image/jpeg`，3/3 稳定 |
+| `GET /api/media?path=notion/Art/zzz-not-exist.png`（对象不存在） | 404 |
+| `GET /api/media?path=posts/x.png`（非公开前缀） | 404 |
+| `GET /api/media`（缺 `path`） | 400 |
+| `GET /api/notion-posts` | 200，**187 条**，**无 `content` 字段**、41 条带 `cover_url`、`parent_slug` 带尾横线 0 条 |
+| `GET /api/notion-posts/slug/:slug`（子页） | 无 `password_hash`、有 `content`、`parent` 指向目录页、`siblings` 9 条 |
+| `GET /api/notion-posts/slug/:slug`（目录页） | `children` 10 条（「本页包含」正确） |
 
 ### 下一步 / 待办
 
 - **用户侧**：`git fetch && git checkout feat/math-integration` 拿本轮改动 → review → merge。
   PR：`https://github.com/xuxianyydsok/dora-knowledge-base/pull/new/feat/math-integration`
+- **前端尚未部署**：本轮只跑了 `npm run build` 做本地校验，线上前端仍是 `7c8c8d2`，
+  所以 `/notion` 这两个路由目前**线上还访问不到**（后端接口已经通了）。
+- **20 篇 draft 的分类是上游给的、需要你拍板**：其中 9 篇其实是 Notion 的**目录容器页**
+  （`notion-数学`、`notion-影视动漫-尚未完善`、`notion-中国科学家传记` 等），名下挂着 60 篇已发布的子页 ——
+  容器不公开 → 那 60 篇的面包屑就没有着落。另有 `notion-微积分的发展历史`（8 676 字）、
+  `notion-网站聚合-网页书签`（15 421 字）这类明显是正文的文章也被标成了 draft。
 - **博客密码锁**（用户已提，未做）：42 篇原文带密码，本轮全部公开；`is_locked` / `password_hash`
   字段已就位。**本轮做完后要主动提醒用户这件事。**
 - **图展区域导入**（用户提及，待定）。
-- **423 张 Notion 配图待上传 R2（唯一还差的一步）**：脚本已备好，
-  源目录 `~/projects/knowledge-base/scripts/notion-blog-import/assets/`（223 篇文章目录）
-  或 Windows 侧 `C:\Users\x1078\Pictures\Notion博客迁移\图片素材\`，两者内容一致。
-
-  ```bash
-  # WSL（wrangler 已登录）
-  cd ~/projects/knowledge-base
-  bash scripts/notion-blog-import/deliverables/upload_assets.sh --dry-run   # 先看 423 条映射
-  bash scripts/notion-blog-import/deliverables/upload_assets.sh             # 正式传
-  ```
-  **传完不用改代码、也不用回填 SQL** —— 封面走 `/api/media?path=covers/notion/...`、
-  正文插图走原稿里就有的 `/api/media?path=notion/...`，两者键位与脚本一致。
-  另：后端 `media.js` 这次是新加的，要 `npx wrangler deploy`（在 `backend/`）才会生效。
 - **建议重置那个 Supabase PAT**：账号级权限过重（可执行任意 SQL）。
 
 ---
