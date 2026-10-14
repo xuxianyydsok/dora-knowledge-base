@@ -6243,3 +6243,8 @@ body:has(.math-frame) .app-main {
   .nt-tree-list { grid-template-columns: 1fr; }
   .pv-parent { max-width: 190px; }
 }
+
+/* 加载失败的插图收起来（见 components/ArticleReader.jsx 的 onError）：
+ * Notion 迁移的正文插图在传上 R2 之前会 404，不藏起来就是一片破图图标。
+ * 图片补齐后重新打开页面即自动恢复。 */
+.pv .post-content img.is-broken { display: none; }

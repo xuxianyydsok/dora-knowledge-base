@@ -17,9 +17,20 @@ import { DEFAULT_COVER } from '../lib/blogMedia.js';
 
 export { DEFAULT_COVER };
 
+// 只有真正能当图片地址用的值才放行（http(s):// / 协议相对 / 站内绝对路径 / data:）。
+// 后台的 cover_path 也可能是 R2 的**对象键**（如 covers/notion/x.png）—— 那种值直接塞给
+// <img src> 会让浏览器去站内找 /covers/... 而 404，一整页文章集体变破图。
+// 这里统一回退到默认封面：Halo 博客与 Notion 博客两个分区都因此不会出现破图。
+export function usableCover(v) {
+  if (!v) return '';
+  const s = String(v).trim();
+  if (/^(https?:)?\/\//i.test(s) || s.startsWith('/') || s.startsWith('data:')) return s;
+  return '';
+}
+
 // 卡片 / 阅读头图统一走它，保证「没封面时用哪张图」这件事只有一处定义
 export function PostCover({ src, fallback = DEFAULT_COVER }) {
-  return <img class="cs-cover-img" src={src || fallback} alt="" loading="lazy" />;
+  return <img class="cs-cover-img" src={usableCover(src) || fallback} alt="" loading="lazy" />;
 }
 
 export function PostCard({ post, cover, category, tags = [], meta = null, admin = null, onOpen, onTag, onCategory }) {

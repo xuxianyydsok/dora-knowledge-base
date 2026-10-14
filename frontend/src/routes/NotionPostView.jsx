@@ -88,7 +88,7 @@ export function NotionPostView({ slug }) {
     <ArticleReader
       title={post.title}
       content={post.content}
-      cover={post.cover_path}
+      cover={post.cover_url}
       badge={post.notion_category ? <span class="cs-badge pv-cat">{post.notion_category}</span> : null}
       backTo="/notion"
       backLabel="Notion 博客"

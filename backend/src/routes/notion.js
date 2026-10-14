@@ -19,7 +19,7 @@ import { ok, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { requireString, requireEnum } from '../lib/validate.js';
-import { guestPostFilters, isPostVisibleToGuest } from '../lib/publicScope.js';
+import { guestPostFilters, isPostVisibleToGuest, isMediaPublic } from '../lib/publicScope.js';
 
 const TABLE = 'notion_posts';
 
@@ -33,6 +33,27 @@ const LIST_COLUMNS = [
 
 // 阅读页里「父页面 / 子页面 / 同级」导航用的轻量投影
 const NAV_COLUMNS = 'id,title,slug,notion_icon,notion_category,is_blank,published_at';
+
+// 封面地址归一化（2026-10-14 实测发现的问题）：
+// 迁移载荷里的 cover_path 是 R2 的**对象键**（形如 covers/notion/跨年2026，博客上线.jpg），
+// 不是能直接喂给 <img src> 的地址 —— 原样下发会让浏览器去站内找 /covers/... 而 404，
+// 61 篇文章集体变破图。这里统一归一化成一个真正可用的地址：
+//   · 已是 http(s):// / 协议相对 / 站内绝对路径 / data:  → 原样
+//   · 迁移配图的对象键（起点在 MEDIA_PUBLIC_PREFIXES 内）→ /api/media?path=<URL 编码的键>
+//     键位与 scripts/notion-blog-import/deliverables/upload_assets.* 一致：
+//     封面 covers/notion/<标题>.<ext>、正文插图 notion/<标题>/<文件名>。
+//   · 其他 → null，前端回退到默认封面。
+// 图片传上 R2 之前该地址会 404，前端 PostCover 会回退默认封面、ArticleReader 会收起失败的图，
+// 所以不会出现破图；上传完成后**不需要改代码**就会自动显示。
+function coverUrlOf(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  if (/^(https?:)?\/\//i.test(s)) return s;
+  if (s.startsWith('/') || s.startsWith('data:')) return s;
+  if (isMediaPublic(s)) return `/api/media?path=${encodeURIComponent(s)}`;
+  return null;
+}
 
 // 单条可见性：访客必须同时满足 published + is_public，
 // 否则一律按「不存在」处理（不泄露存在性，与 posts.js 一致）。
@@ -74,7 +95,8 @@ export async function listNotionPosts(request, env) {
     // 没有发布时间的（draft）用 nullslast 推到末尾，不让它们顶到最前面。
     order: 'sort_order.asc,published_at.desc.nullslast,created_at.desc'
   }));
-  return ok(rows, request, env);
+  // 顺手把封面归一化，前端拿到 cover_url 直接可用（null 即用默认封面）
+  return ok(rows.map((r) => ({ ...r, cover_url: coverUrlOf(r.cover_path) })), request, env);
 }
 
 // GET /api/notion-posts/slug/:slug —— 按 slug 读取正文（Notion 侧 slug 天然唯一且可读）
@@ -126,5 +148,5 @@ export async function getNotionPostBySlug(request, env, slug) {
       }))
     : [];
 
-  return ok({ ...safe, parent, children, siblings }, request, env);
+  return ok({ ...safe, cover_url: coverUrlOf(safe.cover_path), parent, children, siblings }, request, env);
 }

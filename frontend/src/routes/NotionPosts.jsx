@@ -114,7 +114,7 @@ export function NotionPosts() {
       <PostCard
         key={p.id}
         post={p}
-        cover={p.cover_path}
+        cover={p.cover_url}
         category={p.notion_category ? { id: p.notion_category, name: p.notion_category } : null}
         tags={(p.tags || []).map((name) => ({ name }))}
         meta={(

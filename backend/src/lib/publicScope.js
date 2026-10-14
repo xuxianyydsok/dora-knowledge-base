@@ -21,7 +21,10 @@
 // 访客必须能读到轮播列表（路由层只返回 is_active=true 的项）。
 // 含 notion-posts（2026-10-14）：Notion 博客分区与 posts 一样是公开阅读区，
 // 路由层只放行 status='published' + is_public=true（guestPostFilters）。
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|notion-posts|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers|hero)(\/|$)/;
+// 含 media（2026-10-14）：Notion 迁移的文章正文插图地址就是 /api/media?path=notion/...，
+//   访客必须能看到。路由层只放行 notion/ 与 covers/notion/ 两个前缀（公开博客配图），
+//   其余前缀对访客一律 404 —— 避免把 R2 变成任意 key 探测器（见 routes/media.js）。
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|notion-posts|media|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers|hero)(\/|$)/;
 
 // 站长收藏（2026-10-11 用户要求）：站长收藏的影视 / 音乐对所有人可见可播。
 // 它是一条**精确路径**（不是前缀），因此单独判定 —— 不能塞进上面的前缀正则，
@@ -71,6 +74,17 @@ export function guestResourceFilters() {
 
 // 碎念配图张数上限（前后端共用口径；前端超过就不让选）。
 export const MAX_MOMENT_ASSETS = 9;
+
+// 媒体文件（R2）里**允许匿名读取**的对象键前缀（2026-10-14）。
+// 只覆盖 Notion 迁移的配图：封面 `covers/notion/<标题>.<ext>`、正文插图 `notion/<标题>/<文件>`，
+// 键位与 `scripts/notion-blog-import/deliverables/upload_assets.*` 一致。
+// 其余前缀（covers/ posts/ avatars/ assets/ …）一律登录后才读得到 ——
+// 按 key 读取天然可枚举，不能让匿名访客把对象存储当目录探测器（对比 /api/assets 用 uuid 的设计）。
+export const MEDIA_PUBLIC_PREFIXES = ['notion/', 'covers/notion/'];
+
+export function isMediaPublic(key) {
+  return MEDIA_PUBLIC_PREFIXES.some((p) => String(key || '').startsWith(p));
+}
 
 // 碎念文件附件个数上限（PDF / Word 等；与配图分开计数）。
 export const MAX_MOMENT_FILES = 5;

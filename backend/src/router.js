@@ -9,6 +9,7 @@ import * as videos from './routes/videos.js';
 import * as github from './routes/github.js';
 import * as posts from './routes/posts.js';
 import * as notion from './routes/notion.js';
+import * as media from './routes/media.js';
 import * as mcp from './routes/mcp.js';
 import * as search from './routes/search.js';
 import * as graph from './routes/graph.js';
@@ -93,6 +94,13 @@ const routes = [
   // 只在排版层面复用前端组件。列表不下发正文，正文走 slug 端点。
   ['GET', '/api/notion-posts', notion.listNotionPosts],
   ['GET', '/api/notion-posts/slug/:slug', notion.getNotionPostBySlug],
+
+  // 媒体文件（R2）：Notion 迁移的配图走 /api/media?path=notion/... 读取
+  // （原稿正文里写的就是这个地址）。公开读只放行 notion/ 与 covers/notion/ 两个前缀，
+  // 其余前缀登录后可读；上传 / 删除一律 requireAuth。详见 routes/media.js 头部说明。
+  ['GET', '/api/media', media.getMedia],
+  ['POST', '/api/media', media.uploadMedia],
+  ['DELETE', '/api/media', media.deleteMedia],
 
   // 图片素材（R2）：上传/列出/删除需管理员；按 id 读取完全公开
   ['POST', '/api/assets', assets.uploadAsset],

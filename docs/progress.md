@@ -80,8 +80,9 @@ Notion 侧有 10 个特有字段（`notion_category` / `parent_slug` / `is_blank
 | 文件 | 改动 |
 | --- | --- |
 | `backend/src/routes/notion.js` | **新增**：`listNotionPosts` / `getNotionPostBySlug` |
-| `backend/src/router.js` | 注册 `GET /api/notion-posts`、`GET /api/notion-posts/slug/:slug` |
-| `backend/src/lib/publicScope.js` | `PUBLIC_READ_RE` 加入 `notion-posts`（访客只读） |
+| `backend/src/routes/media.js` | **新增**：`GET/POST/DELETE /api/media`（R2 读 / 传 / 删，Notion 配图靠它显示） |
+| `backend/src/router.js` | 注册 `GET /api/notion-posts`、`GET /api/notion-posts/slug/:slug`、`/api/media` 三条 |
+| `backend/src/lib/publicScope.js` | `PUBLIC_READ_RE` 加入 `notion-posts` 与 `media`（访客只读） |
 
 列表接口**刻意不下发 `content`**（207 篇正文合计近 800 KB，列表页一行用不到）与
 `password_hash`（为后续「博客密码锁」预留的列，永不出网）。阅读页接口一并返回
@@ -136,6 +137,19 @@ Notion 侧有 10 个特有字段（`notion_category` / `parent_slug` / `is_blank
    `guestPostFilters()` 一定得显式带上（Notion 路由已带）。
 5. **`is_locked` / `password_hash` 目前是空跑的**：42 篇原文带密码的文章本轮**全部按公开导入**。
    字段已备好，等做「博客密码锁」时再用。
+6. **图片全在 R2 之外（实测踩到，代码已就位，只差上传）**：两类图都得先传进 R2 才看得到 ——
+   - **封面**：`notion_posts.cover_path` 存的是**对象键**（如 `covers/notion/跨年2026，博客上线.jpg`），
+     不是网址。原样塞进 `<img src>` 会让 61 篇集体破图。后端 `coverUrlOf()` 已把它转成
+     `/api/media?path=<URL 编码后的键>`，前端 `PostCover.usableCover()` 再挡一道。
+   - **正文插图**：349 张，原稿里的地址本来就是 `/api/media?path=notion/<标题>/<文件>`，
+     所以 `backend/src/routes/media.js` 这个按 key 读 R2 的路由是**必需**的（不是可选项）。
+   - 键位与 `scripts/notion-blog-import/deliverables/upload_assets.*` **逐一对应**（349/349 已验证）。
+   - **只差跑一次上传**（见「下一步」）。上传完不用改任何代码，封面与插图自动出现；
+     上传前也不会出现破图（封面回退默认图、失败的插图由 `ArticleReader` 收起）。
+   - 顺带说明：`posts.cover_path` 315 行**全是 null**，所以 Halo 博客一直用的就是默认封面。
+7. **`/api/media` 按 key 读取，天然可枚举**：所以匿名只放行
+   `MEDIA_PUBLIC_PREFIXES`（`notion/` 与 `covers/notion/`）这两个迁移配图前缀，
+   其余前缀一律登录后可读 —— 与 `/api/assets` 用 uuid 的设计取向一致（见 `docs/storage.md`）。
 
 ### 下一步 / 待办
 
@@ -144,8 +158,19 @@ Notion 侧有 10 个特有字段（`notion_category` / `parent_slug` / `is_blank
 - **博客密码锁**（用户已提，未做）：42 篇原文带密码，本轮全部公开；`is_locked` / `password_hash`
   字段已就位。**本轮做完后要主动提醒用户这件事。**
 - **图展区域导入**（用户提及，待定）。
-- **349 张 Notion 文章配图尚未上传 R2**：脚本 `scripts/notion-blog-import/upload_assets.*` 已备好，
-  待执行；未上传前这些图片是外链 Notion/图床地址。
+- **423 张 Notion 配图待上传 R2（唯一还差的一步）**：脚本已备好，
+  源目录 `~/projects/knowledge-base/scripts/notion-blog-import/assets/`（223 篇文章目录）
+  或 Windows 侧 `C:\Users\x1078\Pictures\Notion博客迁移\图片素材\`，两者内容一致。
+
+  ```bash
+  # WSL（wrangler 已登录）
+  cd ~/projects/knowledge-base
+  bash scripts/notion-blog-import/deliverables/upload_assets.sh --dry-run   # 先看 423 条映射
+  bash scripts/notion-blog-import/deliverables/upload_assets.sh             # 正式传
+  ```
+  **传完不用改代码、也不用回填 SQL** —— 封面走 `/api/media?path=covers/notion/...`、
+  正文插图走原稿里就有的 `/api/media?path=notion/...`，两者键位与脚本一致。
+  另：后端 `media.js` 这次是新加的，要 `npx wrangler deploy`（在 `backend/`）才会生效。
 - **建议重置那个 Supabase PAT**：账号级权限过重（可执行任意 SQL）。
 
 ---

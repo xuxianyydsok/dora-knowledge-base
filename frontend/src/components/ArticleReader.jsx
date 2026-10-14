@@ -94,7 +94,19 @@ export function ArticleReader({
       if (img && root.contains(img)) setViewer(img.currentSrc || img.src);
     };
     root.addEventListener('click', onClick);
-    return () => root.removeEventListener('click', onClick);
+    // 正文插图的地址可能是「还没同步到本站 R2」的对象（Notion 迁移那批图就是，
+    // 见 docs/progress.md 2.37 的坑 6）。加载失败时浏览器会画出破图图标，比留白更难看；
+    // error 事件不冒泡但会捕获，这里在捕获阶段把失败的图收起来。
+    // 图片补齐后重新打开页面即自动恢复，不需要改代码。
+    const onError = (e) => {
+      const img = e.target;
+      if (img && img.tagName === 'IMG' && root.contains(img)) img.classList.add('is-broken');
+    };
+    root.addEventListener('error', onError, true);
+    return () => {
+      root.removeEventListener('click', onClick);
+      root.removeEventListener('error', onError, true);
+    };
   }, [content]);
 
   // 阅读进度 + 当前章节高亮
