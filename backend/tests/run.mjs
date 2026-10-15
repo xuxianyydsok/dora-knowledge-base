@@ -1909,6 +1909,24 @@ async function videoTypeUnit() {
     assert(noBump.length === 0, `这些接口接了缓存但写操作不失效：${noBump.join(', ')}`);
     return `${targets.length} 个接口已接入（timeline 纯聚合靠 TTL）+ 工具含访客限定/版本号/R2 二级/过期兜底`;
   });
+
+  // ---- Notion 博客封面口径（2026-10-15 用户要求统一用 Halo 默认封面） ----
+  await test('Notion 博客统一用 Halo 默认封面（不再下发自带封面）', () => {
+    const src = readFileSync(join(BACKEND, 'src', 'routes', 'notion.js'), 'utf8');
+    // coverUrlOf 恒返回 null → 前端 PostCover 回退到 DEFAULT_COVER（与 Halo 同一张）
+    assert(/function coverUrlOf\(\)\s*\{\s*return null;\s*\}/.test(src),
+      'coverUrlOf 应恒返回 null（统一走默认封面）');
+    // 但 cover_path 数据必须保留（只改下发值，不删数据）
+    assert(/cover_path/.test(src), 'cover_path 仍要保留在查询里（数据不删）');
+    // 前端确实会回退：PostCard 的 PostCover 在空值时用 DEFAULT_COVER
+    const card = readFileSync(join(FRONTEND_SRC, 'components', 'PostCard.jsx'), 'utf8');
+    assert(/usableCover\(src\) \|\| fallback/.test(card), 'PostCover 空值应回退默认封面');
+    // 且默认封面就是 Halo 那张（两个分区共用同一常量）
+    const media = readFileSync(join(FRONTEND_SRC, 'lib', 'blogMedia.js'), 'utf8');
+    assert(/DEFAULT_COVER = '\/blog\/default-cover\.webp'/.test(media),
+      '默认封面应指向 /blog/default-cover.webp');
+    return 'coverUrlOf→null + cover_path 保留 + 前端回退 /blog/default-cover.webp';
+  });
 }
 
 // ---------------------------------------------------------------- UNIT · GitHub AI 解读

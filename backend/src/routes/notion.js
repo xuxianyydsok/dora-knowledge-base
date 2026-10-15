@@ -19,7 +19,7 @@ import { ok, HttpError } from '../lib/response.js';
 import { requireAuth } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { requireString, requireEnum } from '../lib/validate.js';
-import { guestPostFilters, isPostVisibleToGuest, isMediaPublic } from '../lib/publicScope.js';
+import { guestPostFilters, isPostVisibleToGuest } from '../lib/publicScope.js';
 
 const TABLE = 'notion_posts';
 
@@ -34,26 +34,28 @@ const LIST_COLUMNS = [
 // 阅读页里「父页面 / 子页面 / 同级」导航用的轻量投影
 const NAV_COLUMNS = 'id,title,slug,notion_icon,notion_category,is_blank,published_at';
 
-// 封面地址归一化（2026-10-14 实测发现的问题）：
-// 迁移载荷里的 cover_path 是 R2 的**对象键**（形如 covers/notion/跨年2026，博客上线.jpg），
-// 不是能直接喂给 <img src> 的地址 —— 原样下发会让浏览器去站内找 /covers/... 而 404，
-// 61 篇文章集体变破图。这里统一归一化成一个真正可用的地址：
-//   · 已是 http(s):// / 协议相对 / 站内绝对路径 / data:  → 原样
-//   · 迁移配图的对象键（起点在 MEDIA_PUBLIC_PREFIXES 内）→ /api/media?path=<URL 编码的键>
-//     键位与 scripts/notion-blog-import/deliverables/upload_assets.* 一致：
-//     封面 covers/notion/<标题>.<ext>、正文插图 notion/<标题>/<文件名>。
-//   · 其他 → null，前端回退到默认封面。
-// 图片传上 R2 之前该地址会 404，前端 PostCover 会回退默认封面、ArticleReader 会收起失败的图，
-// 所以不会出现破图；上传完成后**不需要改代码**就会自动显示。
-function coverUrlOf(v) {
-  if (!v) return null;
-  const s = String(v).trim();
-  if (!s) return null;
-  if (/^(https?:)?\/\//i.test(s)) return s;
-  if (s.startsWith('/') || s.startsWith('data:')) return s;
-  if (isMediaPublic(s)) return `/api/media?path=${encodeURIComponent(s)}`;
+// 封面：2026-10-15 用户决定**统一使用 Halo 博客那张默认封面**，
+// 不再用 Notion 自带的封面图（原话：「Notion 里面博客的那个封面，不使用原来的
+// 照片了，也是使用 HALO 的那个照片」）。
+//
+// 做法：这里恒返回 null —— 前端 PostCover 收到空值就回退到 DEFAULT_COVER
+// （/blog/default-cover.webp，与 Halo 博客是同一张）。好处是**只改下发值**：
+//   · notion_posts.cover_path 原样保留（61 张封面仍安全躺在 R2 里）；
+//   · 哪天想恢复自带封面，把下面的 `return null` 改回原逻辑即可，无需重传图片。
+//
+function coverUrlOf() {
   return null;
 }
+
+// 被替换掉的原实现（2026-10-14，保留备查）：把对象键归一化成可用地址 ——
+//   · 已是 http(s):// / 协议相对 / 站内绝对路径 / data: → 原样
+//   · 迁移配图的对象键（起点在 MEDIA_PUBLIC_PREFIXES 内）→ /api/media?path=<URL 编码的键>
+//     键位：封面 covers/notion/<标题>.<ext>、正文插图 notion/<标题>/<文件名>
+//   · 其他 → null
+// 当初写它是为了修「61 篇集体变破图」（cover_path 是 R2 对象键，直接塞给
+// <img src> 会让浏览器去站内找 /covers/... 而 404）。
+// 想恢复自带封面时，把上面那个 return null 换回这段逻辑即可；
+// 届时记得把 isMediaPublic 加回 publicScope.js 的 import（现在已用不到）。
 
 // parent_slug 读时归一（2026-10-14 实测发现的一个真实断链）：
 // 上游导入脚本的兜底分支把「父标题」直接当 slug 用，而父标题本身可能以 '-' 收尾
