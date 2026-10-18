@@ -25,7 +25,11 @@ class E {
   constructor(tag) {
     this.localName = tag; this.tagName = String(tag).toUpperCase();
     this.childNodes = []; this.attributes = {}; this.parentNode = null;
-    this.style = {}; this.dataset = {}; this._listeners = {}; this.nodeType = 1;
+    this.style = {
+      setProperty(k, v) { this[k] = v; },
+      removeProperty(k) { delete this[k]; }
+    };
+    this.dataset = {}; this._listeners = {}; this.nodeType = 1;
   }
   get firstChild() { return this.childNodes[0] || null; }
   get nextSibling() {

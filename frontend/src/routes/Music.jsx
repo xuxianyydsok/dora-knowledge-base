@@ -25,6 +25,7 @@ import { SearchHistory } from '../components/SearchHistory.jsx';
 import { pushHistory } from '../lib/searchHistory.js';
 import { hdCover, candidateToTrack } from '../lib/cover.js';
 import { dedupeMusicList } from '../lib/musicIdentity.js';
+import { Equalizer, GenreRank } from '../components/MotionFx.jsx';
 import '../styles/now-settings.css';
 
 // 推荐搜索：给没有明确目标的场景一个起点
@@ -218,6 +219,21 @@ export function Music() {
   const [pf, setPf] = useState('all');               // 搜索结果的音源筛选
   const [histKey, setHistKey] = useState(0);          // 搜索历史刷新信号
   const { playQueue, queue, index, goTo, stop, playing, toggle } = usePlayer();
+  // 曲风排行（图鉴 #124）：只统计音乐库中真实存在的歌曲，按专辑/歌手兜底分组，
+  // 不做假数据。没有曲目时整块不渲染。
+  const genreRows = useMemo(() => {
+    const counts = new Map();
+    for (const item of items) {
+      const t = item.track || {};
+      const key = t.genre || t.style || t.album || t.artist || '未分类';
+      const label = String(key).trim() || '未分类';
+      counts.set(label, (counts.get(label) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([label, value], i) => ({ label, value, color: `var(--mfx-rank-${(i % 6) + 1})` }));
+  }, [items]);
 
   async function load() {
     setLoading(true); setLoadError('');
@@ -589,12 +605,24 @@ export function Music() {
       )}
 
       {mode === 'home' && (
-        <MusicHome
-          onPlayList={playCandidates}
-          onCollect={(t) => addFrom(t, { play: false })}
-          canCollect={isAuthenticated}
-          currentTitle={queue[index]?.title}
-        />
+        <>
+          <MusicHome
+            onPlayList={playCandidates}
+            onCollect={(t) => addFrom(t, { play: false })}
+            canCollect={isAuthenticated}
+            currentTitle={queue[index]?.title}
+          />
+          {genreRows.length > 0 && (
+            <section class="music-genre-strip">
+              <div class="grid-head">
+                <h2><span class="bar" />曲风排行</h2>
+                <span class="count">按音乐库真实条目统计</span>
+                {playing && <Equalizer playing bars={5} class="music-genre-eq" />}
+              </div>
+              <GenreRank items={genreRows} limit={6} />
+            </section>
+          )}
+        </>
       )}
 
       {/* —— 音乐库 —— */}

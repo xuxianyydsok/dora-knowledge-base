@@ -28,6 +28,7 @@ import {
 } from '../components/StatCharts.jsx';
 import { FlowSankey } from '../components/FlowSankey.jsx';
 import { TagSphere } from '../components/TagSphere.jsx';
+import { DonutShare, KpiCard } from '../components/MotionFx.jsx';
 // 2026-10-11（本轮）：上一轮追加的 8 张图里，用户点名保留了「占比点阵」
 // （WaffleGrid）和「矩形树图」（TreemapBoard），其余（和弦图 / 多维环形对比 /
 // 同心环段 / 轨道星座 / 流带时间轴 / 山脊图）连同后面一批原有图表一起删掉。
@@ -137,9 +138,40 @@ function ExtraCharts({ stats, mode }) {
   const groups = useMemo(() => sunburstToGroups(stats.sunburst), [stats.sunburst]);
   const colWord = mode === 'repos' ? '应用分类' : '标签';
   const unit = mode === 'repos' ? '个仓库' : '篇文章';
+  const shares = useMemo(
+    () => groups.map((g) => ({ label: g.label, value: g.value, color: g.color })).slice(0, 8),
+    [groups]
+  );
+  const kpis = mode === 'repos'
+    ? [
+      { label: '仓库', value: stats.totals.repos || 0 },
+      { label: '编程语言', value: stats.totals.languages || 0 },
+      { label: 'AI 解读覆盖', value: Math.round((stats.totals.aiCoverage || 0) * 100), suffix: '%' }
+    ]
+    : [
+      { label: '文章', value: stats.totals.posts || 0 },
+      { label: '分类', value: stats.totals.categories || 0 },
+      { label: '标签', value: stats.totals.tags || 0 }
+    ];
 
   return (
     <StatBoard ariaLabel="扩展统计图">
+      <StatCard
+        title={mode === 'repos' ? '语言占比' : '分类占比'}
+        sub={`环形图按当前筛选后的真实${unit}统计；悬停图例可看具体名称。`}
+      >
+        <DonutShare items={shares} label={mode === 'repos' ? '语言占比' : '分类占比'} />
+      </StatCard>
+
+      <StatCard
+        title="关键读数"
+        sub="数字来自当前筛选结果，不做虚构增长；数字进入视口时滚动到真实值。"
+      >
+        <div class="mfx-kpi-grid">
+          {kpis.map((k) => <KpiCard key={k.label} {...k} />)}
+        </div>
+      </StatCard>
+
       <StatCard
         title="占比点阵"
         sub={`每个方块 = 一份，颜色代表它属于哪个${colWord}；对角线错峰弹出，悬停看具体数值。`}
@@ -165,6 +197,42 @@ function ExtraCharts({ stats, mode }) {
 
 function Stat({ label, value, accent }) {
   return <span class="sm-stat"><i>{label}</i><b style={accent ? `color:${accent}` : undefined}>{fmtNum(value)}</b></span>;
+}
+
+// 178 实时动态流：展示当前筛选下真实存在的条目，按最近日期排序。
+// 这里不轮询、不编造新数据；「流动」只体现在新条目进入时的滑入动画。
+function LiveFeed({ items, mode }) {
+  const rows = useMemo(() => {
+    const list = (Array.isArray(items) ? items : [])
+      .map((it) => ({
+        id: it.id,
+        title: it.label || '未命名',
+        date: String(it.date || '').slice(0, 10),
+        meta: mode === 'repos'
+          ? [it.lang, it.cat].filter(Boolean).join(' · ')
+          : it.parent ? '文章' : ''
+      }))
+      .filter((it) => it.date)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      .slice(0, 6);
+    return list;
+  }, [items, mode]);
+
+  if (!rows.length) return <p class="muted">当前筛选下没有带日期的条目。</p>;
+  return (
+    <ol class="mfx-feed" aria-label="实时动态流">
+      {rows.map((it, i) => (
+        <li key={`${it.id}-${i}`} style={{ '--i': i }}>
+          <i aria-hidden="true" />
+          <span>
+            <strong title={it.title}>{it.title}</strong>
+            <small>{it.meta || '公开条目'}</small>
+          </span>
+          <time>{it.date}</time>
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 // ---------------- 侧栏 chip 自适应 ----------------
@@ -412,6 +480,9 @@ function BlogGraph() {
             <StatCard title="标签球" sub={`共 ${stats.totals.tags} 个标签 · 移动鼠标可转向`}>
               <TagSphere items={stats.tagRank} size={260} />
             </StatCard>
+            <StatCard title="最近动态" sub="当前筛选下最近发布的公开文章；不是实时访问统计。">
+              <LiveFeed items={filtered} mode="blog" />
+            </StatCard>
             {/* 同时删掉：内容构成雷达、内容健康度仪表。 */}
           </StatBoard>
           {/* 本轮新增的 8 张图：原有图表一行未改，这里只是追加 */}
@@ -568,6 +639,9 @@ function RepoGraph() {
 
             <StatCard title="应用分类体量" sub={`共 ${stats.totals.categories} 个分类`}>
               <RankBars items={stats.catRank} ariaLabel="应用分类排行" />
+            </StatCard>
+            <StatCard title="最近收藏" sub="当前筛选下最近加入的仓库；按真实日期排序。">
+              <LiveFeed items={filtered} mode="repos" />
             </StatCard>
           </StatBoard>
           {/* 本轮新增的 8 张图：原有图表一行未改，这里只是追加 */}

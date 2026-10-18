@@ -7,6 +7,7 @@
 /* ---------------- 图片展览 ---------------- */
 .gl-page { display: block; }
 
+
 /* 两个区（静态图片 / 动态壁纸）之间的分隔：留白 + 细线，不用大标题压场 */
 .gl-section { margin-top: var(--sp-6, 28px); }
 .gl-section:first-of-type { margin-top: var(--sp-4, 12px); }
@@ -507,3 +508,30 @@
 }
 /* 抽屉里的视频缩略图与图片缩略图同尺寸 */
 .gl-asset video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 116 动态时间线：档案轴上方一条缓慢循环的流光，只做氛围，不承载数据。 */
+.tl-live-line {
+  position: relative;
+  height: 2px;
+  margin: -2px 0 24px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+.tl-live-line i {
+  position: absolute;
+  top: 0;
+  left: -18%;
+  width: 18%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  animation: tl-live-run 5.5s ease-in-out infinite;
+}
+@keyframes tl-live-run {
+  0% { left: -18%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tl-live-line i { animation: none; left: 42%; opacity: .7; }
+}

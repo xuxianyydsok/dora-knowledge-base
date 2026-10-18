@@ -156,6 +156,10 @@ export function Timeline() {
         onTab={setFilter}
       />
 
+      {/* 116 动态时间线：一条会循环流动的细线，作为档案轴的氛围层。
+          它不承载数据、不随筛选改变，真正的年份 / 月份节点仍在下方。 */}
+      <div class="tl-live-line" aria-hidden="true"><i /></div>
+
       {shown.length === 0 ? (
         <EmptyState
           icon="clock"

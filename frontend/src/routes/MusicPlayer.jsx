@@ -6,6 +6,7 @@ import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { usePlayer } from '../lib/player.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { Equalizer, PlayPauseMorph } from '../components/MotionFx.jsx';
 
 function fmt(sec) {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -135,6 +136,7 @@ export function MusicPlayer() {
           <div class="np-head">
             <h1>{music.title}</h1>
             <p>{track.artist || '未知歌手'}{track.release_year ? ` · ${track.release_year}` : ''}</p>
+            {playing && <Equalizer playing bars={9} class="np-eq" />}
             <span class={`quality-tag${(track.quality || 'full') === 'full' ? ' quality-full' : ' quality-preview'}`}>
               <Icon name={(track.quality || 'full') === 'full' ? 'sparkles' : 'preview'} size={12} />
               {quality}
@@ -162,9 +164,7 @@ export function MusicPlayer() {
             <button class="np-icon lg" onClick={prev} disabled={!hasPrev} title="上一首">
               <Icon name="skipBack" size={22} />
             </button>
-            <button class="np-play" onClick={toggle} title={playing ? '暂停' : '播放'}>
-              <Icon name={playing ? 'pause' : 'play'} size={26} />
-            </button>
+            <PlayPauseMorph playing={playing} onClick={toggle} class="np-play-mfx" />
             <button class="np-icon lg" onClick={next} disabled={!hasNext} title="下一首">
               <Icon name="skipForward" size={22} />
             </button>

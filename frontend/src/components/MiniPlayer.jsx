@@ -18,6 +18,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { api } from '../lib/api.js';
 import { REPEAT_LABEL } from '../lib/queueOrder.js';
 import { Icon } from './Icon.jsx';
+import { BurstLike, Equalizer, PlayPauseMorph } from './MotionFx.jsx';
 import { toastError, toastSuccess } from '../lib/toast.jsx';
 
 function fmt(sec) {
@@ -118,7 +119,7 @@ export function MiniPlayer() {
           {track.artwork_url
             ? <img src={track.artwork_url} alt="" referrerpolicy="no-referrer" />
             : <Icon name="music" size={18} />}
-          {playing && <span class="mini-eq" aria-hidden="true"><i /><i /><i /></span>}
+          {playing && <Equalizer playing bars={3} class="mini-eq-mfx" />}
         </span>
       </button>
 
@@ -135,15 +136,15 @@ export function MiniPlayer() {
 
       {/* 收藏：与详情页 / 歌词页同一个接口，登出后自动隐藏 */}
       {isAuthenticated && (
-        <button
+        <BurstLike
+          active={favOn}
+          onToggle={toggleFav}
+          label={favOn ? '取消收藏' : '收藏'}
           class={`mini-icon mini-fav${favOn ? ' on' : ''}`}
-          onClick={toggleFav}
           disabled={favBusy}
-          aria-pressed={favOn}
-          title={favOn ? '取消收藏' : '收藏'}
         >
           <Icon name="heart" size={16} />
-        </button>
+        </BurstLike>
       )}
 
       <span class="mini-time">{fmt(position)} / {fmt(duration)}</span>
@@ -158,9 +159,7 @@ export function MiniPlayer() {
           <Icon name="shuffle" size={16} />
         </button>
         <button onClick={prev} disabled={!hasPrev} title="上一首"><Icon name="skipBack" size={17} /></button>
-        <button class="mini-play" onClick={toggle} title={playing ? '暂停' : '播放'}>
-          <Icon name={playing ? 'pause' : 'play'} size={18} />
-        </button>
+        <PlayPauseMorph playing={playing} onClick={toggle} class="mini-play-mfx" />
         <button onClick={next} disabled={!hasNext} title="下一首"><Icon name="skipForward" size={17} /></button>
         <button
           class={`mini-icon${repeat !== 'off' ? ' on' : ''}`}

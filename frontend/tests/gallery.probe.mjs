@@ -29,7 +29,11 @@ class E {
   constructor(tag) {
     this.localName = tag; this.tagName = String(tag).toUpperCase();
     this.childNodes = []; this.attributes = {}; this.parentNode = null;
-    this.style = {}; this.dataset = {}; this._listeners = {}; this.nodeType = 1;
+    this.style = {
+      setProperty(k, v) { this[k] = v; },
+      removeProperty(k) { delete this[k]; }
+    };
+    this.dataset = {}; this._listeners = {}; this.nodeType = 1;
     // preact 靠 `'onclick' in element` 判断事件名是否要小写。
     // 真 DOM 里这些属性始终存在，shim 也必须声明，否则 preact 会注册成
     // 'Click' 键、而派发时去找 'click' 键，导致 click 永远不触发。

@@ -13,6 +13,7 @@ import { BlogDock, BlogLinks } from '../components/BlogDock.jsx';
 import { PostCard, PostCover } from '../components/PostCard.jsx';
 import { PostHeatmap } from '../components/PostHeatmap.jsx';
 import { ContentChartsPanel } from '../components/ContentChartsPanel.jsx';
+import { CrossFadeWords } from '../components/MotionFx.jsx';
 // 横幅与默认封面的地址统一放在 lib/blogMedia.js（原先写在本文件里）
 import { BANNERS } from '../lib/blogMedia.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -128,7 +129,10 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
           {/* 横幅站名（2026-10-12 用户要求）：由「Dora 的博客」改成英文
               「The Blog of Dora」——该大写的大写（标题大小写）。 */}
           <h1>The Blog of Dora</h1>
-          <p>记录学习、技术与生活 · 共 {posts.length} 篇文章</p>
+          <p>
+            记录学习、技术与生活 · 共 {posts.length} 篇文章 · 也在
+            <CrossFadeWords words={['读书', '听歌', '看片', '收藏', '思考']} />
+          </p>
           <label class="cs-search cs-search-lg">
             <Icon name="search" size={18} />
             <input ref={searchRef} type="search" placeholder="搜索文章标题或摘要…" value={q} onInput={(e) => setQ(e.currentTarget.value)} />

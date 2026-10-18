@@ -5,6 +5,7 @@
 // 这里给出**与最终内容同形**的骨架屏（poster / album / card / row），
 // 加载完成时版面不会「跳一下」；空态与错误态则共用同一套卡片骨架视觉。
 import { Icon } from './Icon.jsx';
+import { LoadingLetters, SquareWave } from './MotionFx.jsx';
 
 // 状态三件套对外只暴露一个入口：加载 / 空 / 错误都从 StateView 取，
 // 免得各页记不清该从哪个文件 import。
@@ -30,6 +31,10 @@ export function LoadingState({ shape = 'card', count, label = '正在加载' }) 
   const n = count ?? s.count;
   return (
     <div class={`sk-grid ${s.grid}`} role="status" aria-busy="true" aria-label={label}>
+      <div class="sk-status-mfx" aria-hidden="true">
+        <SquareWave />
+        <LoadingLetters text={label === '正在加载' ? 'Loading' : label} />
+      </div>
       {Array.from({ length: n }).map((_, i) => (
         <div key={i} class="sk-item">
           <div class={`sk ${s.item}`} />

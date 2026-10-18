@@ -20,6 +20,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { MiniUniverse } from '../components/MiniUniverse.jsx';
+import { ConfettiBurst } from '../components/MotionFx.jsx';
 import { toastError } from '../lib/toast.jsx';
 import { CHANGELOG, sortVersions, formatDate } from '../lib/changelog.js';
 import '../styles/coop.css';
@@ -73,7 +74,10 @@ function ThanksDialog({ onClose }) {
       onClick={onClose}
     >
       <div class="coop-modal" onClick={(e) => e.stopPropagation()}>
-        <span class="coop-modal-mark" aria-hidden="true"><Icon name="heart" size={22} /></span>
+        <span class="coop-modal-mark" aria-hidden="true">
+          <Icon name="heart" size={22} />
+          <ConfettiBurst active count={30} />
+        </span>
         <h2 id="coop-thanks-title" class="coop-modal-title">收到了，谢谢你</h2>
         <p class="coop-modal-text">
           你的这条反馈我已经收到。每一条我都会认真看，能改的会尽快改，改好了会写进更新日志。

@@ -592,3 +592,468 @@
 @media (prefers-reduced-motion: reduce) {
   .ccp .mfx-canvas { animation: none; }
 }
+
+/* =============================================================
+   2026-10-19 全站点缀扩展（图鉴 #22 / #32 / #33 / #35 / #36 /
+   #54 / #86 / #87 / #110 / #155 / #162）
+   颜色一律走主题变量；类名继续用 mfx- 前缀。
+   ============================================================= */
+
+/* 22 模糊交叉换词 */
+.mfx-cf {
+  display: inline-block;
+  transition: opacity .42s var(--ease-out), filter .42s var(--ease-out), transform .42s var(--ease-out);
+}
+.mfx-cf.out {
+  opacity: 0;
+  filter: blur(10px);
+  transform: translateY(-4px);
+}
+
+/* 32 点赞爆裂 */
+.mfx-like {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+.mfx-like.mfx-like-labeled {
+  width: auto;
+  min-height: 34px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--bg-elevated);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+}
+.mfx-like.mfx-like-labeled:hover { color: var(--danger); }
+.mfx-like.mfx-like-labeled.on { color: var(--danger); }
+.mfx-like.mfx-like-labeled.on svg { fill: currentColor; }
+.mfx-like::after { display: none; }
+.mfx-like:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); transform: none; box-shadow: none; }
+.mfx-like svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; transition: transform .25s var(--ease-spring), fill .25s; }
+.mfx-like.on { color: var(--danger); }
+.mfx-like.on svg { fill: currentColor; }
+.mfx-like.burst svg { transform: scale(1.22); }
+.mfx-like i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--danger);
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(var(--r)) translateY(0);
+}
+.mfx-like.burst i { animation: mfx-like-burst .62s var(--ease-out) both; }
+@keyframes mfx-like-burst {
+  0% { opacity: 1; transform: translate(-50%, -50%) rotate(var(--r)) translateY(-3px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--r)) translateY(-23px) scale(.4); }
+}
+
+/* 33 音频均衡器 */
+.mfx-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 18px; }
+.mfx-eq i {
+  width: 3px;
+  height: var(--h, 60%);
+  border-radius: 2px;
+  background: var(--primary);
+  transform-origin: bottom;
+  animation: mfx-eq-bounce var(--d, .6s) ease-in-out infinite alternate;
+}
+.mfx-eq:not(.on) i { animation-play-state: paused; opacity: .35; }
+@keyframes mfx-eq-bounce { from { transform: scaleY(.25); } to { transform: scaleY(1); } }
+
+/* 35 播放 ⇄ 暂停形变 */
+.mfx-pp {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+.mfx-pp::after { display: none; }
+.mfx-pp i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 16px;
+  margin: -8px 0 0 -1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transition: transform .38s var(--ease-spring), width .38s var(--ease-spring), height .38s var(--ease-spring), border-radius .38s;
+}
+.mfx-pp i:first-child { transform: translateX(-4px); }
+.mfx-pp i:last-child { transform: translateX(4px); }
+.mfx-pp.playing i:first-child {
+  width: 15px;
+  height: 17px;
+  margin: -8.5px 0 0 -3px;
+  transform: translateX(1px);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.mfx-pp.playing i:last-child { width: 0; opacity: 0; transform: translateX(2px); }
+
+/* 36 RSS 脉冲 + 未读徽章 */
+.mfx-pulse { position: relative; display: inline-flex; }
+.mfx-pulse.has::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  animation: mfx-pulse-ring 1.8s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes mfx-pulse-ring { from { opacity: .65; transform: scale(.7); } to { opacity: 0; transform: scale(1.45); } }
+.mfx-pulse-dot {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font: 700 9.5px/16px var(--font-mono, monospace);
+  text-align: center;
+  animation: mfx-badge-pop .45s var(--ease-spring) both;
+}
+@keyframes mfx-badge-pop { from { opacity: 0; transform: scale(.3); } }
+
+/* 54 铃铛摇晃 + 红点 */
+.mfx-bell { position: relative; display: inline-flex; transform-origin: 50% 8%; }
+.mfx-bell.shake { animation: mfx-bell-shake .9s var(--ease-out); }
+@keyframes mfx-bell-shake {
+  0%, 100% { transform: rotate(0); }
+  12% { transform: rotate(-13deg); }
+  24% { transform: rotate(11deg); }
+  36% { transform: rotate(-8deg); }
+  48% { transform: rotate(6deg); }
+  62% { transform: rotate(-3deg); }
+}
+.mfx-bell-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
+  animation: mfx-bell-dot 1.6s ease-in-out infinite;
+}
+@keyframes mfx-bell-dot { 50% { transform: scale(1.35); } }
+
+/* 86 方块波 */
+.mfx-square {
+  display: grid;
+  grid-template-columns: repeat(3, 12px);
+  gap: 3px;
+  width: max-content;
+}
+.mfx-square i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--primary);
+  animation: mfx-square 1.2s ease-in-out infinite;
+  animation-delay: var(--d, 0s);
+}
+@keyframes mfx-square {
+  0%, 70%, 100% { transform: scale(1); opacity: 1; }
+  35% { transform: scale(.3); opacity: .3; }
+}
+
+/* 87 Loading 跳字 */
+.mfx-loading-letters {
+  display: inline-flex;
+  gap: 1px;
+  font: 700 14px var(--font-mono, monospace);
+  color: var(--text-muted);
+}
+.mfx-loading-letters i {
+  display: inline-block;
+  font-style: normal;
+  animation: mfx-letter-jump 1.2s ease-in-out infinite;
+  animation-delay: calc(var(--i) * .08s);
+}
+@keyframes mfx-letter-jump {
+  0%, 60%, 100% { transform: none; color: var(--text-muted); }
+  30% { transform: translateY(-6px); color: var(--primary); }
+}
+
+/* 110 3D 玻璃立方体 */
+.mfx-cube-wrap {
+  display: grid;
+  place-items: center;
+  width: var(--cube, 130px);
+  height: var(--cube, 130px);
+  perspective: 700px;
+}
+.mfx-cube {
+  position: relative;
+  width: var(--cube, 130px);
+  height: var(--cube, 130px);
+  transform-style: preserve-3d;
+  animation: mfx-cube-spin 14s linear infinite;
+}
+.mfx-cube-wrap:hover .mfx-cube { animation-play-state: paused; }
+.mfx-cube span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 38%, transparent);
+  border-radius: 8px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--primary) 34%, transparent),
+    color-mix(in srgb, var(--bg-elevated) 76%, transparent));
+  color: var(--text);
+  font: 700 clamp(14px, 1.5vw, 20px) var(--font-display, serif);
+  text-shadow: 0 1px 8px color-mix(in srgb, var(--bg) 60%, transparent);
+  backdrop-filter: blur(3px);
+}
+.mfx-cube span:nth-child(1) { transform: translateZ(calc(var(--cube, 130px) / 2)); }
+.mfx-cube span:nth-child(2) { transform: rotateY(180deg) translateZ(calc(var(--cube, 130px) / 2)); }
+.mfx-cube span:nth-child(3) { transform: rotateY(90deg) translateZ(calc(var(--cube, 130px) / 2)); }
+.mfx-cube span:nth-child(4) { transform: rotateY(-90deg) translateZ(calc(var(--cube, 130px) / 2)); }
+.mfx-cube span:nth-child(5) { transform: rotateX(90deg) translateZ(calc(var(--cube, 130px) / 2)); }
+.mfx-cube span:nth-child(6) { transform: rotateX(-90deg) translateZ(calc(var(--cube, 130px) / 2)); }
+@keyframes mfx-cube-spin { to { transform: rotateX(360deg) rotateY(360deg); } }
+
+/* 155 金线丝绸流场 / 162 粒子文字 */
+.mfx-silk,
+.mfx-particles {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-sm, 10px);
+  background: color-mix(in srgb, var(--bg-subtle) 48%, transparent);
+}
+.mfx-particles { cursor: crosshair; }
+
+/* 124 曲风排行：真实计数排行，条宽按最大值归一 */
+.mfx-rank {
+  --mfx-rank-1: var(--primary);
+  --mfx-rank-2: color-mix(in srgb, var(--primary) 72%, #ff7a1a);
+  --mfx-rank-3: color-mix(in srgb, var(--primary) 60%, #00b894);
+  --mfx-rank-4: color-mix(in srgb, var(--primary) 55%, #e8397a);
+  --mfx-rank-5: color-mix(in srgb, var(--primary) 58%, #f2b705);
+  --mfx-rank-6: color-mix(in srgb, var(--primary) 62%, #8b5cf6);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.mfx-rank-row {
+  display: grid;
+  grid-template-columns: 24px minmax(64px, 0.75fr) minmax(100px, 2fr) 40px;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+}
+.mfx-rank-no { color: var(--text-muted); font: 700 11px var(--font-mono, monospace); }
+.mfx-rank-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.mfx-rank-track {
+  height: 8px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+  overflow: hidden;
+}
+.mfx-rank-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width .6s var(--ease-out);
+}
+.mfx-rank-val { text-align: right; color: var(--text-muted); font: 700 11px var(--font-mono, monospace); }
+
+/* 171 媒体占比环形图 */
+.mfx-donut {
+  position: relative;
+  width: var(--donut, 180px);
+  height: var(--donut, 180px);
+  display: grid;
+  place-items: center;
+}
+.mfx-donut svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+.mfx-donut-bg,
+.mfx-donut-seg {
+  fill: none;
+  stroke-width: 10;
+}
+.mfx-donut-bg { stroke: color-mix(in srgb, var(--border) 72%, transparent); }
+.mfx-donut-seg {
+  stroke-linecap: round;
+  transition: stroke-dasharray .5s var(--ease-out), stroke-dashoffset .5s var(--ease-out);
+}
+.mfx-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.mfx-donut-center b { font: 800 clamp(20px, 2.2vw, 30px)/1 var(--font-display, serif); color: var(--text); }
+.mfx-donut-center small { margin-top: 5px; font-size: 10.5px; color: var(--text-muted); }
+.mfx-donut-legend {
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  display: flex;
+  gap: 4px;
+  transform: translate(-50%, 100%);
+}
+.mfx-donut-legend i { width: 7px; height: 7px; border-radius: 50%; display: block; }
+
+/* 175 实时指标卡 */
+.mfx-kpi {
+  position: relative;
+  min-width: 0;
+  padding: 14px 15px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 10px);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.mfx-kpi-label { display: block; font-size: 11.5px; color: var(--text-muted); }
+.mfx-kpi strong {
+  display: block;
+  margin-top: 4px;
+  font: 800 clamp(22px, 2.6vw, 32px)/1.15 var(--font-display, serif);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.mfx-kpi-spark {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 54%;
+  height: 38px;
+  opacity: .65;
+  pointer-events: none;
+}
+.mfx-kpi-spark polyline {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.mfx-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .mfx-kpi-grid { grid-template-columns: 1fr; }
+}
+
+/* 178 实时动态流：只让「新条目进入」有滑入动画，不伪造实时数据 */
+.mfx-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mfx-feed li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  animation: mfx-feed-in .45s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+.mfx-feed li:last-child { border-bottom: 0; }
+.mfx-feed li > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+.mfx-feed li > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mfx-feed strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text);
+}
+.mfx-feed small { font-size: 11px; color: var(--text-muted); }
+.mfx-feed time { font: 11px var(--font-mono, monospace); color: var(--text-muted); }
+@keyframes mfx-feed-in {
+  from { opacity: 0; transform: translateX(12px); }
+}
+
+/* 148 彩带礼炮：按钮/卡片内定位，只在 .on 时播放一次 */
+.mfx-confetti {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.mfx-confetti i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 5px;
+  height: 9px;
+  border-radius: 1px;
+  background: var(--primary);
+  opacity: 0;
+}
+.mfx-confetti i:nth-child(3n) { background: #ff7a1a; }
+.mfx-confetti i:nth-child(3n + 1) { background: #00b894; }
+.mfx-confetti.on i { animation: mfx-confetti-fly var(--d, .8s) var(--ease-out) var(--delay, 0s) both; }
+@keyframes mfx-confetti-fly {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0); }
+  100% { opacity: 0; transform: translate(var(--x), var(--y)) rotate(var(--r)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mfx-cf,
+  .mfx-like svg,
+  .mfx-eq i,
+  .mfx-pp i,
+  .mfx-pulse.has::after,
+  .mfx-bell.shake,
+  .mfx-bell-dot,
+  .mfx-square i,
+  .mfx-loading-letters i,
+  .mfx-cube,
+  .mfx-confetti i,
+  .mfx-feed li { animation: none; transition: none; }
+}

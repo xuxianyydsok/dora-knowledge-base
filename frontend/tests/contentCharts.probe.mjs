@@ -52,7 +52,10 @@ class Element {
     this.childNodes = [];
     this.parentNode = null;
     this.attributes = {};
-    this.style = {};
+    this.style = {
+      setProperty(k, v) { this[k] = v; },
+      removeProperty(k) { delete this[k]; }
+    };
     this.width = 800;
     this.height = 300;
   }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { Icon } from './Icon.jsx';
+import { BellPulse } from './MotionFx.jsx';
 
 const TYPE_META = {
   link_broken: { label: '链接失效', icon: 'linkBroken' },
@@ -21,7 +22,9 @@ export function NotificationBell() {
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const [error, setError] = useState('');
+  const [ring, setRing] = useState(false);
   const boxRef = useRef(null);
+  const prevUnread = useRef(0);
 
   async function refresh() {
     try {
@@ -31,6 +34,12 @@ export function NotificationBell() {
       ]);
       setItems(list);
       setUnread(count.unread);
+      // 未读数增加时摇一下铃铛（首次加载不摇，避免一进站就动个不停）。
+      if (prevUnread.current && count.unread > prevUnread.current) {
+        setRing(true);
+        setTimeout(() => setRing(false), 950);
+      }
+      prevUnread.current = count.unread;
     } catch (e) { setError(e.message); }
   }
 
@@ -82,8 +91,9 @@ export function NotificationBell() {
   return (
     <div ref={boxRef} style="position:relative">
       <button onClick={() => { setOpen((v) => !v); if (!open) refresh(); }} title="通知中心" aria-label="通知中心">
-        <Icon name="bell" size={18} />
-        {unread > 0 && <span class="badge-dot">{unread > 99 ? '99+' : unread}</span>}
+        <BellPulse count={unread > 0 ? unread : 0} shaking={ring}>
+          <Icon name="bell" size={18} />
+        </BellPulse>
       </button>
 
       {open && (

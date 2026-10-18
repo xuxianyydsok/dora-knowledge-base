@@ -9,6 +9,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { Icon } from './Icon.jsx';
+import { BurstLike } from './MotionFx.jsx';
 import { toastError, toastSuccess } from '../lib/toast.jsx';
 
 export function FavoriteButton({ resourceId, label = '收藏' }) {
@@ -52,16 +53,15 @@ export function FavoriteButton({ resourceId, label = '收藏' }) {
   }
 
   return (
-    <button
-      type="button"
+    <BurstLike
+      active={on}
+      onToggle={toggle}
+      label={on ? '取消收藏' : label}
       class={`fav-btn${on ? ' on' : ''}`}
-      onClick={toggle}
       disabled={busy || !ready}
-      aria-pressed={on}
-      title={on ? '取消收藏' : label}
     >
       <Icon name="heart" size={15} />
       {on ? '已收藏' : label}
-    </button>
+    </BurstLike>
   );
 }

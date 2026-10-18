@@ -2793,6 +2793,17 @@ body.watch-mode .app-header { display: none; }
 }
 .mini-eq i:nth-child(2) { animation-delay: 0.15s; }
 .mini-eq i:nth-child(3) { animation-delay: 0.3s; }
+.mini-eq-mfx {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px;
+  background: color-mix(in srgb, var(--bg) 58%, transparent);
+}
+.mini-eq-mfx i { width: 3px; height: 100% !important; }
 @keyframes mini-eq-bounce {
   0%, 100% { transform: scaleY(0.35); }
   50%      { transform: scaleY(1); }
@@ -2843,6 +2854,29 @@ body.watch-mode .app-header { display: none; }
   color: var(--primary-contrast);
   background: var(--primary);
 }
+.mini-controls .mini-play-mfx { flex: none; }
+.mini-controls .mini-play-mfx {
+  width: 34px;
+  height: 34px;
+  box-shadow: none;
+}
+.mini-controls .mini-play-mfx i { height: 13px; margin-top: -6.5px; }
+.mini-controls .mini-play-mfx.playing i:first-child {
+  width: 12px;
+  height: 14px;
+  margin-top: -7px;
+}
+.mini-player .mfx-like.mini-fav {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+}
+.mini-player .mfx-like.mini-fav:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.mini-player .mfx-like.mini-fav.on { color: var(--danger); }
+.mini-player .mfx-like.mini-fav i { background: var(--danger); }
 .mini-controls .mini-play:hover {
   color: var(--primary-contrast);
   background: color-mix(in srgb, var(--primary) 88%, var(--text));
@@ -3121,6 +3155,26 @@ body:has(.mini-player) .app-main { padding-bottom: 112px; }
 }
 .np-play:active { transform: scale(0.96); }
 .np-play.sm { width: 48px; height: 48px; }
+.np-play-mfx {
+  width: 64px;
+  height: 64px;
+  flex: none;
+}
+.np-play-mfx i {
+  width: 4px;
+  height: 23px;
+  margin: -11.5px 0 0 -2px;
+}
+.np-play-mfx.playing i:first-child {
+  width: 21px;
+  height: 25px;
+  margin: -12.5px 0 0 -4px;
+}
+.np-eq {
+  height: 14px;
+  margin-top: 2px;
+}
+.np-eq i { width: 2px; }
 
 /* 舞台：左封面 / 右信息 */
 .np-stage {
@@ -4383,6 +4437,14 @@ body:has(.lyric-page) .app-main { padding: 0; max-width: none; }
 .sk-w35 { width: 35%; }
 
 .sk-grid { display: grid; gap: var(--card-gap); }
+.sk-status-mfx {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 0 8px;
+  color: var(--text-muted);
+}
 .sk-grid.poster { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 16px; }
 .sk-grid.album  { grid-template-columns: repeat(auto-fill, minmax(174px, 1fr)); gap: 24px 18px; }
 .sk-grid.card   { grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 18px; }

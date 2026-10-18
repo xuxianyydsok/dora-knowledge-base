@@ -20,6 +20,7 @@ import { HomeNow } from '../components/HomeNow.jsx';
 //   BreathingRings = #198 呼吸三环（canvas）
 import { LiquidBlob } from '../components/MotionFx.jsx';
 import { Harmonograph, BreathingRings } from '../components/CanvasFx.jsx';
+import { GlassCube, ParticleText, SilkField } from '../components/MotionFx.jsx';
 import {
   AboutBlock, IntroBlock, Marquee, ProgressRing, Seal, SplitLines, TitleBand, useReveal
 } from '../components/LandingParts.jsx';
@@ -493,6 +494,11 @@ function Landing() {
           <div class="ld-fx-cell"><LiquidBlob text="Dora" size={160} /></div>
           <div class="ld-fx-cell ld-fx-wide"><Harmonograph height={200} /></div>
           <div class="ld-fx-cell"><BreathingRings height={200} /></div>
+        </div>
+        <div class="ld-fx-row ld-fx-row-2" aria-hidden="true">
+          <div class="ld-fx-cell"><GlassCube size={120} /></div>
+          <div class="ld-fx-cell ld-fx-wide"><SilkField height={200} /></div>
+          <div class="ld-fx-cell"><ParticleText text="Dora" height={200} /></div>
         </div>
       </section>
 

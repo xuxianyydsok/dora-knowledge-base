@@ -222,6 +222,7 @@
 }
 /* 顶部一枚暖色圆标，承接「谢谢你」的情绪 */
 .coop-modal-mark {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 52px;
