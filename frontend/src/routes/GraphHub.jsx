@@ -76,17 +76,23 @@ function useDefaultView() {
 function ViewSwitch({ view, onChange }) {
   return (
     <div class="sm-viewswitch" role="group" aria-label="视图模式">
+      {/* 2026-10-15：加自定义气泡提示（取自图鉴 #41）。
+          为什么不用原生 title：浏览器原生 tooltip 要悬停 1~2 秒才出现、样式不可控，
+          而「2D / 3D 有什么区别」正是新手最容易困惑的地方，值得即时可见。
+          两个按钮的 data-tip 由 CSS ::after 渲染；原生 title 保留作为无障碍兜底。 */}
       <button
         type="button"
-        class={view === '2d' ? 'on' : ''}
+        class={`sm-vs-btn mfx-tip-only${view === '2d' ? ' on' : ''}`}
         onClick={() => onChange('2d')}
         title="2D 星图（手绘，最省电）"
+        data-tip="2D 星图 · 手绘，最省电"
       >2D</button>
       <button
         type="button"
-        class={view === '3d' ? 'on' : ''}
+        class={`sm-vs-btn mfx-tip-only${view === '3d' ? ' on' : ''}`}
         onClick={() => onChange('3d')}
         title="3D 星云（可拖动旋转、滚轮缩放）"
+        data-tip="3D 星云 · 可拖动旋转、滚轮缩放"
       >3D</button>
     </div>
   );

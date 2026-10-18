@@ -317,6 +317,22 @@
 .gl-edit-row input[type='date'], .gl-edit-row input[type='number'] { width: auto; flex: 1 1 110px; }
 .gl-switch { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; white-space: nowrap; }
 
+/* 勾选框的弹性反馈（2026-10-15，取自图鉴 #31「弹性开关」的回弹曲线）：
+   保留原有的「勾选框 + 文字」结构（文字标签不能丢），只给勾选动作加一点
+   回弹手感。用 cubic-bezier(.34,1.56,.64,1) 这个「先冲过头再回来」的曲线，
+   和图鉴里开关滑块的观感一致。 */
+.gl-switch input[type='checkbox'] {
+  transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+  accent-color: var(--primary);
+}
+.gl-switch input[type='checkbox']:active { transform: scale(0.82); }
+.gl-switch input[type='checkbox']:checked { transform: scale(1.12); }
+@media (prefers-reduced-motion: reduce) {
+  .gl-switch input[type='checkbox'],
+  .gl-switch input[type='checkbox']:active,
+  .gl-switch input[type='checkbox']:checked { transition: none; transform: none; }
+}
+
 @keyframes gl-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes gl-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes gl-slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }

@@ -357,11 +357,39 @@ const CSS = `
   text-decoration: none;
   background: color-mix(in srgb, var(--bg-elevated) 74%, transparent);
   border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  /* 2026-10-15 取自图鉴 #30「填充 + 箭头穿梭」：
+     悬停时底色自下而上填满，箭头穿出去再从左边进来。
+     保留原有胶囊尺寸，只加动效（position/overflow 是为了让填充层被裁在圆角内）。 */
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   transition: color 0.3s var(--ease-out, ease), border-color 0.3s var(--ease-out, ease);
 }
+.bs-more::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--primary);
+  transform: translateY(101%);
+  transition: transform 0.45s var(--ease-out, ease);
+}
 .bs-more:hover {
-  color: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 46%, transparent);
+  color: var(--primary-contrast, #fff);
+  border-color: var(--primary);
+}
+.bs-more:hover::before { transform: none; }
+.bs-more:hover .icon { animation: bs-arrow-through 0.5s var(--ease-out, ease); }
+@keyframes bs-arrow-through {
+  0% { transform: none; }
+  45% { transform: translateX(18px); }
+  46% { transform: translateX(-18px); }
+  100% { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bs-more::before { transition: none; }
+  .bs-more:hover .icon { animation: none; }
 }
 /* 触屏设备把「查看更多」的命中区撑到 44px 高（2026-10-12 移动端适配，
    原来只有 25px，手指点不中；外观不变，靠透明上下内边距撑开）。 */

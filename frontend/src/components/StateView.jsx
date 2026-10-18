@@ -60,11 +60,21 @@ export function ErrorState({ title = '没能取到数据', message, onRetry, ret
   );
 }
 
-/** 行内的滚动加载提示 */
-export function LoadingMore({ label = '正在加载更多…' }) {
+/**
+ * 行内的滚动加载提示。
+ *
+ * variant（2026-10-15，取自图鉴 #37「三款加载器」）：
+ *   'ring' 圆环（默认，与全站 .spinner 一致）
+ *   'dots' 三点跳动 —— 比圆环更「轻」，适合「加载更多」这种非阻塞等待
+ *   'bars' 柱状起伏 —— 适合「正在处理」类提示
+ * 默认值保持 'ring'，所以现有调用方一行都不用改。
+ */
+export function LoadingMore({ label = '正在加载更多…', variant = 'ring' }) {
   return (
     <div class="loading-more" role="status">
-      <span class="spinner" aria-hidden="true" />
+      {variant === 'dots' && <span class="mfx-dots" aria-hidden="true"><i /><i /><i /></span>}
+      {variant === 'bars' && <span class="mfx-bars" aria-hidden="true"><i /><i /><i /><i /></span>}
+      {variant !== 'dots' && variant !== 'bars' && <span class="spinner" aria-hidden="true" />}
       {label}
     </div>
   );

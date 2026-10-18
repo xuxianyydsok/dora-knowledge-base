@@ -347,6 +347,27 @@
   transition: width var(--dur, .32s) var(--ease-out, ease);
 }
 
+/* 上传中的条纹流动（2026-10-15，来自图鉴 #39「条纹流动进度条」）：
+   只在真正上传时加 .is-running，静止状态保持原来的纯色渐变 ——
+   否则一屏里多个已完成进度条都在流动，会显得吵。
+   斜纹用 repeating-linear-gradient + background-position 位移实现，
+   不额外增加 DOM，也不影响原有的宽度过渡。 */
+.amu-bar-fill.is-running {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--primary) 78%, white 22%) 0 8px,
+    var(--primary) 8px 16px
+  );
+  background-size: 22.6px 22.6px;
+  animation: amu-stripe 0.8s linear infinite;
+}
+@keyframes amu-stripe {
+  to { background-position: 22.6px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .amu-bar-fill.is-running { animation: none; }
+}
+
 .amu-status-text {
   font-size: var(--fs-caption, 12px);
   color: var(--text-muted);

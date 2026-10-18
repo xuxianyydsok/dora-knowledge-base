@@ -1,0 +1,354 @@
+/* =============================================================
+   动效组件（2026-10-15）
+
+   来源：E:\documents\网站开发\ 下的动效图鉴，用户挑选后逐个改写成站内组件。
+   本文件是第一批「全局小点缀」的样式，对应 components/MotionFx.jsx。
+
+   改写原则（与图鉴的差异，重要）：
+     1. **只用站点主题变量**（--text / --primary / --bg-elevated / --border …），
+        不写死颜色。图鉴原本用自己的 --fg/--acc/--bg，这里全部映射过去，
+        所以三套主题（纯净/素雅/天青）切换时这些组件会跟着变。
+     2. **类名统一加 mfx- 前缀**：图鉴里的 .sw / .pg / .tp / .sr 太短，
+        容易和站点已有样式（或第三方库）撞名。
+     3. 尊重 prefers-reduced-motion：关掉无限动画（图鉴原文件也有这条，
+        这里保留）。
+     4. 每个组件独立、不依赖彼此的 DOM 结构。
+
+   编号对照（图鉴原编号 → 本站用途）：
+     30 填充箭头按钮      → .mfx-arrow-btn
+     31 弹性开关          → .mfx-switch
+     37 三款加载器        → .mfx-dots / .mfx-ring / .mfx-bars
+     39 条纹流动进度条    → .mfx-progress
+     41 弹出气泡提示      → .mfx-tip
+     43 搜索框展开        → .mfx-search
+     15 慢速大字跑马灯    → .mfx-marquee
+     62 轮播指示点        → .mfx-dots-nav
+   ============================================================= */
+
+/* -------------------------------------------------------------
+   30 填充 + 箭头穿梭按钮
+   悬停时底色自下而上填满，箭头图标「穿出去再从左边进来」。
+   ------------------------------------------------------------- */
+.mfx-arrow-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 22px;
+  border: 1.5px solid var(--text);
+  border-radius: 99px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  overflow: hidden;
+  transition: color var(--dur) var(--ease-out);
+}
+.mfx-arrow-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--text);
+  transform: translateY(101%);
+  transition: transform 0.45s var(--ease-out);
+  border-radius: inherit;
+}
+.mfx-arrow-btn:hover { color: var(--bg-elevated); }
+.mfx-arrow-btn:hover::before { transform: none; }
+.mfx-arrow-btn > span { position: relative; }
+.mfx-arrow-btn .mfx-arrow-btn-icon {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.mfx-arrow-btn .mfx-arrow-btn-icon svg { transition: transform 0.45s var(--ease-out); }
+.mfx-arrow-btn:hover .mfx-arrow-btn-icon svg { animation: mfx-arr 0.5s var(--ease-out); }
+@keyframes mfx-arr {
+  0% { transform: none; }
+  45% { transform: translateX(26px); }
+  46% { transform: translateX(-26px); }
+  100% { transform: none; }
+}
+
+/* -------------------------------------------------------------
+   31 弹性开关（按住时滑块拉长，像有弹性）
+   ------------------------------------------------------------- */
+.mfx-switch {
+  position: relative;
+  width: 64px;
+  height: 34px;
+  display: inline-block;
+  cursor: pointer;
+}
+.mfx-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.mfx-switch s {
+  position: absolute;
+  inset: 0;
+  border-radius: 99px;
+  background: var(--border);
+  transition: background var(--dur);
+}
+.mfx-switch s::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 99px;
+  background: var(--bg-elevated);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.2s;
+}
+.mfx-switch:active s::after { width: 34px; }
+.mfx-switch input:checked + s { background: var(--primary); }
+.mfx-switch input:checked + s::after { transform: translateX(30px); }
+.mfx-switch input:checked:active + s::after { transform: translateX(22px); }
+.mfx-switch input:focus-visible + s { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* -------------------------------------------------------------
+   37 三款加载器：点阵 / 圆环 / 柱状
+   ------------------------------------------------------------- */
+.mfx-dots { display: flex; gap: 8px; }
+.mfx-dots i {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--primary);
+  animation: mfx-dots 1s ease-in-out infinite;
+}
+.mfx-dots i:nth-child(2) { animation-delay: 0.15s; }
+.mfx-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes mfx-dots {
+  0%, 80%, 100% { transform: scale(0.4); opacity: 0.4; }
+  40% { transform: translateY(-10px) scale(1); opacity: 1; }
+}
+
+.mfx-ring {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  animation: mfx-spin 0.8s linear infinite;
+}
+@keyframes mfx-spin { to { transform: rotate(360deg); } }
+
+.mfx-bars { display: flex; gap: 4px; align-items: center; height: 34px; }
+.mfx-bars i {
+  width: 5px; height: 100%;
+  background: var(--primary);
+  animation: mfx-bars 1s ease-in-out infinite;
+}
+.mfx-bars i:nth-child(2) { animation-delay: 0.1s; }
+.mfx-bars i:nth-child(3) { animation-delay: 0.2s; }
+.mfx-bars i:nth-child(4) { animation-delay: 0.3s; }
+@keyframes mfx-bars {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+/* -------------------------------------------------------------
+   39 条纹流动进度条
+   斜纹持续流动，像「正在同步」。
+   ------------------------------------------------------------- */
+.mfx-progress { width: 100%; }
+.mfx-progress .mfx-progress-track {
+  height: 14px;
+  border-radius: 99px;
+  background: var(--border);
+  overflow: hidden;
+}
+.mfx-progress .mfx-progress-bar {
+  height: 100%;
+  border-radius: 99px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--primary) 0 10px,
+    color-mix(in srgb, var(--primary) 75%, #fff) 10px 20px
+  );
+  background-size: 28px 28px;
+  animation: mfx-stripe 0.7s linear infinite;
+  transition: width 0.4s var(--ease-out);
+}
+@keyframes mfx-stripe { to { background-position: 28px 0; } }
+.mfx-progress p {
+  margin: 8px 0 0;
+  font: 700 13px var(--font-mono, ui-monospace, monospace);
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------------
+   41 弹出气泡提示（悬停出现，带一点回弹）
+   用法：<span class="mfx-tip" data-tip="提示文字">内容</span>
+   ------------------------------------------------------------- */
+.mfx-tip {
+  position: relative;
+  padding: 10px 20px;
+  border: 1.5px dashed var(--text-muted);
+  border-radius: 10px;
+  cursor: help;
+  font-weight: 700;
+}
+.mfx-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg-elevated);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 8px) scale(0.85);
+  transform-origin: bottom;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  z-index: 5;
+}
+.mfx-tip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  width: 10px;
+  height: 10px;
+  background: var(--text);
+  transform: translateX(-50%) rotate(45deg) scale(0);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 5;
+}
+.mfx-tip:hover::after { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.mfx-tip:hover::before { transform: translateX(-50%) rotate(45deg) scale(1); }
+
+/* 变体：只出气泡、**完全不改元素外观**（用在已有的按钮 / 图标上）。
+   不复用 .mfx-tip 的 padding/border（那会把按钮撑变形），只共享气泡本身。
+   用法：<button class="mfx-tip-only" data-tip="…"> */
+.mfx-tip-only { position: relative; }
+.mfx-tip-only::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 10px);
+  padding: 6px 11px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg-elevated);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -4px) scale(0.9);
+  transform-origin: top;
+  transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  z-index: 20;
+}
+.mfx-tip-only:hover::after,
+.mfx-tip-only:focus-visible::after { opacity: 1; transform: translate(-50%, 0) scale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .mfx-tip-only::after { transition: none; }
+}
+
+/* -------------------------------------------------------------
+   43 搜索框展开（悬停 / 聚焦时从圆点展开成输入框）
+   ------------------------------------------------------------- */
+.mfx-search {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  width: 48px;
+  border-radius: 99px;
+  border: 1.5px solid var(--text);
+  overflow: hidden;
+  transition: width 0.55s var(--ease-out), box-shadow 0.3s;
+  cursor: pointer;
+  background: var(--bg-elevated);
+}
+.mfx-search:hover,
+.mfx-search:focus-within {
+  width: 240px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+.mfx-search svg { flex: none; margin: 0 13px; color: var(--text-muted); }
+.mfx-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: 0;
+  font: 15px var(--font-ui, inherit);
+  color: var(--text);
+  padding-right: 16px;
+}
+
+/* -------------------------------------------------------------
+   15 慢速大字跑马灯（页脚 / 分隔用）
+   两侧淡出，悬停暂停。
+   ------------------------------------------------------------- */
+.mfx-marquee {
+  width: 100%;
+  overflow: hidden;
+  mask: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  -webkit-mask: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+}
+.mfx-marquee > div {
+  display: flex;
+  gap: 36px;
+  width: max-content;
+  animation: mfx-marquee var(--mfx-t, 60s) linear infinite;
+}
+.mfx-marquee span { white-space: nowrap; }
+.mfx-marquee:hover > div { animation-play-state: paused; }
+@keyframes mfx-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* -------------------------------------------------------------
+   62 轮播指示点（当前点拉长 + 进度条走完）
+   站点首页轮播已有自己的 .ld-hero-dot；这个留给别处需要的地方用。
+   ------------------------------------------------------------- */
+.mfx-dots-nav { display: flex; gap: 8px; align-items: center; }
+.mfx-dots-nav i {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-radius: 99px;
+  background: var(--border);
+  overflow: hidden;
+  transition: width 0.5s var(--ease-out);
+}
+.mfx-dots-nav i.on { width: 44px; }
+.mfx-dots-nav i.on::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--primary);
+  transform-origin: left;
+  animation: mfx-countdown var(--mfx-t, 3s) linear forwards;
+}
+@keyframes mfx-countdown { from { transform: scaleX(0); } }
+
+/* -------------------------------------------------------------
+   无障碍：用户系统里开了「减少动态效果」时，全部停掉
+   （图鉴原文件也有这条，这里保留 —— 无限动画对前庭敏感人群不友好）
+   ------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .mfx-dots i,
+  .mfx-ring,
+  .mfx-bars i,
+  .mfx-progress .mfx-progress-bar,
+  .mfx-marquee > div,
+  .mfx-dots-nav i.on::after,
+  .mfx-arrow-btn:hover .mfx-arrow-btn-icon svg {
+    animation: none;
+  }
+}

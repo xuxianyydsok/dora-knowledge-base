@@ -441,7 +441,11 @@ export function AdminMusic() {
 
                 <div class="amu-row-status">
                   <div class="amu-bar">
-                    <div class="amu-bar-fill" style={`width:${it.progress}%`} />
+                    {/* 上传中才让条纹流动（见 admin-music.css 的 .is-running 说明） */}
+                    <div
+                      class={`amu-bar-fill${it.status === RUNNING ? ' is-running' : ''}`}
+                      style={`width:${it.progress}%`}
+                    />
                   </div>
                   <span class="amu-status-text">
                     {it.status === PENDING && '等待上传'}

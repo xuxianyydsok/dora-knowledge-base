@@ -207,7 +207,9 @@ export function Timeline() {
       )}
 
       {cur.error && cur.items.length > 0 && <p class="tl-more-error muted">{cur.error}</p>}
-      {cur.loading && cur.items.length > 0 && <LoadingMore label="正在加载更早的内容…" />}
+      {/* 长列表滚动加载用「三点跳动」而不是圆环：这不是阻塞等待，
+          圆环会让人以为页面卡住了（2026-10-15，图鉴 #37）。 */}
+      {cur.loading && cur.items.length > 0 && <LoadingMore variant="dots" label="正在加载更早的内容…" />}
       {!cur.loading && cur.hasMore && (
         <div class="tl-more">
           <button type="button" onClick={() => load(filter, cur.cursor)}>加载更早的内容</button>
