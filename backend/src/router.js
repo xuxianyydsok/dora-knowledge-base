@@ -21,6 +21,7 @@ import * as music from './routes/music.js';
 import * as musicUpload from './routes/musicUpload.js';
 import * as movies from './routes/movies.js';
 import * as admin from './routes/admin.js';
+import * as visibility from './routes/visibility.js';
 import * as news from './routes/news.js';
 import * as douban from './routes/douban.js';
 import * as musicCharts from './routes/musicCharts.js';
@@ -91,6 +92,9 @@ const routes = [
   ['GET', '/api/posts/:id', posts.getPost],
   ['PATCH', '/api/posts/:id', posts.updatePost],
   ['DELETE', '/api/posts/:id', posts.deletePost],
+
+  // 批量公开 / 私密（音乐、影视、博客共用）
+  ['PATCH', '/api/visibility', visibility.updateVisibility],
 
   // Notion 博客分区（独立表，2026-10-14）：与上面的 Halo 博客（posts）**数据层完全隔离**，
   // 只在排版层面复用前端组件。列表不下发正文，正文走 slug 端点。

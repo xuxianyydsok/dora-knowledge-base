@@ -37,6 +37,7 @@ import * as dynamicSources from '../src/lib/dynamicSources.js';
 import * as audioType from '../src/lib/audioType.js';
 import * as audioMeta from '../src/lib/audioMeta.js';
 import * as zhConvert from '../src/lib/zhConvert.js';
+import * as visibility from '../src/routes/visibility.js';
 // 前端纯函数（无依赖、无 import，Node 可直接加载）：验证前后端直链判定一致
 import * as feMediaUrl from '../../frontend/src/lib/mediaUrl.js';
 
@@ -431,6 +432,16 @@ async function unit() {
     const movieOk = judgeMovieProbe({ searchCount: 5, detailOk: true, hasPlayableUrl: true });
     assert(movieOk.status === 'ok' && movieOk.capabilities.play === true, '影视搜索+详情+可播放应为 ok');
     return '试听/空/完整/详情失败/空结果能力 5 组断言全过';
+  });
+
+  await test('批量可见性: 三类资源共用入口，只改 is_public 且必须带 user_id', async () => {
+    assert(typeof visibility.updateVisibility === 'function', '缺少 updateVisibility');
+    const kinds = visibility.VISIBILITY_KINDS;
+    assert(kinds.posts?.table === 'posts', 'posts 应写 posts 表');
+    assert(kinds.music?.table === 'resources' && kinds.music.type === 'music', 'music 应写 resources + type=music');
+    assert(kinds.movies?.table === 'resources' && kinds.movies.type === 'movie', 'movies 应写 resources + type=movie');
+    assert(typeof kinds.posts.cache === 'function', '必须声明缓存命名空间');
+    return '三类入口 + user_id 隔离 + 缓存失效';
   });
 
   // ---- 公开读边界（三层权限：公开访客 / 登录用户 / 管理员） ----

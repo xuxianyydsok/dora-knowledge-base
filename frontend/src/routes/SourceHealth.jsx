@@ -183,6 +183,11 @@ export function SourceHealth() {
                   {capabilityTags(s).map((t) => <span key={t} class="sh-tag">{t}</span>)}
                 </span>
                 <span class="sh-time muted">{fmtTime(s.checked_at)}</span>
+                <span class="sh-history" title="最近 24 次探测的可用率">
+                  {s.history?.rate != null
+                    ? `${s.history.rate}% · ${s.history.ok}/${s.history.total}`
+                    : (s.history?.total === 0 ? '暂无历史' : '本次首次探测')}
+                </span>
                 {s.error && <span class="health-err" title={s.error}>{s.error}</span>}
                 {!s.error && s.notes && <span class="sh-note muted" title={s.notes}>{s.notes}</span>}
               </li>

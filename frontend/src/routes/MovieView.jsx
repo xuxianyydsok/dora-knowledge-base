@@ -69,6 +69,7 @@ export function MovieView({ id, source, vid }) {
   const [liveRoutes, setLiveRoutes] = useState(null);   // 回源获取的最新线路
   const [loadingRoutes, setLoadingRoutes] = useState(false);
   const [rematching, setRematching] = useState(false);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   // 站长专用：原采集源下线 / 存库直链已死时，用标题去在用源重新匹配并回填。
@@ -91,6 +92,21 @@ export function MovieView({ id, source, vid }) {
       setRematching(false);
     }
     return null;
+  }
+
+  async function toggleVisibility() {
+    if (!movie?.id || visibilityBusy) return;
+    setVisibilityBusy(true);
+    try {
+      const next = !movie.is_public;
+      await api.updateVisibility({ kind: 'movies', ids: [movie.id], is_public: next });
+      setMovie((m) => ({ ...m, is_public: next }));
+      toastSuccess(next ? '已设为公开' : '已设为私密');
+    } catch (e) {
+      toastError(`调整失败：${e.message}`);
+    } finally {
+      setVisibilityBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -220,6 +236,12 @@ export function MovieView({ id, source, vid }) {
       <div class="page-bar">
         <button onClick={() => (preview && history.length > 1 ? history.back() : route('/movies'))}><Icon name="arrowLeft" size={15} /> 返回影视库</button>
         <span class="spacer" />
+        {isAdmin && movie.id && (
+          <button onClick={toggleVisibility} disabled={visibilityBusy}>
+            <Icon name={movie.is_public ? 'lock' : 'globe'} size={15} />
+            {movie.is_public ? '设为私密' : '设为公开'}
+          </button>
+        )}
         {movie.id && <button onClick={() => route(`/movies/${movie.id}/edit`)}>编辑</button>}
       </div>
 

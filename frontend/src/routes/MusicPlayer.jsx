@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
 import { usePlayer } from '../lib/player.jsx';
+import { REPEAT_LABEL } from '../lib/queueOrder.js';
 import { Icon } from '../components/Icon.jsx';
 import { Equalizer, PlayPauseMorph } from '../components/MotionFx.jsx';
 
@@ -18,7 +19,8 @@ function fmt(sec) {
 export function MusicPlayer() {
   const {
     music, track, playing, position, duration, volume,
-    hasPrev, hasNext, toggle, next, prev, seek, setVolume, stop, playOne
+    hasPrev, hasNext, toggle, next, prev, seek, setVolume, stop, playOne,
+    shuffle, repeat, toggleShuffle, cycleRepeat
   } = usePlayer();
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [shelf, setShelf] = useState([]);
@@ -160,7 +162,14 @@ export function MusicPlayer() {
 
           {/* 控制区 */}
           <div class="np-controls">
-            <button class="np-icon" title="随机播放（暂未开放）" disabled><Icon name="shuffle" size={18} /></button>
+            <button
+              class={`np-icon${shuffle ? ' on' : ''}`}
+              onClick={toggleShuffle}
+              aria-pressed={shuffle}
+              title={shuffle ? '随机播放已开启' : '随机播放'}
+            >
+              <Icon name="shuffle" size={18} />
+            </button>
             <button class="np-icon lg" onClick={prev} disabled={!hasPrev} title="上一首">
               <Icon name="skipBack" size={22} />
             </button>
@@ -168,7 +177,15 @@ export function MusicPlayer() {
             <button class="np-icon lg" onClick={next} disabled={!hasNext} title="下一首">
               <Icon name="skipForward" size={22} />
             </button>
-            <button class="np-icon" title="单曲循环（暂未开放）" disabled><Icon name="repeat" size={18} /></button>
+            <button
+              class={`np-icon${repeat !== 'off' ? ' on' : ''}`}
+              onClick={cycleRepeat}
+              title={REPEAT_LABEL[repeat]}
+              aria-label={REPEAT_LABEL[repeat]}
+            >
+              <Icon name="repeat" size={18} />
+              {repeat === 'one' && <span class="np-badge">1</span>}
+            </button>
           </div>
 
           {/* 音量 */}

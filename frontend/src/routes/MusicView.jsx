@@ -9,6 +9,8 @@ import { TagChip } from '../components/TagChip.jsx';
 import { FavoriteButton } from '../components/FavoriteButton.jsx';
 import { usePlayer } from '../lib/player.jsx';
 import { BilibiliPlayer, BilibiliBadge } from '../components/BilibiliPlayer.jsx';
+import { useAuth } from '../lib/auth.jsx';
+import { toastError, toastSuccess } from '../lib/toast.jsx';
 
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 function fmtDuration(sec) {
@@ -24,6 +26,8 @@ export function MusicView({ id }) {
   const [music, setMusic] = useState(null);
   const [all, setAll] = useState([]);
   const [error, setError] = useState('');
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
+  const { isAdmin } = useAuth();
   const { music: current, playing, toggle, playQueue } = usePlayer();
 
   useEffect(() => {
@@ -57,6 +61,21 @@ export function MusicView({ id }) {
   // 有同歌手/同专辑就放「接下来播放」，否则退回库内其它歌曲 —— 避免单曲详情页下半屏全空
   const nextUp = siblings.length ? siblings : others;
   const secondary = siblings.length ? '接下来播放' : '音乐库其它歌曲';
+
+  async function toggleVisibility() {
+    if (!music?.id || visibilityBusy) return;
+    setVisibilityBusy(true);
+    try {
+      const next = !music.is_public;
+      await api.updateVisibility({ kind: 'music', ids: [music.id], is_public: next });
+      setMusic((m) => ({ ...m, is_public: next }));
+      toastSuccess(next ? '已设为公开' : '已设为私密');
+    } catch (e) {
+      toastError(`调整失败：${e.message}`);
+    } finally {
+      setVisibilityBusy(false);
+    }
+  }
 
   // 音质来自 resources.metadata（bitrate/format 在收藏时写入），不在 music_tracks 里
   const lossless = md.format === 'flac' || (md.bitrate || 0) >= 900;
@@ -149,6 +168,12 @@ export function MusicView({ id }) {
               <button onClick={() => route(`/music/${music.id}/edit`)}>
                 <Icon name="settings" size={15} /> 编辑
               </button>
+              {isAdmin && (
+                <button onClick={toggleVisibility} disabled={visibilityBusy}>
+                  <Icon name={music.is_public ? 'lock' : 'globe'} size={15} />
+                  {music.is_public ? '设为私密' : '设为公开'}
+                </button>
+              )}
               {music.tags?.map((tag) => <TagChip key={tag.id} name={tag.name} color={tag.color} />)}
             </div>
           </div>

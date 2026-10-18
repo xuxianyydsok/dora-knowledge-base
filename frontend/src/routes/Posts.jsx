@@ -20,12 +20,13 @@ import { useAuth } from '../lib/auth.jsx';
 import { LoadingState, ErrorState } from '../components/StateView.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { toastError, toastSuccess } from '../lib/toast.jsx';
 
 const PAGE_SIZE = 10;
 const SLIDES = 5;
 
 export function Posts({ cat: catParam, tag: tagParam, focus }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
   const { data, error: loadError, loading, reload } = useBlogData(isAuthenticated);
   const posts = data?.posts || [];
   const cats = data?.cats || [];
@@ -36,6 +37,8 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
   const [q, setQ] = useState('');
   const [slide, setSlide] = useState(0);
   const [bannerIdx, setBannerIdx] = useState(0);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
   const searchRef = useRef(null);
 
   // 分类 / 标签筛选放在 URL 上（/posts?cat=slug、/posts?tag=slug），方便分享和从聚合页跳回
@@ -106,6 +109,26 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
   async function remove(id) {
     if (!confirm('确定删除该文章？')) return;
     try { await api.deletePost(id); invalidateBlogData(); await load(); } catch (e) { setError(e.message); }
+  }
+
+  function toggleSelect(id, checked) {
+    setSelectedIds((ids) => checked ? [...new Set([...ids, id])] : ids.filter((x) => x !== id));
+  }
+
+  async function setVisibility(isPublic) {
+    if (!isAdmin || selectedIds.length === 0) return;
+    setVisibilityBusy(true);
+    try {
+      const res = await api.updateVisibility({ kind: 'posts', ids: selectedIds, is_public: isPublic });
+      toastSuccess(`${res.updated} 篇已设为${isPublic ? '公开' : '私密'}`);
+      setSelectedIds([]);
+      invalidateBlogData();
+      await load();
+    } catch (e) {
+      toastError(`调整失败：${e.message}`);
+    } finally {
+      setVisibilityBusy(false);
+    }
   }
 
   function goPage(n) {
@@ -196,26 +219,60 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
             </div>
           </div>
 
+          {isAdmin && shown.length > 0 && (
+            <div class="post-bulk">
+              <span class="visibility-count">{selectedIds.length ? `已选 ${selectedIds.length} 篇` : '可多选后批量调整'}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(selectedIds.length === shown.length ? [] : shown.map((p) => p.id))}
+              >
+                {selectedIds.length === shown.length ? '取消全选' : '全选本页'}
+              </button>
+              <button type="button" class="primary" disabled={visibilityBusy || selectedIds.length === 0} onClick={() => setVisibility(true)}>
+                <Icon name="globe" size={14} /> 设为公开
+              </button>
+              <button type="button" disabled={visibilityBusy || selectedIds.length === 0} onClick={() => setVisibility(false)}>
+                <Icon name="lock" size={14} /> 设为私密
+              </button>
+            </div>
+          )}
+
           {shown.length === 0 ? (
             <EmptyState icon="blog" title="没有符合条件的文章" hint="换个分类、标签或关键词试试。" />
           ) : shown.map((p) => {
             const c = catMap.get(p.category_id);
             return (
-              <PostCard
-                key={p.id}
-                post={p}
-                cover={p.cover_path}
-                category={c || null}
-                tags={(p.tag_ids || []).map((id) => tagMap.get(id)).filter(Boolean)}
-                meta={<span><Icon name="calendar" size={13} /> {fmtDate(dateOf(p))}</span>}
-                onOpen={() => route(`/posts/${p.id}`)}
-                onTag={(t) => setTag(t.id)}
-                onCategory={() => setCat(c.id)}
-                admin={isAuthenticated ? {
-                  onEdit: () => route(`/posts/${p.id}/edit`),
-                  onDelete: () => remove(p.id)
-                } : null}
-              />
+              <div class={`post-select-wrap${selectedIds.includes(p.id) ? ' is-selected' : ''}`} key={p.id}>
+                {isAdmin && (
+                  <label class="post-select" title={selectedIds.includes(p.id) ? '取消选择' : '选择此文'}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(p.id)}
+                      onChange={(e) => toggleSelect(p.id, e.currentTarget.checked)}
+                      aria-label={`选择 ${p.title}`}
+                    />
+                  </label>
+                )}
+                <PostCard
+                  post={p}
+                  cover={p.cover_path}
+                  category={c || null}
+                  tags={(p.tag_ids || []).map((id) => tagMap.get(id)).filter(Boolean)}
+                  meta={
+                    <>
+                      <span><Icon name="calendar" size={13} /> {fmtDate(dateOf(p))}</span>
+                      {!p.is_public && <span class="post-private">私密</span>}
+                    </>
+                  }
+                  onOpen={() => route(`/posts/${p.id}`)}
+                  onTag={(t) => setTag(t.id)}
+                  onCategory={() => setCat(c.id)}
+                  admin={isAuthenticated ? {
+                    onEdit: () => route(`/posts/${p.id}/edit`),
+                    onDelete: () => remove(p.id)
+                  } : null}
+                />
+              </div>
             );
           })}
 

@@ -244,10 +244,19 @@ export function probeEntries(entries, { budgetMs = 10000, perSourceMs = 6000, no
 export function createHealthStore() {
   let cache = null;
   let inflight = null;
+  let history = [];
+
+  function remember(record) {
+    if (!record || !Array.isArray(record.sources)) return;
+    history = history
+      .concat([{ at: record.at || Date.now(), sources: record.sources }])
+      .slice(-24);
+  }
+
   return {
     async get({ ttl = DEFAULT_MOVIE_TTL_MS, refresh = false, allowProbe = true, probe = null, now = Date.now } = {}) {
       if (!refresh && cache && now() - cache.at < cache.ttl) {
-        return { sources: cache.sources, at: cache.at, cached: true };
+        return { sources: cache.sources, at: cache.at, cached: true, history };
       }
       if (!allowProbe || typeof probe !== 'function') {
         // 缓存新鲜的情况已在上一个分支返回；到这里说明缓存缺失或已过期。
@@ -255,9 +264,9 @@ export function createHealthStore() {
         // 直到管理员手动刷新为止 —— 与「短 TTL / 瞬时观测」语义冲突。
         // 因此这里返回空列表 + stale 标记（保留 cache 本身，管理员路径仍可重探覆盖）。
         if (cache) {
-          return { sources: [], at: cache.at, cached: false, empty: true, stale: true, stale_at: cache.at };
+          return { sources: [], at: cache.at, cached: false, empty: true, stale: true, stale_at: cache.at, history };
         }
-        return { sources: [], at: null, cached: false, empty: true, stale: false };
+        return { sources: [], at: null, cached: false, empty: true, stale: false, history };
       }
       // 并发去重：进行中的探测直接复用
       if (inflight) return inflight;
@@ -266,14 +275,16 @@ export function createHealthStore() {
         .then((sources) => {
           const at = now();
           cache = { sources: Array.isArray(sources) ? sources : [], at, ttl };
-          return { sources: cache.sources, at, cached: false };
+          remember(cache);
+          return { sources: cache.sources, at, cached: false, history };
         })
         .finally(() => { inflight = null; });
       inflight = run;
       return run;
     },
     peek() { return cache; },
-    reset() { cache = null; inflight = null; }
+    history() { return history; },
+    reset() { cache = null; inflight = null; history = []; }
   };
 }
 
@@ -284,6 +295,23 @@ const musicStore = createHealthStore();
 export function resetSourceHealthCache() {
   movieStore.reset();
   musicStore.reset();
+}
+
+/** 单个源的历史可用率（最近 24 次探测）。只统计真实探测记录，不补造数据。 */
+export function sourceHistory(storeHistory, key) {
+  const rows = [];
+  for (const snap of storeHistory || []) {
+    const hit = (snap.sources || []).find((s) => s.key === key);
+    if (hit) rows.push({ at: snap.at, status: hit.status, latency_ms: hit.latency_ms });
+  }
+  const total = rows.length;
+  const ok = rows.filter((r) => r.status === 'ok').length;
+  return {
+    total,
+    ok,
+    rate: total ? Math.round((ok / total) * 100) : null,
+    recent: rows.slice(-8)
+  };
 }
 
 // ---------------------------------------------------------------
@@ -509,11 +537,16 @@ export async function getSourceHealth(env = {}, { refresh = false, allowProbe = 
   ]);
 
   const sources = [...movie.sources, ...music.sources];
+  const historyOf = (key) => {
+    const movieHit = sourceHistory(movie.history, key);
+    return movieHit.total ? movieHit : sourceHistory(music.history, key);
+  };
+  const withHistory = sources.map((s) => ({ ...s, history: historyOf(s.key) }));
   const ats = [movie.at, music.at].filter((n) => Number.isFinite(n));
   const generatedAt = ats.length ? new Date(Math.min(...ats)).toISOString() : null;
   const stale = !!(movie.stale || music.stale);
   const staleAts = [movie.stale_at, music.stale_at].filter((n) => Number.isFinite(n));
-  return buildPayload(sources, {
+  return buildPayload(withHistory, {
     cached: movie.cached && music.cached,
     generatedAt,
     ttl: Math.min(movieTtl, musicTtl),
@@ -537,6 +570,6 @@ export async function getVodSourceHealth(env = {}, { refresh = false, allowProbe
     stale_at: movie.stale && Number.isFinite(movie.stale_at)
       ? new Date(movie.stale_at).toISOString() : null,
     ttl_ms: ttl,
-    sources: movie.sources
+    sources: movie.sources.map((s) => ({ ...s, history: sourceHistory(movie.history, s.key) }))
   };
 }

@@ -87,15 +87,25 @@ function qualityOf(t) {
 }
 
 // 专辑封面卡：音乐库货架用（搜索结果用横向列表 SearchRow）
-function AlbumCard({ item, onPlay, onOpen, onRemove }) {
+function AlbumCard({ item, onPlay, onOpen, onRemove, selectable, selected, onSelect }) {
   const t = item.track || {};
   const cover = t.artwork_url || item.cover_path;
   const q = qualityOf(t);
 
   return (
-    <article class="album-card" onClick={onOpen} role="button" tabindex={0}
+    <article class={`album-card${selected ? ' is-selected' : ''}`} onClick={onOpen} role="button" tabindex={0}
       onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
       <div class="album-art">
+        {selectable && (
+          <label class="album-select" title={selected ? '取消选择' : '选择此曲'} onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={(e) => onSelect(e.currentTarget.checked)}
+              aria-label={`选择 ${item.title}`}
+            />
+          </label>
+        )}
         {cover
           ? <img src={hdCover(cover, 600)} alt={item.title} loading="lazy" referrerpolicy="no-referrer" />
           : <span class="album-art-empty"><Icon name="music" size={30} /></span>}
@@ -111,6 +121,7 @@ function AlbumCard({ item, onPlay, onOpen, onRemove }) {
         {t.bvid
           ? <span class="album-flag is-video">B站</span>
           : (q !== 'full' && <span class="album-flag">{q === 'lossless' ? '无损' : '试听'}</span>)}
+        {!item.is_public && <span class="album-flag is-private">私密</span>}
         {onRemove && (
           <button
             class="album-remove"
@@ -218,6 +229,8 @@ export function Music() {
   const [quality, setQuality] = useState('all');
   const [pf, setPf] = useState('all');               // 搜索结果的音源筛选
   const [histKey, setHistKey] = useState(0);          // 搜索历史刷新信号
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
   const { playQueue, queue, index, goTo, stop, playing, toggle } = usePlayer();
   // 曲风排行（图鉴 #124）：只统计音乐库中真实存在的歌曲，按专辑/歌手兜底分组，
   // 不做假数据。没有曲目时整块不渲染。
@@ -399,6 +412,29 @@ export function Music() {
     } catch (e) { toastError(`移除失败：${e.message}`); }
   }
 
+  function toggleSelect(id, checked) {
+    setSelectedIds((ids) => checked ? [...new Set([...ids, id])] : ids.filter((x) => x !== id));
+  }
+
+  async function setVisibility(isPublic) {
+    if (!isAdmin || selectedIds.length === 0) return;
+    setVisibilityBusy(true);
+    try {
+      const res = await api.updateVisibility({
+        kind: 'music',
+        ids: selectedIds,
+        is_public: isPublic
+      });
+      toastSuccess(`${res.updated} 首已设为${isPublic ? '公开' : '私密'}`);
+      setSelectedIds([]);
+      await load();
+    } catch (e) {
+      toastError(`调整失败：${e.message}`);
+    } finally {
+      setVisibilityBusy(false);
+    }
+  }
+
   // —— 音乐库：筛选 + 分组 ——
   const filtered = useMemo(
     () => (quality === 'all' ? items : items.filter((m) => qualityOf(m.track || {}) === quality)),
@@ -503,9 +539,10 @@ export function Music() {
     const lossless = items.filter((m) => qualityOf(m.track || {}) === 'lossless').length;
     return [
       { label: '库内曲目', value: items.length },
-      { label: '无损', value: lossless }
+      { label: '无损', value: lossless },
+      ...(isAdmin ? [{ label: '公开', value: items.filter((m) => m.is_public).length }] : [])
     ];
-  }, [mode, searchSources.length, candidates.length, playable, queue.length, index, items, mvItems.length]);
+  }, [mode, searchSources.length, candidates.length, playable, queue.length, index, items, mvItems.length, isAdmin]);
 
   return (
     <section class="music-page page-col">
@@ -582,6 +619,23 @@ export function Music() {
             <button onClick={() => playQueue(audioItems, 0)} disabled={!audioItems.length}><Icon name="play" size={14} /> 全部播放</button>
             <button onClick={() => playQueue([...audioItems].sort(() => Math.random() - 0.5), 0)} disabled={!audioItems.length}>
               <Icon name="shuffle" size={14} /> 随机
+            </button>
+          </>
+        )}
+        {mode === 'library' && isAdmin && visibleItems.length > 0 && (
+          <>
+            <span class="visibility-count">{selectedIds.length ? `已选 ${selectedIds.length} 首` : '可多选后批量调整'}</span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(selectedIds.length === visibleItems.length ? [] : visibleItems.map((m) => m.id))}
+            >
+              {selectedIds.length === visibleItems.length ? '取消全选' : '全选'}
+            </button>
+            <button type="button" class="primary" disabled={visibilityBusy || selectedIds.length === 0} onClick={() => setVisibility(true)}>
+              <Icon name="globe" size={14} /> 设为公开
+            </button>
+            <button type="button" disabled={visibilityBusy || selectedIds.length === 0} onClick={() => setVisibility(false)}>
+              <Icon name="lock" size={14} /> 设为私密
             </button>
           </>
         )}
@@ -688,6 +742,9 @@ export function Music() {
                       onPlay={() => playItem(m, shelf.items)}
                       onOpen={() => route(`/music/${m.id}`)}
                       onRemove={() => remove(m)}
+                      selectable={isAdmin}
+                      selected={selectedIds.includes(m.id)}
+                      onSelect={(checked) => toggleSelect(m.id, checked)}
                     />
                   ))}
                 </div>

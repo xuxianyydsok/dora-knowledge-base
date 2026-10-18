@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { EmptyState } from '../components/StateView.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { FormField, FormRow, FormSection, FormShell } from '../components/FormShell.jsx';
 
 export function MusicEdit({ id }) {
   const isNew = !id || id === 'new';
@@ -80,44 +81,71 @@ export function MusicEdit({ id }) {
   }
 
   return (
-    <section class="stack">
-      <div class="toolbar">
-        <h2 style="margin:0">{isNew ? '添加音乐' : '编辑音乐'}</h2>
-      </div>
-      {error && <div class="notice danger">{error}</div>}
-
-      <form class="stack" onSubmit={save}>
-        <label>歌曲名称 *<input value={form.title} onInput={(e) => set('title', e.currentTarget.value)} required /></label>
-        <div class="row" style="gap:12px;flex-wrap:wrap">
-          <label style="flex:1;min-width:200px">歌手<input value={form.artist} onInput={(e) => set('artist', e.currentTarget.value)} /></label>
-          <label style="flex:1;min-width:200px">专辑<input value={form.album} onInput={(e) => set('album', e.currentTarget.value)} /></label>
-        </div>
-        <div class="row" style="gap:12px;flex-wrap:wrap">
-          <label style="flex:1;min-width:160px">流派<input value={form.genre} onInput={(e) => set('genre', e.currentTarget.value)} /></label>
-          <label style="width:140px">发行年份<input type="number" value={form.release_year} onInput={(e) => set('release_year', e.currentTarget.value)} /></label>
-          <label style="width:140px">时长(秒)<input type="number" value={form.duration} onInput={(e) => set('duration', e.currentTarget.value)} /></label>
-          <label style="width:150px">音质
+    <FormShell
+      kicker="Music"
+      title={isNew ? '添加音乐' : '编辑音乐'}
+      sub="曲目信息、封面与播放地址。保存后会回到详情页。"
+      error={error}
+      busy={busy}
+      onSubmit={save}
+    >
+      <FormSection title="基本信息">
+        <FormField label="歌曲名称" required>
+          <input value={form.title} onInput={(e) => set('title', e.currentTarget.value)} required />
+        </FormField>
+        <FormRow>
+          <FormField label="歌手">
+            <input value={form.artist} onInput={(e) => set('artist', e.currentTarget.value)} />
+          </FormField>
+          <FormField label="专辑">
+            <input value={form.album} onInput={(e) => set('album', e.currentTarget.value)} />
+          </FormField>
+        </FormRow>
+        <FormRow>
+          <FormField label="流派">
+            <input value={form.genre} onInput={(e) => set('genre', e.currentTarget.value)} />
+          </FormField>
+          <FormField label="发行年份" className="form-field-sm">
+            <input type="number" value={form.release_year} onInput={(e) => set('release_year', e.currentTarget.value)} />
+          </FormField>
+          <FormField label="时长（秒）" className="form-field-sm">
+            <input type="number" value={form.duration} onInput={(e) => set('duration', e.currentTarget.value)} />
+          </FormField>
+          <FormField label="音质" className="form-field-sm">
             <select value={form.quality} onChange={(e) => set('quality', e.currentTarget.value)}>
               <option value="full">完整音轨</option>
               <option value="preview">试听片段</option>
             </select>
-          </label>
-        </div>
-        <label>封面链接<input value={form.artwork_url} onInput={(e) => set('artwork_url', e.currentTarget.value)} placeholder="https://..." /></label>
-        <label>歌手头像<input value={form.artist_avatar} onInput={(e) => set('artist_avatar', e.currentTarget.value)} placeholder="https://..." /></label>
-        <label>播放地址<input value={form.audio_url} onInput={(e) => set('audio_url', e.currentTarget.value)} placeholder="https://...（音频外链，完整音轨优先）" /></label>
-        <label>备用播放地址（每行一个，主地址失败时依次尝试）
-          <textarea rows={3} value={form.audio_fallbacks} onInput={(e) => set('audio_fallbacks', e.currentTarget.value)} placeholder="https://..." />
-        </label>
-        <label>试听片段<input value={form.preview_url} onInput={(e) => set('preview_url', e.currentTarget.value)} placeholder="https://..." /></label>
-        <label>备注<textarea rows={3} value={form.notes} onInput={(e) => set('notes', e.currentTarget.value)} /></label>
-        <label>歌词<textarea rows={6} value={form.lyrics} onInput={(e) => set('lyrics', e.currentTarget.value)} /></label>
+          </FormField>
+        </FormRow>
+      </FormSection>
 
-        <div class="row">
-          <button class="primary" type="submit" disabled={busy}>{busy ? '保存中…' : '保存'}</button>
-          <button type="button" onClick={() => history.back()}>取消</button>
-        </div>
-      </form>
-    </section>
+      <FormSection title="封面与播放" hint="外链必须是可以直接访问的媒体地址。">
+        <FormField label="封面链接">
+          <input value={form.artwork_url} onInput={(e) => set('artwork_url', e.currentTarget.value)} placeholder="https://..." />
+        </FormField>
+        <FormField label="歌手头像">
+          <input value={form.artist_avatar} onInput={(e) => set('artist_avatar', e.currentTarget.value)} placeholder="https://..." />
+        </FormField>
+        <FormField label="播放地址" hint="完整音轨优先；网页地址不会保存。">
+          <input value={form.audio_url} onInput={(e) => set('audio_url', e.currentTarget.value)} placeholder="https://..." />
+        </FormField>
+        <FormField label="备用播放地址" hint="每行一个，主地址失败时依次尝试。">
+          <textarea rows={3} value={form.audio_fallbacks} onInput={(e) => set('audio_fallbacks', e.currentTarget.value)} placeholder="https://..." />
+        </FormField>
+        <FormField label="试听片段">
+          <input value={form.preview_url} onInput={(e) => set('preview_url', e.currentTarget.value)} placeholder="https://..." />
+        </FormField>
+      </FormSection>
+
+      <FormSection title="补充信息">
+        <FormField label="备注">
+          <textarea rows={3} value={form.notes} onInput={(e) => set('notes', e.currentTarget.value)} />
+        </FormField>
+        <FormField label="歌词" hint="支持 LRC 时间轴格式；留空则自动匹配。">
+          <textarea rows={6} value={form.lyrics} onInput={(e) => set('lyrics', e.currentTarget.value)} />
+        </FormField>
+      </FormSection>
+    </FormShell>
   );
 }

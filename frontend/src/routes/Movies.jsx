@@ -99,6 +99,8 @@ export function Movies() {
   const [drawer, setDrawer] = useState('');           // '' | 'health'
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
 
   // localStorage 记住上次停留的 Tab 之外，不做额外持久化：候选数据每次都要重新拉
   const lastQuery = useRef('');
@@ -133,6 +135,13 @@ export function Movies() {
   }
 
   useEffect(() => { load().then(setLibrary); }, []);
+
+  // 「我的影视库」是站长管理公开状态的地方；普通访客继续走发现 / 搜索。
+  async function reloadLibrary() {
+    const list = await load();
+    setLibrary(list);
+    return list;
+  }
 
   // 抽屉打开时锁住背景滚动 + Esc 关闭
   useEffect(() => {
@@ -246,6 +255,25 @@ export function Movies() {
     } finally { setBusy(false); setPendingKey(''); }
   }
 
+  function toggleSelect(id, checked) {
+    setSelectedIds((ids) => checked ? [...new Set([...ids, id])] : ids.filter((x) => x !== id));
+  }
+
+  async function setVisibility(isPublic) {
+    if (!isAdmin || selectedIds.length === 0) return;
+    setVisibilityBusy(true);
+    try {
+      const res = await api.updateVisibility({ kind: 'movies', ids: selectedIds, is_public: isPublic });
+      toastSuccess(`${res.updated} 部已设为${isPublic ? '公开' : '私密'}`);
+      setSelectedIds([]);
+      await reloadLibrary();
+    } catch (e) {
+      toastError(`调整失败：${e.message}`);
+    } finally {
+      setVisibilityBusy(false);
+    }
+  }
+
   // —— 本地筛选与排序：采集候选一次性取回，切筛选不再打接口 ——
   const years = useMemo(() => {
     const set = new Set();
@@ -270,11 +298,12 @@ export function Movies() {
       ...Object.entries(CHANNELS).map(([key, c]) => ({ key, label: c.label })),
       { key: 'new', label: '最新入库' }
     ];
+    if (isAdmin) base.push({ key: 'library', label: '我的影视库', count: library.length });
     if (mode === 'search') {
       base.push({ key: 'search', label: `「${lastQuery.current}」`, count: shown.length });
     }
     return base;
-  }, [mode, shown.length]);
+  }, [mode, shown.length, isAdmin, library.length]);
 
   const stats = useMemo(() => ([
     { label: '命中来源', value: candSources.length || '—' },
@@ -290,7 +319,7 @@ export function Movies() {
         stats={isChannel ? undefined : stats}
         tabs={tabs}
         activeTab={mode}
-        onTab={(k) => { if (k === 'search') return; switchMode(k); }}
+        onTab={(k) => { if (k === 'search' || k === 'library') return; switchMode(k); }}
       >
         <a class="btn" href="https://moontv.xuguochen.de5.net" target="_blank" rel="noreferrer" title="打开增强版影视库（多源聚合，独立站点）">
           <Icon name="external" size={14} /> 增强版影视库
@@ -349,6 +378,81 @@ export function Movies() {
       </div>
 
       {isChannel && <MovieHome channel={mode} onPick={pickDouban} library={library} />}
+
+      {/* 站长的影视库：这里才看得到私密条目，并可批量公开 */}
+      {mode === 'library' && (
+        <section class="stack">
+          <div class="grid-head">
+            <h2><span class="bar" />我的影视库</h2>
+            <span class="count">{library.length} 部</span>
+            <span class="spacer" />
+            {isAdmin && (
+              <>
+                <span class="visibility-count">{selectedIds.length ? `已选 ${selectedIds.length} 部` : '可多选后批量调整'}</span>
+                <button type="button" onClick={() => setSelectedIds(selectedIds.length === library.length ? [] : library.map((m) => m.id))}>
+                  {selectedIds.length === library.length ? '取消全选' : '全选'}
+                </button>
+                <button type="button" class="primary" disabled={visibilityBusy || selectedIds.length === 0} onClick={() => setVisibility(true)}>
+                  <Icon name="globe" size={14} /> 设为公开
+                </button>
+                <button type="button" disabled={visibilityBusy || selectedIds.length === 0} onClick={() => setVisibility(false)}>
+                  <Icon name="lock" size={14} /> 设为私密
+                </button>
+              </>
+            )}
+          </div>
+
+          {library.length === 0 ? (
+            <EmptyState
+              icon="movie"
+              title="影视库还是空的"
+              hint="去「精选推荐」或「最新入库」点一张海报，就会加入影视库。"
+            />
+          ) : (
+            <div class="vod-grid">
+              {library.map((m) => {
+                const t = m.title_info || {};
+                const selected = selectedIds.includes(m.id);
+                return (
+                  <article
+                    key={m.id}
+                    class={`vod-card${selected ? ' is-selected' : ''}`}
+                    onClick={() => route(`/movies/${m.id}`)}
+                    role="button"
+                    tabindex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') route(`/movies/${m.id}`); }}
+                  >
+                    <div class="vod-poster">
+                      {isAdmin && (
+                        <label class="album-select" title={selected ? '取消选择' : '选择此片'} onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={(e) => toggleSelect(m.id, e.currentTarget.checked)}
+                            aria-label={`选择 ${m.title}`}
+                          />
+                        </label>
+                      )}
+                      {t.poster_url || m.cover_path
+                        ? <img src={t.poster_url || m.cover_path} alt={m.title} loading="lazy" referrerpolicy="no-referrer" />
+                        : <span class="vod-initial">{(m.title || '影').charAt(0)}</span>}
+                      {!m.is_public && <span class="album-flag is-private">私密</span>}
+                    </div>
+                    <div class="vod-meta">
+                      <h3 title={m.title}>{m.title}</h3>
+                      <div class="vod-sub">
+                        {t.release_date && <span>{String(t.release_date).slice(0, 4)}</span>}
+                        {t.type_name && <span class="ellipsis">{t.type_name}</span>}
+                        {t.rating != null && <span class="vod-score">{t.rating}</span>}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* —— 主区：最新入库 / 搜索结果（采集源） —— */}
       {!isChannel && (

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { api } from '../lib/api.js';
+import { FormField, FormRow, FormSection, FormShell } from '../components/FormShell.jsx';
 
 export function MovieEdit({ id }) {
   const isNew = !id || id === 'new';
@@ -64,47 +65,78 @@ export function MovieEdit({ id }) {
   }
 
   return (
-    <section class="stack">
-      <div class="toolbar">
-        <h2 style="margin:0">{isNew ? '添加影视' : '编辑影视'}</h2>
-      </div>
-      {error && <div class="notice danger">{error}</div>}
-
-      <form class="stack" onSubmit={save}>
-        <div class="row" style="gap:12px;flex-wrap:wrap">
-          <label style="flex:2;min-width:220px">名称 *<input value={form.title} onInput={(e) => set('title', e.currentTarget.value)} required /></label>
-          <label style="width:140px">类型
+    <FormShell
+      kicker="Movie"
+      title={isNew ? '添加影视' : '编辑影视'}
+      sub="影片信息、海报与播放地址。保存后会回到详情页。"
+      error={error}
+      busy={busy}
+      onSubmit={save}
+    >
+      <FormSection title="基本信息">
+        <FormRow>
+          <FormField label="名称" required className="form-field-grow">
+            <input value={form.title} onInput={(e) => set('title', e.currentTarget.value)} required />
+          </FormField>
+          <FormField label="类型" className="form-field-sm">
             <select value={form.media_type} onChange={(e) => set('media_type', e.currentTarget.value)}>
               <option value="movie">电影</option>
               <option value="tv">剧集</option>
             </select>
-          </label>
-        </div>
-        <div class="row" style="gap:12px;flex-wrap:wrap">
-          <label style="flex:1;min-width:200px">原名<input value={form.original_title} onInput={(e) => set('original_title', e.currentTarget.value)} /></label>
-          <label style="flex:1;min-width:200px">类型/流派<input value={form.genres} onInput={(e) => set('genres', e.currentTarget.value)} placeholder="剧情, 科幻" /></label>
-        </div>
-        <div class="row" style="gap:12px;flex-wrap:wrap">
-          <label style="flex:1;min-width:200px">导演<input value={form.director} onInput={(e) => set('director', e.currentTarget.value)} /></label>
-          <label style="flex:2;min-width:240px">主演<input value={form.cast_list} onInput={(e) => set('cast_list', e.currentTarget.value)} placeholder="逗号分隔" /></label>
-        </div>
-        <div class="row" style="gap:12px;flex-wrap:wrap">
-          <label style="width:170px">上映日期<input type="date" value={form.release_date} onInput={(e) => set('release_date', e.currentTarget.value)} /></label>
-          <label style="width:140px">时长(分钟)<input type="number" value={form.runtime} onInput={(e) => set('runtime', e.currentTarget.value)} /></label>
-          <label style="width:140px">评分(0-10)<input type="number" step="0.1" value={form.rating} onInput={(e) => set('rating', e.currentTarget.value)} /></label>
-        </div>
-        <label>海报链接<input value={form.poster_url} onInput={(e) => set('poster_url', e.currentTarget.value)} placeholder="https://..." /></label>
-        <label>背景图链接<input value={form.backdrop_url} onInput={(e) => set('backdrop_url', e.currentTarget.value)} placeholder="https://..." /></label>
-        <label>播放地址<input value={form.url} onInput={(e) => set('url', e.currentTarget.value)} placeholder="https://....mp4（视频直链，前端直接播放）" /></label>
-        <label>外部详情页<input value={form.external_url} onInput={(e) => set('external_url', e.currentTarget.value)} placeholder="https://...（TVmaze / TMDB 等资料页，非播放地址）" /></label>
-        <label>简介<textarea rows={4} value={form.overview} onInput={(e) => set('overview', e.currentTarget.value)} /></label>
-        <label>备注<textarea rows={3} value={form.notes} onInput={(e) => set('notes', e.currentTarget.value)} /></label>
+          </FormField>
+        </FormRow>
+        <FormRow>
+          <FormField label="原名">
+            <input value={form.original_title} onInput={(e) => set('original_title', e.currentTarget.value)} />
+          </FormField>
+          <FormField label="类型 / 流派">
+            <input value={form.genres} onInput={(e) => set('genres', e.currentTarget.value)} placeholder="剧情, 科幻" />
+          </FormField>
+        </FormRow>
+        <FormRow>
+          <FormField label="导演">
+            <input value={form.director} onInput={(e) => set('director', e.currentTarget.value)} />
+          </FormField>
+          <FormField label="主演">
+            <input value={form.cast_list} onInput={(e) => set('cast_list', e.currentTarget.value)} placeholder="逗号分隔" />
+          </FormField>
+        </FormRow>
+        <FormRow>
+          <FormField label="上映日期">
+            <input type="date" value={form.release_date} onInput={(e) => set('release_date', e.currentTarget.value)} />
+          </FormField>
+          <FormField label="时长（分钟）" className="form-field-sm">
+            <input type="number" value={form.runtime} onInput={(e) => set('runtime', e.currentTarget.value)} />
+          </FormField>
+          <FormField label="评分（0–10）" className="form-field-sm">
+            <input type="number" step="0.1" value={form.rating} onInput={(e) => set('rating', e.currentTarget.value)} />
+          </FormField>
+        </FormRow>
+      </FormSection>
 
-        <div class="row">
-          <button class="primary" type="submit" disabled={busy}>{busy ? '保存中…' : '保存'}</button>
-          <button type="button" onClick={() => history.back()}>取消</button>
-        </div>
-      </form>
-    </section>
+      <FormSection title="图片与播放">
+        <FormField label="海报链接">
+          <input value={form.poster_url} onInput={(e) => set('poster_url', e.currentTarget.value)} placeholder="https://..." />
+        </FormField>
+        <FormField label="背景图链接">
+          <input value={form.backdrop_url} onInput={(e) => set('backdrop_url', e.currentTarget.value)} placeholder="https://..." />
+        </FormField>
+        <FormField label="播放地址" hint="只接受 m3u8 / mp4 视频直链。">
+          <input value={form.url} onInput={(e) => set('url', e.currentTarget.value)} placeholder="https://....mp4" />
+        </FormField>
+        <FormField label="外部详情页" hint="TVmaze / TMDB 等资料页，不是播放地址。">
+          <input value={form.external_url} onInput={(e) => set('external_url', e.currentTarget.value)} placeholder="https://..." />
+        </FormField>
+      </FormSection>
+
+      <FormSection title="补充信息">
+        <FormField label="简介">
+          <textarea rows={4} value={form.overview} onInput={(e) => set('overview', e.currentTarget.value)} />
+        </FormField>
+        <FormField label="备注">
+          <textarea rows={3} value={form.notes} onInput={(e) => set('notes', e.currentTarget.value)} />
+        </FormField>
+      </FormSection>
+    </FormShell>
   );
 }

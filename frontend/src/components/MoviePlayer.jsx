@@ -135,7 +135,9 @@ export function MoviePlayer({
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
   const wrapRef = useRef(null);
+  const touchRef = useRef(null);
   const lastSavedRef = useRef(0);
+  const saveRef = useRef(null);
   const failedToastRef = useRef(false);   // 同一片源只弹一次失败提示，避免 stall/error 双触发刷屏
 
   const [playing, setPlaying] = useState(false);
@@ -323,6 +325,21 @@ export function MoviePlayer({
     return () => clearInterval(timer);
   }, [playing, movie?.id]);
 
+  // 关闭页面 / 切到后台时补一次进度。
+  // 只靠 5 秒定时器会漏掉「看到一半直接关页」这种最常见的场景。
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState === 'hidden') saveRef.current?.(false);
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', flush);
+      saveRef.current?.(false);
+    };
+  }, []);
+
   // —— 空闲 2.8s 后自动隐藏控制层（移动端交互由触摸唤出）——
   useEffect(() => {
     if (!playing) { setChromeVisible(true); return; }
@@ -360,6 +377,7 @@ export function MoviePlayer({
       setSaved(`保存失败: ${e.message}`);
     }
   }
+  saveRef.current = saveProgress;
 
   function toggle() {
     const el = videoRef.current;
@@ -385,6 +403,34 @@ export function MoviePlayer({
     const val = Number(e.currentTarget.value);
     el.currentTime = val;
     setCurrent(val);
+  }
+
+  // 移动端手势：左右滑动快退/快进 10 秒，上下滑动调音量，双击画面全屏。
+  // 用 pointer 事件而不是 touch：桌面触控板 / 手写笔也能用，且不需要额外监听。
+  function onPointerDown(e) {
+    if (e.pointerType === 'mouse') return;
+    touchRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+  }
+
+  function onPointerUp(e) {
+    const start = touchRef.current;
+    touchRef.current = null;
+    if (!start || e.pointerType === 'mouse') return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    const el = videoRef.current;
+    if (!el) return;
+    if (Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy)) {
+      el.currentTime = Math.max(0, Math.min(el.duration || Infinity, el.currentTime + (dx > 0 ? 10 : -10)));
+      setCurrent(el.currentTime);
+      setSaved(dx > 0 ? '快进 10 秒' : '快退 10 秒');
+      setTimeout(() => setSaved(''), 900);
+    } else if (Math.abs(dy) > 42 && Math.abs(dy) > Math.abs(dx)) {
+      const next = Math.min(1, Math.max(0, (muted ? 0 : volume) + (dy < 0 ? 0.1 : -0.1)));
+      changeVolume({ currentTarget: { value: String(next) } });
+      setSaved(`音量 ${Math.round(next * 100)}%`);
+      setTimeout(() => setSaved(''), 900);
+    }
   }
 
   function changeVolume(e) {
@@ -421,6 +467,7 @@ export function MoviePlayer({
           preload="metadata"
           poster={movie?.title_info?.poster_url || movie?.cover_path || undefined}
           onClick={toggle}
+          onDoubleClick={toggleFullscreen}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
@@ -433,6 +480,8 @@ export function MoviePlayer({
             }
           }}
           onEnded={() => { setPlaying(false); saveProgress(true); onEnded?.(); }}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
         />
 
         {loadingSrc && !error && (

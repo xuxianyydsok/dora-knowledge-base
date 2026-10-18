@@ -583,6 +583,8 @@ export const api = {
   getPostBySlug: (slug) => request(`/api/posts/slug/${encodeURIComponent(slug)}`),
   createPost: (body) => request('/api/posts', { method: 'POST', body }),
   updatePost: (id, body) => request(`/api/posts/${id}`, { method: 'PATCH', body }),
+  // 批量公开 / 私密（音乐、影视、博客共用）
+  updateVisibility: (body) => request('/api/visibility', { method: 'PATCH', body }),
   deletePost: (id) => request(`/api/posts/${id}`, { method: 'DELETE' }),
 
   // —— Notion 博客分区（独立表 / 独立接口，2026-10-14）——
