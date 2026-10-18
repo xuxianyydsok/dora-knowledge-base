@@ -12,6 +12,7 @@ import { BlogDock, BlogLinks } from '../components/BlogDock.jsx';
 // Notion 博客分区（/notion）复用的就是同一个卡片，见该文件顶部说明。
 import { PostCard, PostCover } from '../components/PostCard.jsx';
 import { PostHeatmap } from '../components/PostHeatmap.jsx';
+import { ContentChartsPanel } from '../components/ContentChartsPanel.jsx';
 // 横幅与默认封面的地址统一放在 lib/blogMedia.js（原先写在本文件里）
 import { BANNERS } from '../lib/blogMedia.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -280,6 +281,12 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
       <div class="cs-box cs-box-heat">
         <PostHeatmap posts={posts} />
       </div>
+
+      {/* 真实数据图表（2026-10-18，图鉴 #170/#172/#176/#197）：
+          全部用站内真实文章聚合，不是演示数据。放在热力图下面、同一片区域 ——
+          它们是「回顾性」信息，不该打断阅读流。 */}
+      <ContentChartsPanel posts={posts} cats={cats} tags={tags} />
+
       {error && <div class="notice danger">{error}</div>}
       <BlogDock active={focus === 'search' ? 'search' : 'home'} />
     </section>
