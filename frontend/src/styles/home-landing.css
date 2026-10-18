@@ -2227,22 +2227,19 @@
 }
 
 /* 栅格占位：大屏 12 列；中屏两列；窄屏一列 */
-/* 2026-10-18 本轮定稿（用户选方案 1）：
-   第一行整幅 = 摘抄（与首页轮播同宽，卡内滚动）；
+/* 2026-10-18 本轮定稿（用户选方案 1，后按反馈修正宽度）：
+   第一行整幅 = 摘抄（与轮播图下方正文区同宽，不铺满视口；卡内滚动）；
    第二行左 = 品牌铁屑（内容较单调，缩到半幅）；第二行右 = 写作日历；
    底部整行 = 真实书架。
    原来的「拨动时间的天空 / 倒计时 / 每月文章数 / 一句话」四块已删除或合并。 */
 .now-excerpt {
   grid-column: 1 / -1;
   grid-row: 1 / 2;
-  /* 与首屏轮播一样冲出内容容器，横向铺满视口；文字区另行限宽。 */
-  width: 100vw;
-  margin-left: calc(50% - 50vw);
-  margin-right: calc(50% - 50vw);
-  /* 通栏卡片与轮播一样用「视口宽度」；app-shell 的 overflow-x: clip 会收掉
-     滚动条造成的 1~2px 溢出。 */
+  /* 与轮播图下方正文区同宽：跟随 .app-main 的 max-width 与左右 padding，
+     不再用 100vw 冲出容器。 */
+  width: 100%;
   min-height: clamp(420px, 58vh, 620px);
-  padding: clamp(22px, 2.4vw, 36px) clamp(20px, 5vw, 72px);
+  padding: clamp(22px, 2.4vw, 36px) clamp(20px, 3.2vw, 48px);
   justify-content: center;
 }
 .now-brand {
@@ -2402,11 +2399,8 @@
 @media (max-width: 720px) {
   .now-bento > .now-box { grid-column: 1 / -1 !important; grid-row: auto !important; }
   .now-excerpt {
-    width: 100vw;
-    margin-left: calc(50% - 50vw);
-    margin-right: calc(50% - 50vw);
+    width: 100%;
     min-height: 360px;
-    border-radius: 0;
     padding: 20px 16px;
   }
   .now-ex-q { font-size: 18px; max-height: 48vh; }
