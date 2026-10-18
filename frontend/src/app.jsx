@@ -26,6 +26,7 @@ import {
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
   Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback,
   AdminExcerpts,
+  AdminHeroSubtitle,
   MathFrame, NotionPosts, NotionPostView
 } from './routes/routes.js';
 
@@ -110,6 +111,8 @@ function RouterView() {
       <ProtectedRoute path="/admin/feedback"><AdminFeedback /></ProtectedRoute>
       {/* 首页摘抄管理：仅站长（不带 guest，未登录会被重定向到登录页） */}
       <ProtectedRoute admin path="/admin/excerpts"><AdminExcerpts /></ProtectedRoute>
+      {/* 首页轮播摘要：仅站长 */}
+      <ProtectedRoute admin path="/admin/hero-subtitle"><AdminHeroSubtitle /></ProtectedRoute>
       <ProtectedRoute path="/backup"><Backup /></ProtectedRoute>
       <ProtectedRoute path="/settings"><Settings /></ProtectedRoute>
       <NotFound default />

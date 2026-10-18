@@ -785,6 +785,23 @@ R2 对象仍归图展那两张表管；删图展素材时本表引用由外键 `
 
 **路由顺序**：`PUT /api/excerpts/order` 必须排在 `PATCH|DELETE /api/excerpts/:id` 之前。
 
+## 站点文案 Site Settings（2026-10-19）
+
+首页轮播图下方的摘要文案，复用已有的 `site_settings` 表，不新建表：
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/site-settings` | **访客可读** | 只返回公开白名单键 `hero_subtitle`；不会下发 `allow_public_registration` 等内部配置 |
+| PATCH | `/api/site-settings` | 管理员 | body：`{ hero_subtitle: { text } }`；`text` ≤500 字，允许空串（首页回退内置文案） |
+
+返回结构：
+
+```json
+{ "hero_subtitle": { "text": "首页大图下方那行摘要" }, "updated_at": "…" }
+```
+
+管理页：`/admin/hero-subtitle`。首页 `HeroCarousel` 读取该接口，失败时保留内置摘要。
+
 返回项结构：
 
 ```json

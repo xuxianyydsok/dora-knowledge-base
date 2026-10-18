@@ -238,6 +238,7 @@ export function Settings() {
           </header>
           <div class="set-links">
             <a class="set-link" href="/admin/users"><Icon name="crown" size={16} /> 用户管理</a>
+            <a class="set-link" href="/admin/hero-subtitle"><Icon name="pencil" size={16} /> 首页摘要</a>
             <a class="set-link" href="/sources"><Icon name="wave" size={16} /> 源状态</a>
           </div>
         </section>

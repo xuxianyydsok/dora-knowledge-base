@@ -191,6 +191,7 @@ export function Layout({ children }) {
             {isAdmin && <MenuLink href="/videos" icon="video">视频库</MenuLink>}
             {isAdmin && <MenuLink href="/admin/feedback" icon="heart">共创反馈</MenuLink>}
             {isAdmin && <MenuLink href="/admin/excerpts" icon="sparkles">首页摘抄</MenuLink>}
+            {isAdmin && <MenuLink href="/admin/hero-subtitle" icon="pencil">首页摘要</MenuLink>}
             {/* 源健康中心：仅管理员可见（原先挂在已删除的「更多」下拉里） */}
             {isAdmin && <MenuLink href="/sources" icon="wave">源状态</MenuLink>}
             <div class="menu-sep" />

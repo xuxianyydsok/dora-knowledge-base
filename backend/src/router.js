@@ -34,6 +34,7 @@ import * as books from './routes/books.js';
 import * as wallpapers from './routes/wallpapers.js';
 import * as heroSlides from './routes/heroSlides.js';
 import * as excerpts from './routes/excerpts.js';
+import * as siteSettings from './routes/siteSettings.js';
 import * as dynamicSources from './routes/dynamicSources.js';
 import { vodProxy } from './routes/vodProxy.js';
 
@@ -155,6 +156,10 @@ const routes = [
   ['PUT', '/api/hero/slides/order', heroSlides.reorderHeroSlides],
   ['PATCH', '/api/hero/slides/:id', heroSlides.updateHeroSlide],
   ['DELETE', '/api/hero/slides/:id', heroSlides.deleteHeroSlide],
+
+  // 站点级文案（首页轮播摘要）：读对访客开放，写仅管理员。
+  ['GET', '/api/site-settings', siteSettings.getSiteSettings],
+  ['PATCH', '/api/site-settings', siteSettings.updateSiteSettings],
 
   // 首页摘抄（2026-10-18）：读对访客开放，写全部 requireAdmin。
   // ⚠️ /order 是 3 段路径，必须排在 /:id 之前。

@@ -20,7 +20,8 @@
 
 ### 基础
 - **user_profiles**：`id`(=auth.users.id)、`username`、`display_name`、`avatar_path`、`role`(user/admin)、`plan`(预留)、`plan_expires_at`(预留)、`is_disabled`
-- **site_settings**：站点键值配置，含 `allow_public_registration`（公开注册开关）
+- **site_settings**：站点键值配置，含 `allow_public_registration`（公开注册开关）与
+  `hero_subtitle`（首页轮播图下方摘要，value 形如 `{ "text": "…" }`）
 
 ### 分类 / 标签
 - **categories**：`user_id`、`name`、`slug`、`description`、`sort_order`

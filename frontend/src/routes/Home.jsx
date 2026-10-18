@@ -548,13 +548,19 @@ const DASH_MODULES = [
 ];
 
 // 工具入口：控制台保留一键直达
-const SHORTCUTS = [
+const BASE_SHORTCUTS = [
   { to: '/search', icon: 'search', label: '全局搜索', desc: '跨全部资源检索' },
   { to: '/graph/blog', icon: 'graph', label: '博客图谱', desc: '看文章与标签的星图' },
   { to: '/favorites', icon: 'heart', label: '收藏夹', desc: '跨类型收藏' },
   { to: '/timeline', icon: 'clock', label: '时间轴', desc: '按时间回看内容' },
   { to: '/moments', icon: 'sparkles', label: '碎念', desc: '像朋友圈一样记录' },
   { to: '/backup', icon: 'backup', label: '备份', desc: '导出 / 导入 JSON' }
+];
+
+// 管理员专属：首页内容配置入口。普通用户看不到，避免点了进 403。
+const ADMIN_SHORTCUTS = [
+  { to: '/admin/hero-subtitle', icon: 'pencil', label: '首页摘要', desc: '编辑轮播图下方文案' },
+  { to: '/gallery?hero=1', icon: 'grid', label: '首页轮播', desc: '挑选图片与视频' }
 ];
 
 // 相对时间：控制台里「刚刚 / 3 小时前」比绝对时间更有信息量
@@ -609,6 +615,7 @@ function Dashboard() {
 
   const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : null;
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
+  const shortcuts = isAdmin ? [...ADMIN_SHORTCUTS, ...BASE_SHORTCUTS] : BASE_SHORTCUTS;
 
   return (
     <section class="console">
@@ -644,7 +651,7 @@ function Dashboard() {
       </div>
 
       <div class="console-cols">
-        <section class="panel">
+        <section class="panel console-shortcuts">
           <div class="panel-head">
             <h2>最近添加</h2>
             <a class="panel-more" href="/search">全部资源 <Icon name="chevronRight" size={13} /></a>
@@ -675,7 +682,7 @@ function Dashboard() {
             <h2>快捷入口</h2>
           </div>
           <div class="shortcut-grid">
-            {SHORTCUTS.map((s) => (
+            {shortcuts.map((s) => (
               <a key={s.to} class="shortcut" href={s.to}>
                 <span class="shortcut-icon"><Icon name={s.icon} size={17} /></span>
                 <span class="shortcut-text">

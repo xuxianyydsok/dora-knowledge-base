@@ -690,6 +690,10 @@ export const api = {
   deleteHeroSlide: (id) => request(`/api/hero/slides/${id}`, { method: 'DELETE' }),
   reorderHeroSlides: (ids) => request('/api/hero/slides/order', { method: 'PUT', body: { ids } }),
 
+  // 站点级文案（2026-10-19）：首页轮播下方摘要。读对访客开放，写仅站长。
+  getSiteSettings: () => request('/api/site-settings'),
+  updateSiteSettings: (body) => request('/api/site-settings', { method: 'PATCH', body }),
+
   // 碎念（朋友圈式短动态）
   listMoments: (params = '') => request(`/api/moments${params}`),
   createMoment: (body) => request('/api/moments', { method: 'POST', body }),

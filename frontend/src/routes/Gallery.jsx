@@ -13,6 +13,7 @@
 //    点「查看更多」才展开全部；动态壁纸（视频）同理，与静态图片分成两个区。
 //    R2 里两者前缀也分开（assets/ 与 wallpapers/），互不牵连。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useRouter } from 'preact-router';
 import { createPortal } from 'preact/compat';
 import { api, uploadAsset, uploadWallpaper } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -925,6 +926,7 @@ function CuratorDrawer({ items, wallpapers, onClose, onReload }) {
 }
 
 export function Gallery() {
+  const [router] = useRouter();
   const { isAdmin } = useAuth();
   const [items, setItems] = useState([]);
   const [wallpapers, setWallpapers] = useState([]);
@@ -938,6 +940,13 @@ export function Gallery() {
   const [expandWalls, setExpandWalls] = useState(false); // 动态壁纸区是否展开全部
   const [masonryRef, masonryWidth] = useMeasuredWidth();   // 静态图片区容器宽度
   const cols = useColumns();
+  // 管理员首页快捷入口跳过来时带 ?hero=1，直接打开轮播抽屉，
+  // 省掉「再点一次首页轮播」这一步；抽屉仍复用同一套逻辑。
+  useEffect(() => {
+    if (isAdmin && new URLSearchParams(router?.url?.split('?')[1] || '').get('hero') === '1') {
+      setEditingHero(true);
+    }
+  }, [isAdmin, router?.url]);
 
   const limit = cols * COLLAPSE_ROWS;
 

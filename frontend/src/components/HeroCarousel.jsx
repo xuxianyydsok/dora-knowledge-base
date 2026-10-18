@@ -68,6 +68,9 @@ export function HeroCarousel() {
   // 轮播内容：优先用站长配置（接口返回），失败或为空则回退内置图片。
   // 用 useState + useEffect 而不是顶层 await：接口挂了首页也必须能正常显示。
   const [slides, setSlides] = useState(HERO_SLIDES);
+  // 轮播图下方的摘要文案：站长可在 /admin/hero-subtitle 修改。
+  // 接口失败 / 未配置时用内置文案，首页不会出现空白。
+  const [subtitle, setSubtitle] = useState('博客 · GitHub 收藏 · 图展 · 音乐 · 影视 —— 一个可以慢慢逛的个人知识库。');
 
   useEffect(() => {
     let alive = true;
@@ -86,6 +89,13 @@ export function HeroCarousel() {
         }
       })
       .catch(() => { /* 接口失败：保持内置图片 */ });
+    api.getSiteSettings()
+      .then((res) => {
+        if (!alive) return;
+        const text = res?.hero_subtitle?.text;
+        if (typeof text === 'string' && text.trim()) setSubtitle(text.trim());
+      })
+      .catch(() => { /* 接口失败：保持内置摘要 */ });
     return () => { alive = false; };
   }, []);
 
@@ -211,9 +221,7 @@ export function HeroCarousel() {
       </div>
 
       <div class="ld-hero-body">
-        <p class="ld-hero-sub">
-          博客 · GitHub 收藏 · 图展 · 音乐 · 影视 —— 一个可以慢慢逛的个人知识库。
-        </p>
+        <p class="ld-hero-sub">{subtitle}</p>
         <div class="ld-hero-actions">
           <a class="ld-hero-btn" href="/news">开始浏览</a>
           <a class="ld-hero-btn ghost" href="/graph/blog">打开图谱</a>

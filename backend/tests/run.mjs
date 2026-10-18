@@ -1900,6 +1900,29 @@ async function videoTypeUnit() {
     return 'excerpts 表 / 非空约束 / RLS / 幂等触发器均已锁定';
   });
 
+  // ---- 首页轮播摘要（2026-10-19） ----
+  await test('首页摘要 · 访客只读公开键、写仅管理员、不泄露内部配置', () => {
+    const { isGuestAllowed } = publicScope;
+    assert(isGuestAllowed('GET', '/api/site-settings'), '访客应可读首页摘要');
+    assert(!isGuestAllowed('PATCH', '/api/site-settings'), '访客不应能改首页摘要');
+
+    const routerSrc = readFileSync(join(BACKEND, 'src', 'router.js'), 'utf8');
+    assert(routerSrc.includes("['GET', '/api/site-settings', siteSettings.getSiteSettings]"),
+      'router.js 应有 GET /api/site-settings');
+    assert(routerSrc.includes("['PATCH', '/api/site-settings', siteSettings.updateSiteSettings]"),
+      'router.js 应有 PATCH /api/site-settings');
+
+    const src = readFileSync(join(BACKEND, 'src', 'routes', 'siteSettings.js'), 'utf8');
+    assert(/PUBLIC_KEYS\s*=\s*\[HERO_SUBTITLE\]/.test(src),
+      '公开键必须白名单，不能把 site_settings 全表发给访客');
+    assert(/export async function updateSiteSettings[\s\S]{0,300}requireAdmin\(/.test(src),
+      'updateSiteSettings 必须 requireAdmin');
+    assert(/export async function getSiteSettings[\s\S]{0,300}requireAuth\(/.test(src),
+      'getSiteSettings 应走 requireAuth（访客可读）');
+    assert(/MAX_SUBTITLE\s*=\s*500/.test(src), '首页摘要应有长度上限');
+    return 'GET 放行 / PATCH 拒绝 + 公开键白名单 + 长度上限';
+  });
+
   // ---- 博客列表接口（2026-10-14 修「博客页打不开」） ----
   await test('博客列表 · 走边缘缓存、写操作失效、标签一次往返取回', () => {
     const src = readFileSync(join(BACKEND, 'src', 'routes', 'posts.js'), 'utf8');

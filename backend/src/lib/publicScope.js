@@ -24,7 +24,7 @@
 // 含 media（2026-10-14）：Notion 迁移的文章正文插图地址就是 /api/media?path=notion/...，
 //   访客必须能看到。路由层只放行 notion/ 与 covers/notion/ 两个前缀（公开博客配图），
 //   其余前缀对访客一律 404 —— 避免把 R2 变成任意 key 探测器（见 routes/media.js）。
-export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|notion-posts|media|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers|hero|excerpts)(\/|$)/;
+export const PUBLIC_READ_RE = /^\/api\/(categories|tags|videos|github|posts|notion-posts|media|music|movies|news|search|graph|gallery|timeline|moments|files|books|wallpapers|hero|excerpts|site-settings)(\/|$)/;
 
 // 站长收藏（2026-10-11 用户要求）：站长收藏的影视 / 音乐对所有人可见可播。
 // 它是一条**精确路径**（不是前缀），因此单独判定 —— 不能塞进上面的前缀正则，

@@ -160,6 +160,10 @@ export const api = {
     const items = globalThis.__HERO_ITEMS__ || [];
     return { items, count: items.length };
   },
+  getSiteSettings: async () => {
+    if (globalThis.__SITE_SETTINGS_FAIL__) throw new Error('摘要接口挂了');
+    return { hero_subtitle: { text: globalThis.__HERO_SUBTITLE__ || '' } };
+  },
   listGallery: async () => ({ items: [
     { id: 'g1', asset_id: 'a1', title: '图展图一', image: { url: 'http://cdn.test/g1.jpg' } }
   ] }),
@@ -242,6 +246,8 @@ const doc = installDom();
   const M = await loadModule();
   globalThis.__HERO_ITEMS__ = HERO_ITEMS;
   globalThis.__HERO_FAIL__ = false;
+  globalThis.__SITE_SETTINGS_FAIL__ = false;
+  globalThis.__HERO_SUBTITLE__ = '首页大图下方的新摘要';
   const host = doc.createElement('div');
   doc.body.appendChild(host);
   M.render(M.h(M.HeroCarousel, {}), host);
@@ -251,6 +257,7 @@ const doc = installDom();
   ok('用后台配置的图（配置图一）', html.includes('http://cdn.test/one.jpg'));
   ok('用后台配置的视频', html.includes('http://cdn.test/mv.mp4'));
   ok('不再出现内置图 /hero/hero-01.webp', !html.includes('/hero/hero-01.webp'), html.slice(0, 200));
+  ok('后台摘要显示在轮播下方', html.includes('首页大图下方的新摘要'), html.slice(0, 500));
   // 只数进度点本体，别把 `ld-hero-dot-fill` 也算进来（\b 在 `-` 前也成立）
   const dotRe = /class="ld-hero-dot(?: on)?"/g;
   ok('轮播张数按配置（3 张，不是内置 18）', count(html, dotRe) === 3, `实际 ${count(html, dotRe)}`);
@@ -298,12 +305,14 @@ const doc = installDom();
 {
   const M = await loadModule();
   globalThis.__HERO_FAIL__ = true;
+  globalThis.__SITE_SETTINGS_FAIL__ = true;
   const host = doc.createElement('div');
   doc.body.appendChild(host);
   M.render(M.h(M.HeroCarousel, {}), host);
   await new Promise((r) => setTimeout(r, 300));
   const html = serialize(host);
   ok('接口失败时回退内置图（/hero/hero-01.webp 在）', html.includes('/hero/hero-01.webp'));
+  ok('摘要接口失败时保留内置文案', html.includes('一个可以慢慢逛的个人知识库'));
   const dotRe = /class="ld-hero-dot(?: on)?"/g;
   ok('回退时仍是 18 张', count(html, dotRe) === 18, `实际 ${count(html, dotRe)}`);
   M.render(null, host);

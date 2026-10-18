@@ -41,6 +41,8 @@ const Coop = lazy(() => import('./Coop.jsx').then((m) => ({ default: m.Coop })))
 const AdminFeedback = lazy(() => import('./AdminFeedback.jsx').then((m) => ({ default: m.AdminFeedback })));
 // 首页摘抄管理（2026-10-18）：仅站长，入口在头像菜单。
 const AdminExcerpts = lazy(() => import('./AdminExcerpts.jsx').then((m) => ({ default: m.AdminExcerpts })));
+// 首页轮播摘要（2026-10-19）：仅站长，入口在管理员首页快捷入口与头像菜单。
+const AdminHeroSubtitle = lazy(() => import('./AdminHeroSubtitle.jsx').then((m) => ({ default: m.AdminHeroSubtitle })));
 // 数学讲义（考研数学一）：/math 路由用 iframe 内嵌 public/math/ 下的静态子站，
 // 让它像本站的一页而不是"跳走的外挂站"。详见 MathFrame.jsx 顶部说明。
 const MathFrame = lazy(() => import('./MathFrame.jsx').then((m) => ({ default: m.MathFrame })));
@@ -57,5 +59,6 @@ export {
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
   Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback,
   AdminExcerpts,
+  AdminHeroSubtitle,
   MathFrame, NotionPosts, NotionPostView
 };
