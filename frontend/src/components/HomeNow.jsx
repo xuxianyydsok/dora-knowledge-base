@@ -6,7 +6,7 @@
 //   · 删掉「距离下一个整点」倒计时方框（用户明确要去掉）
 //   · 删掉「每月文章数」折线，并把右侧的「一句话」一起合并、
 //     拓宽成一整条「摘抄」带 —— 专门放较长的一段段文字（美文摘抄 / 哲理性段落），
-//     不再是单句。文案由我先写，用户后续会给素材替换。
+//     不再是单句。
 //   · 「拨动时间的天空」换成 112 模板的「A4 磁场铁屑」，铁屑拼出 DoraStudio 字样
 //     （组件 components/BrandFilings.jsx），不再打满整块方框。
 //   · 书架与写作日历对调位置；书架换成 components/BookShelf.jsx ——
@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { BrandFilings } from './BrandFilings.jsx';
 import { BookShelf } from './BookShelf.jsx';
 import { charGradients } from '../lib/brandGradient.js';
+import { Icon } from './Icon.jsx';
 
 
 // 品牌字标「Dora Studio」（2026-10-12 用户要求）：
@@ -112,11 +113,12 @@ function HeatCalendar({ dates = [] }) {
   );
 }
 
-// ---------------- ⑤ 摘抄带（合并了原来的「一句话」与「每月文章数」）----------------
-// 用户要求：去掉每月文章数，把右侧那块拓宽成一条，专门展示**较长**的文字，
-// 不再是单句 —— 所以这里放的是整段摘抄（美文 / 哲理性段落），一次显示一整段。
-// 文案由我先写，用户后续会给素材替换。
-const EXCERPTS = [
+// ---------------- ⑤ 摘抄大卡片 ----------------
+// 2026-10-18 用户要求：摘抄卡片与 Dora Studio 卡片**对调位置**，
+// 摘抄改成像原来品牌卡那样的大卡片（要写很多内容），品牌卡缩到右列。
+// 内容不再写死：由站长在 /admin/excerpts 维护，首页通过 /api/excerpts 读取。
+// 接口失败或一条都没配置时，用下面这 3 段内置文案兜底，首页永远不会空。
+const FALLBACK_EXCERPTS = [
   {
     text: '一个人真正的成长，往往不是突然懂得了什么大道理，而是某天清晨醒来，发现昨天让你辗转反侧的那件事，已经不再那么重要了。',
     from: '关于时间'
@@ -128,33 +130,42 @@ const EXCERPTS = [
   {
     text: '把生活过成一条线的人是幸运的，但大多数人活成了一张网：这里的努力连着那里的放弃，此刻的犹豫牵着去年的决心。承认这张网，反而更容易往前走。',
     from: '关于选择'
-  },
-  {
-    text: '认真记录的意义不在于回看，而在于记录的那一刻，你会下意识地把日子过得值得被记录。这是一种温柔的自我要求。',
-    from: '关于记录'
-  },
-  {
-    text: '知识只有被用起来才真正属于你。躺在收藏夹里的东西，就像书架上没拆封的书 —— 它们装饰了你的房间，却没有参与你的人生。',
-    from: '关于阅读'
   }
 ];
 
-function Excerpts() {
+function Excerpts({ items = [] }) {
+  // 统一结构：后台条目是 { content, source }，兜底是 { text, from }。
+  const list = useMemo(
+    () => (items.length ? items.map((x) => ({ text: x.content, from: x.source || '' })) : FALLBACK_EXCERPTS),
+    [items]
+  );
   const [i, setI] = useState(0);
   const [out, setOut] = useState(false);
   const [hold, setHold] = useState(false);
-  const cur = EXCERPTS[i];
+  const cur = list[i % list.length] || FALLBACK_EXCERPTS[0];
+  const timerRef = useRef(null);
+  const quoteRef = useRef(null);
 
   const next = () => {
     setOut(true);
-    setTimeout(() => { setI((v) => (v + 1) % EXCERPTS.length); setOut(false); }, 420);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setI((v) => (v + 1) % list.length);
+      setOut(false);
+    }, 420);
   };
-  // 每 12 秒自动翻一条（比单句慢，因为每段更长、需要更多阅读时间）；悬停时暂停
+  // 条目变化时回到第一条，避免删到末尾后下标越界。
+  useEffect(() => { setI(0); }, [list.length]);
+  // 卸载时清掉换段定时器，避免组件已离开页面还写状态。
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+  // 每 18 秒自动翻一条（大卡片内容更长，需要更多阅读时间）；悬停时暂停
   useEffect(() => {
-    if (hold) return undefined;
-    const id = setInterval(next, 12000);
+    if (hold || list.length < 2) return undefined;
+    const id = setInterval(next, 18000);
     return () => clearInterval(id);
-  }, [hold, i]);
+  }, [hold, i, list.length]);
+  // 换段后回到顶部：长摘抄上一段滚到中间时，下一段不该从中途开始。
+  useEffect(() => { if (quoteRef.current) quoteRef.current.scrollTop = 0; }, [i]);
 
   return (
     <div
@@ -162,19 +173,38 @@ function Excerpts() {
       role="button"
       tabindex="0"
       data-cursor="换一段"
-      onClick={next}
+      onClick={(e) => {
+        // 正文区允许滚动 / 选中文字；点正文不该误触「换一段」。
+        if (e.target.closest?.('.now-ex-q')) return;
+        next();
+      }}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); next(); } }}
       onPointerEnter={() => setHold(true)}
       onPointerLeave={() => setHold(false)}
     >
-      <p class="now-box-t">摘抄 · 读一段</p>
-      <blockquote class={`now-ex-q${out ? ' out' : ''}`}>
+      <div class="now-ex-head">
+        <p class="now-box-t">摘抄 · 读一段</p>
+        <span class="now-ex-count">{i + 1} / {list.length}</span>
+      </div>
+      <blockquote ref={quoteRef} class={`now-ex-q${out ? ' out' : ''}`}>
         {cur.text}
       </blockquote>
       <div class="now-ex-foot">
-        <span class="now-ex-from">{cur.from}</span>
-        <div class="now-q-dots">
-          {EXCERPTS.map((_, k) => <i key={k} class={k === i ? 'on' : ''} />)}
+        <span class="now-ex-from">{cur.from || '未注明出处'}</span>
+        <div class="now-ex-nav">
+          <div class="now-q-dots">
+            {list.map((_, k) => <i key={k} class={k === i % list.length ? 'on' : ''} />)}
+          </div>
+          {list.length > 1 && (
+            <button
+              type="button"
+              class="now-ex-next"
+              onClick={(e) => { e.stopPropagation(); next(); }}
+              aria-label="换一段摘抄"
+            >
+              换一段 <Icon name="arrowRight" size={13} />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -182,26 +212,25 @@ function Excerpts() {
 }
 
 // ---------------- 组装 ----------------
-// props.posts：公开文章列表（用于热力日历）；props.books：公开图书（用于书架）
-export function HomeNow({ posts = [], books = [] }) {
+// props.posts：公开文章列表（用于热力日历）；props.books：公开图书（用于书架）；
+// props.excerpts：站长在后台维护的摘抄（首页只取启用项）
+export function HomeNow({ posts = [], books = [], excerpts = [] }) {
   const dates = useMemo(() => posts.map((p) => p.published_at || p.created_at).filter(Boolean), [posts]);
 
   return (
     <div class="now-bento">
-      {/* 左侧大格：品牌铁屑（112 模板的 A4 磁场铁屑，拼出 DoraStudio）。
-          2026-10-12 用户要求：左上角那行小字换成首页首屏那串**渐变色的**
-          「Dora Studio」（铁屑本身继续拼 DoraStudio 字样），并把铁屑整体
-          往下挪一点，给渐变字标腾出位置（仍在同一张卡片内）。 */}
+      {/* 右上：品牌铁屑。2026-10-18 用户要求与摘抄对调 —— 品牌内容较单调，
+          缩到右列即可；摘抄需要大卡片承载更多文字。 */}
       <div class="now-box now-brand" data-cursor="拖动铁屑">
         <BrandGradient />
-        <BrandFilings text="DoraStudio" height={340} ariaLabel="DoraStudio 铁屑字样" />
+        <BrandFilings text="DoraStudio" height={240} ariaLabel="DoraStudio 铁屑字样" />
       </div>
 
-      {/* 右列上：写作日历 */}
-      <HeatCalendar dates={dates} />
+      {/* 左列（跨两行）：摘抄大卡片 */}
+      <Excerpts items={excerpts} />
 
-      {/* 右列下：摘抄带（原来这里是「距离下一个整点」） */}
-      <Excerpts />
+      {/* 右列下：写作日历 */}
+      <HeatCalendar dates={dates} />
 
       {/* 底部大格：真实书架（书正面立着、能看到封面） */}
       <BookShelf books={books} />

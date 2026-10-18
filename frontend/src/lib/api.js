@@ -696,6 +696,13 @@ export const api = {
   updateMoment: (id, body) => request(`/api/moments/${id}`, { method: 'PATCH', body }),
   deleteMoment: (id) => request(`/api/moments/${id}`, { method: 'DELETE' }),
 
+  // 首页摘抄（2026-10-18）：首页读启用项，管理页带 ?all=true 读全部
+  listExcerpts: (params = '') => request(`/api/excerpts${params}`),
+  createExcerpt: (body) => request('/api/excerpts', { method: 'POST', body }),
+  updateExcerpt: (id, body) => request(`/api/excerpts/${id}`, { method: 'PATCH', body }),
+  deleteExcerpt: (id) => request(`/api/excerpts/${id}`, { method: 'DELETE' }),
+  reorderExcerpts: (ids) => request('/api/excerpts/order', { method: 'PUT', body: { ids } }),
+
   // 共创反馈：提交对所有人开放（含访客），查看 / 管理仅站长
   submitFeedback: (body) => request('/api/feedback', { method: 'POST', body }),
   listFeedback: (params = '') => request(`/api/feedback${params}`),

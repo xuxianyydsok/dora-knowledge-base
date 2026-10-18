@@ -264,10 +264,15 @@ function Landing() {
   const [active, setActive] = useState(null);
   // 公开图书（给「此刻」书架用）：失败就退回占位书脊，不影响页面
   const [books, setBooks] = useState([]);
+  // 首页摘抄（2026-10-18）：站长在后台维护，失败时组件用内置文案兜底
+  const [excerpts, setExcerpts] = useState([]);
   useEffect(() => {
     let alive = true;
     api.listBooks('?limit=40')
       .then((r) => { if (alive) setBooks(Array.isArray(r?.items) ? r.items : []); })
+      .catch(() => {});
+    api.listExcerpts('?limit=100')
+      .then((r) => { if (alive) setExcerpts(Array.isArray(r?.items) ? r.items : []); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -341,7 +346,7 @@ function Landing() {
           </svg>
         </div>
         <p class="ld-sec-sub">一些正在发生的小事。大多数都可以摸一摸、拖一拖、点一点。</p>
-        <HomeNow posts={posts} books={books} />
+        <HomeNow posts={posts} books={books} excerpts={excerpts} />
       </section>
 
       {/* 03 · 站点构成：模块索引 + 径向星图 + 能力清单 + 聚合热力矩阵 */}

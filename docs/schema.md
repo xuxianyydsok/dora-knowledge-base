@@ -14,6 +14,7 @@
 | `20261009000014_drop_rss.sql` | 删除 `rss_feeds` / `rss_articles`（2026-10-09 用户决定移除 RSS） |
 | `20261012000023_rss.sql` | **重建** `rss_feeds` / `rss_articles`（2026-10-12 RSS 恢复，形态改为「站长订阅、访客只读」） |
 | `20261013000027_hero_slides.sql` | `hero_slides`（首页轮播素材，**只存对图展素材的引用**） |
+| `20261018000029_excerpts.sql` | `excerpts`（首页摘抄，站长后台维护） |
 
 ## 表清单
 
@@ -38,6 +39,9 @@
   删素材时首页引用自动消失，不会留下死引用）；`label`（图注）、`sort_order`、
   `is_active`、`muted`（视频是否静音，默认 true）。**只存引用、不重复存文件** ——
   素材与 R2 对象仍归图展那两张表管。
+- **excerpts**（2026-10-18）：首页摘抄。`content`（正文，≤20000 字）、
+  `source`（出处，可空）、`sort_order`、`is_active`（是否参与首页轮播）。
+  访客只读启用项；写操作仅管理员。
 - **rss_feeds**（2026-10-12 恢复重建）：订阅源，`feed_url`、`description`（源简介）、
   `fetch_interval`（默认 14400 秒）、`last_fetched_at`、`is_active`、`is_public`（访客可见）、
   `last_error` / `error_count`（抓取健康度）、`etag` / `last_modified`（条件请求）

@@ -1851,6 +1851,55 @@ async function videoTypeUnit() {
     return '两张素材表均 cascade，来源一致性有约束，不存文件字节，RLS 与幂等均已锁定';
   });
 
+  // ---- 首页摘抄（2026-10-18） ----
+  await test('首页摘抄 · 访客只读启用项、写操作仅管理员、/order 在 /:id 前', () => {
+    const { isGuestAllowed } = publicScope;
+    assert(isGuestAllowed('GET', '/api/excerpts'), '访客应可读首页摘抄');
+    assert(!isGuestAllowed('POST', '/api/excerpts'), '访客不应能新增摘抄');
+    assert(!isGuestAllowed('PUT', '/api/excerpts/order'), '访客不应能排序');
+    assert(!isGuestAllowed('PATCH', '/api/excerpts/x'), '访客不应能改摘抄');
+    assert(!isGuestAllowed('DELETE', '/api/excerpts/x'), '访客不应能删摘抄');
+
+    const routerSrc = readFileSync(join(BACKEND, 'src', 'router.js'), 'utf8');
+    const orderAt = routerSrc.indexOf("'/api/excerpts/order'");
+    const idAt = routerSrc.indexOf("'/api/excerpts/:id'");
+    assert(orderAt > 0 && idAt > 0 && orderAt < idAt,
+      '/api/excerpts/order 必须排在 /api/excerpts/:id 之前');
+
+    const src = readFileSync(join(BACKEND, 'src', 'routes', 'excerpts.js'), 'utf8');
+    const adminCalls = (src.match(/requireAdmin\(/g) || []).length;
+    assert(adminCalls >= 4, `4 个写接口都应 requireAdmin，实际 ${adminCalls} 处`);
+    assert(/export async function listExcerpts[\s\S]{0,300}requireAuth\(/.test(src),
+      'listExcerpts 应走 requireAuth（访客可读）');
+    assert(/if \(!all\) filters\.is_active = 'eq\.true'/.test(src),
+      '非管理员必须在查询层只取启用项');
+    assert(/all\s*=\s*url\.searchParams\.get\('all'\) === 'true' && user\.isAdmin/.test(src),
+      '?all=true 只能对管理员生效');
+    // 站长首页也可能登录着：默认仍必须只取启用项，只有管理页显式 ?all=true 才读停用项。
+    assert(/默认（含站长首页）只拿启用项/.test(src),
+      'listExcerpts 的默认口径必须写明：站长首页也只取启用项');
+    return `GET 放行 / 写 4 条拒绝 + order 顺序正确 + 访客过滤下推查询层`;
+  });
+
+  await test('首页摘抄 · 迁移含 RLS、幂等触发器与内容非空约束', () => {
+    const sql = readFileSync(join(BACKEND, '..', 'supabase', 'migrations',
+      '20261018000029_excerpts.sql'), 'utf8');
+    const flat = sql.replace(/\s+/g, ' ');
+    assert(/create table if not exists public\.excerpts/.test(flat), '应创建 excerpts 表');
+    assert(/content\s+text\s+not null/.test(flat), 'content 必填');
+    assert(/source\s+text/.test(flat), 'source 可空');
+    assert(/is_active\s+boolean\s+not null default true/.test(flat), 'is_active 默认启用');
+    assert(/excerpts_content_not_blank/.test(flat), '应有正文非空约束');
+    assert(/alter table public\.excerpts enable row level security/.test(flat),
+      'excerpts 必须启用 RLS');
+    for (const p of ['select_own', 'insert_own', 'update_own', 'delete_own', 'admin_all']) {
+      assert(new RegExp(`policy "excerpts_${p}"`).test(flat), `缺少策略 excerpts_${p}`);
+    }
+    assert(/drop trigger if exists trg_excerpts_updated_at/.test(flat),
+      '建 trigger 前必须先 drop if exists（迁移要能安全重跑）');
+    return 'excerpts 表 / 非空约束 / RLS / 幂等触发器均已锁定';
+  });
+
   // ---- 博客列表接口（2026-10-14 修「博客页打不开」） ----
   await test('博客列表 · 走边缘缓存、写操作失效、标签一次往返取回', () => {
     const src = readFileSync(join(BACKEND, 'src', 'routes', 'posts.js'), 'utf8');

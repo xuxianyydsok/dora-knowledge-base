@@ -770,6 +770,35 @@ R2 对象仍归图展那两张表管；删图展素材时本表引用由外键 `
 **路由顺序**：`PUT /api/hero/slides/order` 是 3 段路径，必须排在
 `PATCH|DELETE /api/hero/slides/:id` **之前**，否则会被当成 `id='order'` 吞掉。
 
+## 首页摘抄 Excerpts（2026-10-18）
+
+首页「此刻」区第一行那张通栏大卡片的内容由站长在后台维护。
+访客只读启用项；所有写操作仅管理员。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/excerpts` | 访客可读 | `?limit=`（默认 100，≤200）；非管理员只返回 `is_active=true`；管理员可加 `?all=true` 看停用项 |
+| POST | `/api/excerpts` | 管理员 | body：`{ content, source?, is_active?, sort_order? }`；`content` ≤20000 字，缺省排到末尾 |
+| PUT | `/api/excerpts/order` | 管理员 | body：`{ ids: [...] }`，数组下标即 `sort_order` |
+| PATCH | `/api/excerpts/:id` | 管理员 | 改正文 / 出处 / 启用 / 排序 |
+| DELETE | `/api/excerpts/:id` | 管理员 | 删除一条摘抄 |
+
+**路由顺序**：`PUT /api/excerpts/order` 必须排在 `PATCH|DELETE /api/excerpts/:id` 之前。
+
+返回项结构：
+
+```json
+{
+  "id": "<uuid>",
+  "content": "摘抄正文",
+  "source": "出处 / 作者 / 书名",
+  "sort_order": 0,
+  "is_active": true,
+  "created_at": "2026-10-18T…",
+  "updated_at": "2026-10-18T…"
+}
+```
+
 **素材未公开时**：接口会在 `media_public=false` 时提示管理端
 「素材还没公开，访客看不到这一条」，站长去图展「策展」里打开公开即可。
 

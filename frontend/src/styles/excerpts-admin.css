@@ -1,0 +1,158 @@
+/* 首页摘抄管理（/admin/excerpts）专用样式。
+   颜色全部走主题变量；类名统一 ex- 前缀，避免与 .now-* / .mo-* 撞名。 */
+.ex-page { display: block; }
+
+.ex-editor {
+  margin-top: var(--sp-5, 16px);
+  padding: var(--sp-5, 18px);
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg, var(--bg-elevated));
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4, 12px);
+  animation: ex-rise var(--dur-slow, .55s) var(--ease-out, ease) both;
+}
+.ex-editor-text {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 150px;
+  resize: vertical;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 10px);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: clamp(16px, 1.5vw, 20px);
+  line-height: 1.75;
+  outline: none;
+}
+.ex-editor-text:focus,
+.ex-editor-source:focus {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.ex-editor-source {
+  width: 100%;
+  box-sizing: border-box;
+}
+.ex-editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4, 12px);
+  flex-wrap: wrap;
+}
+.ex-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-sm, 13px);
+  color: var(--text-muted);
+}
+.ex-check input { width: auto; }
+.ex-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 8px);
+  flex-wrap: wrap;
+}
+.ex-counter {
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ex-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4, 14px);
+  margin-top: var(--sp-5, 18px);
+}
+.ex-card {
+  padding: var(--sp-5, 18px);
+  border: 1px solid var(--glass-border, var(--border));
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius, 16px);
+  background: var(--glass-bg, var(--bg-elevated));
+  box-shadow: var(--shadow-sm);
+  animation: ex-rise var(--dur-slow, .55s) var(--ease-out, ease) both;
+}
+.ex-card.is-off {
+  border-left-color: color-mix(in srgb, var(--text-muted) 45%, transparent);
+  opacity: .78;
+}
+.ex-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ex-card-num {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 20px;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+.ex-state {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.ex-state.on {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+}
+.ex-card-time {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.ex-card-text {
+  margin: 14px 0 8px;
+  font-family: var(--font-display);
+  font-size: clamp(17px, 1.6vw, 22px);
+  line-height: 1.8;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ex-card-source {
+  margin: 0 0 14px;
+  font-size: var(--fs-sm, 13px);
+  color: var(--text-muted);
+}
+.ex-card-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.ex-card-ops button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@keyframes ex-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 640px) {
+  .ex-editor { padding: var(--sp-4, 14px); }
+  .ex-card { padding: var(--sp-4, 14px); }
+  .ex-editor-foot { align-items: flex-start; }
+  .ex-editor-actions { width: 100%; justify-content: flex-end; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ex-editor, .ex-card { animation: none; }
+}
