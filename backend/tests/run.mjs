@@ -38,6 +38,7 @@ import * as audioType from '../src/lib/audioType.js';
 import * as audioMeta from '../src/lib/audioMeta.js';
 import * as zhConvert from '../src/lib/zhConvert.js';
 import * as visibility from '../src/routes/visibility.js';
+import * as bilibili from '../src/lib/bilibili.js';
 // 前端纯函数（无依赖、无 import，Node 可直接加载）：验证前后端直链判定一致
 import * as feMediaUrl from '../../frontend/src/lib/mediaUrl.js';
 
@@ -477,6 +478,40 @@ async function unit() {
     assert(/urlRequestRef\.current === requestKey/.test(movies), '旧请求结果不得覆盖新频道');
     assert(/urlRequestRef\.current = next === 'search'/.test(movies), 'switchMode 必须先登记新请求');
     return '列表请求代次 + URL 恢复去重';
+  });
+
+  await test('B 站导入: 前端不再拒绝 b23.tv 短链', async () => {
+    const adminMusic = readFileSync(join(FRONTEND_SRC, 'routes', 'AdminMusic.jsx'), 'utf8');
+    assert(!/b23\.tv 短链无法直接识别/.test(adminMusic), '前端不得提前拒绝短链');
+    assert(/bilibili_url: parsed\.isShortLink \? biliUrl\.trim\(\) : parsed\.bvid/.test(adminMusic),
+      '短链应原样交给后端展开');
+    return '短链交由后端安全展开';
+  });
+
+  await test('B 站短链: 服务端展开且只允许 B 站跳转', async () => {
+    const redirect = (location) => async () => new Response(null, { status: 302, headers: { location } });
+    const ok = await bilibili.expandBilibiliShortLink('https://b23.tv/eTMZ54Q', {
+      fetchImpl: redirect('https://www.bilibili.com/video/BV1Rj421Q7R8?p=1')
+    });
+    assert(ok.bvid === 'BV1Rj421Q7R8', '短链应展开出 BV 号');
+    assert(ok.p === 1, '应保留分 P');
+
+    let externalError = '';
+    try {
+      await bilibili.expandBilibiliShortLink('https://b23.tv/evil', {
+        fetchImpl: redirect('https://example.com/video/BV1Rj421Q7R8')
+      });
+    } catch (e) { externalError = e.message; }
+    assert(/非 B 站地址/.test(externalError), '外站跳转必须拒绝');
+
+    let entryError = '';
+    try {
+      await bilibili.expandBilibiliShortLink('https://example.com/eTMZ54Q', {
+        fetchImpl: redirect('https://b23.tv/x')
+      });
+    } catch (e) { entryError = e.message; }
+    assert(/不是有效的 b23\.tv 短链/.test(entryError), '非 b23.tv 入口必须拒绝');
+    return '展开成功 + 外站拒绝 + 入口限制';
   });
 
   // ---- 公开读边界（三层权限：公开访客 / 登录用户 / 管理员） ----

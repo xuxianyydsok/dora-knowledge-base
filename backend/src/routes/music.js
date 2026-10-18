@@ -20,7 +20,7 @@ import { cachedData, bumpVersion } from '../lib/edgeCache.js';
 import { looksLikeAudioStream, isStaleAudioUrl, resolveAudioPlayback } from '../lib/mediaUrl.js';
 import { isAdminFavorited } from './favorites.js';
 import { dedupeMusicList, findDuplicateMusic, musicIdentity, normalizeMusicText } from '../lib/musicIdentity.js';
-import { parseBilibiliInput, isValidBvid } from '../lib/bilibili.js';
+import { parseBilibiliInput, isValidBvid, expandBilibiliShortLink } from '../lib/bilibili.js';
 import { toSimplified, hasTraditional } from '../lib/zhConvert.js';
 
 // 歌词统一转简体（2026-10-12 用户要求：「有些时候搜出来的歌词展现的是繁体中文，
@@ -42,6 +42,19 @@ function lyricsToSimplified(lyrics) {
 const TABLE = 'resources';
 const EXT = 'music_tracks';
 const TYPE = 'music';
+
+// B 站链接统一解析：完整链接直接取 BV 号；b23.tv 短链交给后端展开。
+// 不在前端展开，避免浏览器受跨域/CORS 限制，也避免把展开逻辑做成任意 URL 代理。
+async function resolveBilibiliInput(raw) {
+  const parsed = parseBilibiliInput(raw);
+  if (!parsed.isShortLink) return parsed;
+  try {
+    const expanded = await expandBilibiliShortLink(raw);
+    return { ...parseBilibiliInput(expanded.url), p: expanded.p ?? parsed.p };
+  } catch (e) {
+    throw new HttpError(422, `b23.tv 短链展开失败：${e.message || '请检查链接'}`);
+  }
+}
 
 function userFilter(user, all) {
   return user.isAdmin && all ? {} : { user_id: `eq.${user.id}` };
@@ -326,10 +339,7 @@ export async function createMusic(request, env) {
     ?? optionalString(body.bvid, 'bvid', { max: 40 }) ?? null;
   let bvid = null;
   if (rawBili) {
-    const parsed = parseBilibiliInput(rawBili);
-    if (parsed.isShortLink) {
-      throw new HttpError(422, 'b23.tv 短链无法直接识别，请打开后复制完整链接（含 BV 号）');
-    }
+    const parsed = await resolveBilibiliInput(rawBili);
     if (parsed.isAv && !parsed.bvid) {
       throw new HttpError(422, 'av 号请改用 BV 号（在 B 站视频页地址里可以找到）');
     }
@@ -521,7 +531,7 @@ export async function updateMusic(request, env, id) {
     if (!raw) {
       extPatch.bvid = null;
     } else {
-      const parsed = parseBilibiliInput(raw);
+      const parsed = await resolveBilibiliInput(raw);
       if (!parsed.bvid || !isValidBvid(parsed.bvid)) {
         throw new HttpError(422, '没能从链接里找到 B 站视频号（BV 号），请检查后重试');
       }

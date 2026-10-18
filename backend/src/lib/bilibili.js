@@ -9,6 +9,12 @@
 // 例：BV1GJ411x7h7
 const BVID_RE = /BV[0-9A-Za-z]{10}/;
 
+// b23.tv 短链只允许这一个主机。展开时由服务端发起请求，
+// 因此必须严格限制入口与每一跳，避免被当成任意 URL 代理（SSRF）。
+const SHORT_HOST = 'b23.tv';
+const SHORT_RE = /^(?:https?:\/\/)?b23\.tv\/([A-Za-z0-9_-]{1,32})(?:[?#].*)?$/i;
+const FINAL_HOSTS = ['bilibili.com', 'www.bilibili.com', 'm.bilibili.com'];
+
 // 旧版 AV 号（纯数字 aid）：B 站仍在用，允许输入，但**无法直接拼嵌入地址**，
 // 需要先查一次接口换成 BV 号（那一步要联网，不在纯函数里做）。
 const AVID_RE = /(?:^|[^0-9])av(\d{1,12})(?:[^0-9]|$)/i;
@@ -53,6 +59,65 @@ export function parseBilibiliInput(input) {
   if (av) return { bvid: null, p, isShortLink: false, isAv: true, aid: Number(av[1]) };
 
   return { bvid: null, p, isShortLink: false, isAv: false };
+}
+
+/**
+ * 展开 b23.tv 短链，返回最终视频页 URL。
+ *
+ * 安全边界：
+ *   · 只接受 b23.tv 的短链，不接受任意 URL；
+ *   · 每一跳的 Location 也必须是 b23.tv / bilibili.com；
+ *   · 最多 3 跳，禁止跳到外站；
+ *   · 不跟随到非视频页（最终 URL 必须能抽出 BV 号）。
+ *
+ * @param {string} input 用户粘贴的短链
+ * @param {{ fetchImpl?: typeof fetch, timeoutMs?: number }} [options]
+ * @returns {Promise<{ url: string, bvid: string, p: number|null }>}
+ */
+export async function expandBilibiliShortLink(input, { fetchImpl = fetch, timeoutMs = 8000 } = {}) {
+  const raw = String(input || '').trim();
+  const m = raw.match(SHORT_RE);
+  if (!m) throw new Error('不是有效的 b23.tv 短链');
+
+  let current = `https://${SHORT_HOST}/${m[1]}`;
+  for (let hop = 0; hop < 3; hop += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res;
+    try {
+      res = await fetchImpl(current, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+          Referer: 'https://www.bilibili.com/'
+        }
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    // 有些链路会直接返回最终页（200，无 Location），此时 current 本身已是视频页。
+    const direct = parseBilibiliInput(current);
+    if (direct.bvid && isValidBvid(direct.bvid)) {
+      return { url: current, bvid: direct.bvid, p: direct.p };
+    }
+
+    const location = res.headers.get('location');
+    if (location) {
+      const next = new URL(location, current);
+      if (!FINAL_HOSTS.includes(next.hostname.toLowerCase()) && next.hostname.toLowerCase() !== SHORT_HOST) {
+        throw new Error('短链跳转到了非 B 站地址，已拒绝');
+      }
+      current = next.toString();
+      continue;
+    }
+
+    throw new Error('短链最终没有落到 B 站视频页');
+  }
+
+  throw new Error('短链跳转次数过多，无法解析');
 }
 
 /**

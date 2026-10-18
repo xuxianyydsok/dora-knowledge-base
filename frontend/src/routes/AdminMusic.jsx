@@ -179,14 +179,11 @@ export function AdminMusic() {
   }
 
   // 添加 B 站曲目：只填「链接 + 歌名（+ 歌手）」，不传文件。
-  // 后端只校验并解析出 BV 号入库；播放时前端嵌 B 站官方播放器（见 BilibiliPlayer.jsx）。
+  // 后端解析出 BV 号入库；b23.tv 短链由后端安全展开。
+  // 播放时前端嵌 B 站官方播放器（见 BilibiliPlayer.jsx）。
   async function addBilibili() {
     const parsed = parseBilibiliInput(biliUrl);
-    if (parsed.isShortLink) {
-      toastError('b23.tv 短链无法直接识别，请打开后复制完整链接（含 BV 号）');
-      return;
-    }
-    if (!parsed.bvid || !isValidBvid(parsed.bvid)) {
+    if (!parsed.isShortLink && (!parsed.bvid || !isValidBvid(parsed.bvid))) {
       toastError('没找到 B 站视频号（BV 号），请检查链接');
       return;
     }
@@ -197,7 +194,7 @@ export function AdminMusic() {
       const saved = await api.createMusic({
         title,
         artist: biliArtist.trim() || null,
-        bilibili_url: parsed.bvid
+        bilibili_url: parsed.isShortLink ? biliUrl.trim() : parsed.bvid
       });
       setBiliUrl(''); setBiliTitle(''); setBiliArtist('');
       toastSuccess(`《${saved?.title || title}》已加入音乐库（B 站 MV）`);
@@ -374,7 +371,9 @@ export function AdminMusic() {
             const ok = p.bvid && isValidBvid(p.bvid);
             return ok
               ? <span class="amu-bili-ok">已识别：{p.bvid}</span>
-              : <span class="amu-bili-bad">{p.isShortLink ? 'b23.tv 短链需展开后复制完整链接' : '没找到 BV 号'}</span>;
+              : <span class={p.isShortLink ? 'amu-bili-ok' : 'amu-bili-bad'}>
+                  {p.isShortLink ? 'b23.tv 短链，保存时自动展开' : '没找到 BV 号'}
+                </span>;
           })()}
         </div>
       </section>
