@@ -14,6 +14,7 @@ import { Icon } from './Icon.jsx';
 import { toastError } from '../lib/toast.jsx';
 // PDF 缩放档位（纯常量，不触发 pdf.js 加载；真正的 pdf.js 在打开 PDF 时才动态 import）
 import { PDF_ZOOM_STEPS, stepZoom } from '../lib/pdfReader.js';
+import { loadBookProgress, saveBookProgress } from '../lib/bookProgress.js';
 // 阅读器自己带样式与字体：谁挂载它都能正常显示，不依赖宿主页面碰巧 import 过。
 // （首页书架复用时，首页并不会 import books.css / wenkai.css。）
 import '../styles/books.css';
@@ -124,6 +125,7 @@ export function BookReader({ book, onClose }) {
   const iframeRef = useRef(null);
   const settingsRef = useRef(null);
   const cleanupRef = useRef(null);
+  const restorePercentRef = useRef(0);
 
   const isEpub = book.format === 'epub';
   const isPdf = book.format === 'pdf';
@@ -222,10 +224,16 @@ export function BookReader({ book, onClose }) {
         if (!alive) { reader.dispose(); return; }
         epubRef.current = reader;
         setChapters(reader.chapters || []);
-        const first = await reader.loadChapter(0, { extraCss: readerExtraCss(prefs, twoUp) });
+        const saved = loadBookProgress(book.id);
+        const start = Math.min(
+          Math.max(0, Number(saved.chapter) || 0),
+          Math.max(0, (reader.chapters?.length || 1) - 1)
+        );
+        const first = await reader.loadChapter(start, { extraCss: readerExtraCss(prefs, twoUp) });
         if (!alive) return;
         setHtml(first.html);
-        setIndex(0);
+        setIndex(start);
+        restorePercentRef.current = saved.percent || 0;
       } catch (err) {
         if (alive) setError(err.message || '电子书解析失败');
       } finally {
@@ -256,7 +264,9 @@ export function BookReader({ book, onClose }) {
         setPdfTotal(opened.pageCount);
         // 回到上次读到的页（没有记录就第 1 页）
         const saved = mod.loadPdfPage(book.id);
-        setPdfPage(Math.min(opened.pageCount || 1, Math.max(1, saved)));
+        const unified = loadBookProgress(book.id);
+        const start = unified.page > 1 ? unified.page : saved;
+        setPdfPage(Math.min(opened.pageCount || 1, Math.max(1, start)));
         // 大纲（PDF 自带书签）：没有就空数组，UI 自动隐藏目录按钮
         mod.loadOutline(opened.doc).then((list) => { if (alive) setPdfOutline(list); }).catch(() => {});
       } catch (err) {
@@ -322,6 +332,7 @@ export function BookReader({ book, onClose }) {
         if (cancelled) { task?.cancel?.(); return; }
         pdfRenderRef.current = task;
         mod.savePdfPage(book.id, pdfPage);
+        saveBookProgress(book.id, { page: pdfPage });
       } catch (err) {
         // 快速翻页导致的 cancel 不算错误
         if (!/cancel/i.test(String(err?.message || ''))) {
@@ -349,6 +360,7 @@ export function BookReader({ book, onClose }) {
       const res = await reader.loadChapter(next, { extraCss: readerExtraCss(prefs, twoUp) });
       setHtml(res.html);
       setIndex(next);
+      saveBookProgress(book.id, { chapter: next, percent: 0 });
       setTocOpen(false);
       setPercent(0);
     } catch (err) {
@@ -373,8 +385,24 @@ export function BookReader({ book, onClose }) {
     const el = (isEpub ? chapterScroller() : null) || bodyRef.current;
     if (!el) return;
     const max = el.scrollHeight - el.clientHeight;
-    setPercent(max > 4 ? Math.round((el.scrollTop / max) * 100) : 100);
+    const nextPercent = max > 4 ? Math.round((el.scrollTop / max) * 100) : 100;
+    setPercent(nextPercent);
+    if (isEpub) saveBookProgress(book.id, { chapter: index, percent: nextPercent });
   }
+
+  // 首次进入章节后，恢复到上次的章内位置；只恢复一次，之后用户滚动以用户为准。
+  useEffect(() => {
+    if (!isEpub || !html || !restorePercentRef.current) return undefined;
+    const timer = setTimeout(() => {
+      const el = chapterScroller();
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      if (max > 4) el.scrollTop = Math.round((max * restorePercentRef.current) / 100);
+      restorePercentRef.current = 0;
+      onBodyScroll();
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [html, isEpub]);
 
   function setPref(patch) {
     setPrefs((p) => {

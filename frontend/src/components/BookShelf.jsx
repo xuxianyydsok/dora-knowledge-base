@@ -29,7 +29,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
 import { genCover, pickCover } from '../lib/genCover.js';
-import { BookReader } from './BookReader.jsx';
 import { Icon } from './Icon.jsx';
 
 // —— 版面常量（单位 px）——
@@ -190,7 +189,6 @@ export function BookShelf({ books = [], ariaLabel = '书架' }) {
   const width = useShelfWidth(wrapRef);
   // 首帧还没量到宽度时给 1200 兜底，避免闪一下极窄的版面。
   const layout = useMemo(() => computeLayout(width || 1200), [width]);
-  const [reading, setReading] = useState(null);
 
   const real = useMemo(() => (Array.isArray(books) ? books.filter(Boolean) : []), [books]);
 
@@ -253,7 +251,7 @@ export function BookShelf({ books = [], ariaLabel = '书架' }) {
                       book={b}
                       width={layout.width}
                       height={layout.height}
-                      onOpen={setReading}
+                      onOpen={(book) => route(`/books/${book.id}`)}
                     />
                   ))}
                 </div>
@@ -265,7 +263,6 @@ export function BookShelf({ books = [], ariaLabel = '书架' }) {
       </div>
 
       {/* 就地阅读：与 /books 用的是同一个阅读器组件（portal 到 body） */}
-      {reading && <BookReader book={reading} onClose={() => setReading(null)} />}
     </div>
   );
 }

@@ -15,7 +15,7 @@
 //    （豆瓣片单 + 高清海报 + 首屏轮播 + 分类海报墙）；「最新入库」与搜索仍走采集源网格。
 //    点任意豆瓣海报 = 用片名在采集源里搜索。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { route } from 'preact-router';
+import { route, useRouter } from 'preact-router';
 import { api } from '../lib/api.js';
 import { VodPoster } from '../components/VodPoster.jsx';
 import { MovieHome, CHANNELS } from '../components/MovieHome.jsx';
@@ -101,6 +101,8 @@ export function Movies() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [visibilityBusy, setVisibilityBusy] = useState(false);
+  const [router] = useRouter();
+  const urlRequestRef = useRef('');
 
   // localStorage 记住上次停留的 Tab 之外，不做额外持久化：候选数据每次都要重新拉
   const lastQuery = useRef('');
@@ -117,6 +119,7 @@ export function Movies() {
   }
 
   async function loadCandidates(nextMode, q = '') {
+    const requestKey = `${nextMode}:${q}`;
     setCandLoading(true); setCandError('');
     try {
       // 一次要满一屏：30 条检索候选，经跨源按片名去重后仍能剩下十几个不同条目
@@ -124,17 +127,44 @@ export function Movies() {
       const res = nextMode === 'search'
         ? await api.searchMovieMeta(q, 30)
         : await api.listMovieLatest(`?limit=30&sort=${nextMode === 'new' ? 'new' : 'hot'}`);
-      setCandidates(res?.candidates || []);
-      setCandNote(res?.note || '');
-      setCandSources(res?.sources || []);
-      setCandSourceNames(res?.source_names || []);
+      // 快速切换频道 / 连续搜索时，只让最后一次请求落地。
+      if (urlRequestRef.current === requestKey) {
+        setCandidates(res?.candidates || []);
+        setCandNote(res?.note || '');
+        setCandSources(res?.sources || []);
+        setCandSourceNames(res?.source_names || []);
+      }
     } catch (e) {
-      setCandError(e.message);
-      setCandidates([]); setCandNote(''); setCandSources([]); setCandSourceNames([]);
+      if (urlRequestRef.current === requestKey) {
+        setCandError(e.message);
+        setCandidates([]); setCandNote(''); setCandSources([]); setCandSourceNames([]);
+      }
     } finally { setCandLoading(false); }
   }
 
   useEffect(() => { load().then(setLibrary); }, []);
+
+  // 频道 / 搜索词写进 URL：刷新、后退、从详情返回都能回到原上下文。
+  useEffect(() => {
+    const url = new URL(router?.url || '/movies', window.location.origin);
+    const tab = url.searchParams.get('tab');
+    const q = (url.searchParams.get('q') || '').trim();
+    if (q) {
+      if (urlRequestRef.current === `search:${q}`) return;
+      urlRequestRef.current = `search:${q}`;
+      setQuery(q);
+      lastQuery.current = q;
+      setMode('search');
+      loadCandidates('search', q);
+      return;
+    }
+    if (tab && (CHANNELS[tab] || tab === 'new' || tab === 'library')) {
+      if (urlRequestRef.current === `tab:${tab}`) return;
+      urlRequestRef.current = `tab:${tab}`;
+      setMode(tab);
+      if (tab !== 'library' && !CHANNELS[tab]) loadCandidates(tab, '');
+    }
+  }, [router?.url]);
 
   // 「我的影视库」是站长管理公开状态的地方；普通访客继续走发现 / 搜索。
   async function reloadLibrary() {
@@ -153,6 +183,15 @@ export function Movies() {
 
   function switchMode(next, q = '') {
     setMode(next);
+    urlRequestRef.current = next === 'search' ? `search:${q}` : `tab:${next}`;
+    const params = new URLSearchParams();
+    if (next === 'search') {
+      params.set('tab', 'search');
+      if (q) params.set('q', q);
+    } else if (next !== 'featured') {
+      params.set('tab', next);
+    }
+    route(`/movies${params.toString() ? `?${params}` : ''}`);
     if (!CHANNELS[next]) loadCandidates(next, q);
   }
 
@@ -196,7 +235,7 @@ export function Movies() {
   // 候选条目的稳定 key（与下面渲染时的 key 保持一致），用来定位「正在处理哪一张卡」。
   const keyOf = (c) => `${c.source}-${c.external_id}`;
 
-  async function addFrom(candidate) {
+  async function addFrom(candidate, { play = true } = {}) {
     // 访客不入库、直接进播放页 —— 这条路同样要立刻给加载反馈，
     // 因为跳过去之后还要回源取线路，期间页面是空的。
     if (!isAuthenticated) {
@@ -242,7 +281,7 @@ export function Movies() {
         // 先清掉加载动画再跳转：不然跳过去的瞬间卡片上还挂着一个转圈，
         // 视觉上像「点了两次」。动画的消失条件就是「内容已就绪」，这里正合适。
         setPendingKey('');
-        route(`/movies/${created.id}`);
+        if (play) route(`/movies/${created.id}`);
       } else {
         // 兜底：后端没回 id（理论上不会）才退回原来的「拉列表找一遍」。
         const list = await load();
@@ -507,8 +546,8 @@ export function Movies() {
                     busy={busy}
                     pending={pendingKey === keyOf(c)}
                     collectLabel={isAuthenticated ? '加入影视库' : '播放'}
-                    onOpen={() => addFrom(c)}
-                    onCollect={() => addFrom(c)}
+                    onOpen={() => addFrom(c, { play: true })}
+                    onCollect={() => addFrom(c, { play: false })}
                   />
                 ))}
               </div>

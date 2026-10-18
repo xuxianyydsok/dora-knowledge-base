@@ -53,7 +53,7 @@ export function MusicPlayer() {
     return (
       <section class="now-playing empty">
         <div class="np-bar">
-          <button class="np-icon" onClick={() => route('/music')} title="返回音乐库">
+          <button class="np-icon" onClick={() => (history.length > 1 ? history.back() : route('/music'))} title="返回">
             <Icon name="chevronLeft" size={18} />
           </button>
           <div class="np-bar-title">
@@ -108,7 +108,7 @@ export function MusicPlayer() {
       <div class="np-veil" />
 
       <div class="np-bar">
-        <button class="np-icon" onClick={() => route('/music')} title="返回音乐库">
+        <button class="np-icon" onClick={() => (history.length > 1 ? history.back() : route('/music'))} title="返回">
           <Icon name="chevronLeft" size={18} />
         </button>
         <div class="np-bar-title">

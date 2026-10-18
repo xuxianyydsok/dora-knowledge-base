@@ -15,8 +15,8 @@
 //    普通访客与登录用户只看到公开书，看不到任何管理入口。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
+import { route } from 'preact-router';
 import { api, uploadBook } from '../lib/api.js';
-import { BookReader } from '../components/BookReader.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -170,7 +170,6 @@ export function Books() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [format, setFormat] = useState('');
-  const [reading, setReading] = useState(null);
   const [editing, setEditing] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -354,7 +353,7 @@ export function Books() {
               <button
                 type="button"
                 class="bk-card"
-                onClick={() => setReading(b)}
+                onClick={() => route(`/books/${b.id}`)}
                 title={`打开《${b.title || '未命名'}》`}
               >
                 <BookCover book={b} />
@@ -370,7 +369,6 @@ export function Books() {
         </div>
       )}
 
-      {reading && <BookReader book={reading} onClose={() => setReading(null)} />}
       {editing && (
         <EditDialog
           book={editing}
@@ -382,7 +380,7 @@ export function Books() {
       {/* 未登录且书架为空时的说明，避免访客以为是坏了 */}
       {!isAuthenticated && !loading && books.length > 0 && (
         <p class="bk-hint muted" style="margin-top:20px;font-size:12.5px;color:var(--text-muted)">
-          提示：登录后可以把你喜欢的书收藏起来（收藏功能即将上线）。
+          提示：书架只展示站长公开的书；阅读进度保存在当前浏览器。
         </p>
       )}
     </div>

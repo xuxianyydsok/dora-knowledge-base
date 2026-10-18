@@ -24,7 +24,7 @@ import {
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer, AdminMusic,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback,
+  Gallery, Timeline, Moments, Books, BookRead, Changelog, Coop, AdminFeedback,
   AdminExcerpts,
   AdminHeroSubtitle,
   MathFrame, NotionPosts, NotionPostView
@@ -94,6 +94,7 @@ function RouterView() {
       <ProtectedRoute guest path="/movies/watch/:source/:vid"><MovieView /></ProtectedRoute>
       <ProtectedRoute guest path="/movies/:id"><MovieView /></ProtectedRoute>
       <ProtectedRoute guest path="/books"><Books /></ProtectedRoute>
+      <ProtectedRoute guest path="/books/:id"><BookRead /></ProtectedRoute>
       <ProtectedRoute path="/admin/users"><AdminUsers /></ProtectedRoute>
       <ProtectedRoute path="/sources"><SourceHealth /></ProtectedRoute>
       {/* 收藏页对访客开放（2026-10-11 用户要求）：未登录时页面显示友好空态，

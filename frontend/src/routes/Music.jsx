@@ -9,8 +9,8 @@
 // 5) 所有失败反馈走轻提示（toast），不再往页面里塞红字。
 // 6) 2026-10-09 Apple Music 风格改版：新增默认「首页」Tab（MusicHome：现在就听 / 排行榜 / 新歌速递），
 //    封面统一走 hdCover 取高清；访客点歌直接播放（不入库），登录后才会收藏进音乐库。
-import { useEffect, useMemo, useState } from 'preact/hooks';
-import { route } from 'preact-router';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { route, useRouter } from 'preact-router';
 import { api } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
@@ -232,6 +232,27 @@ export function Music() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [visibilityBusy, setVisibilityBusy] = useState(false);
   const { playQueue, queue, index, goTo, stop, playing, toggle } = usePlayer();
+  const [router] = useRouter();
+  const urlSearchRef = useRef('');
+
+  // Tab / 搜索词 / 分组写进 URL：刷新、后退、从详情返回都能回到原来的上下文。
+  useEffect(() => {
+    const url = new URL(router?.url || '/music', window.location.origin);
+    const tab = url.searchParams.get('tab');
+    if (tab && ['home', 'library', 'search', 'queue', 'mv'].includes(tab)) setMode(tab);
+    const q = url.searchParams.get('q');
+    if (q) setQuery(q);
+    const g = url.searchParams.get('group');
+    if (g && GROUPS.some((x) => x.key === g)) setGroup(g);
+  }, [router?.url]);
+
+  function goTab(next) {
+    const params = new URLSearchParams();
+    if (next !== 'home') params.set('tab', next);
+    if (next === 'search' && searchedFor) params.set('q', searchedFor);
+    if (next === 'library' && group !== 'recent') params.set('group', group);
+    route(`/music${params.toString() ? `?${params}` : ''}`);
+  }
   // 曲风排行（图鉴 #124）：只统计音乐库中真实存在的歌曲，按专辑/歌手兜底分组，
   // 不做假数据。没有曲目时整块不渲染。
   const genreRows = useMemo(() => {
@@ -276,8 +297,10 @@ export function Music() {
   async function runSearch(kw) {
     const q = (kw ?? query).trim();
     if (!q) return;
+    urlSearchRef.current = q;
     setQuery(q);
     setSearching(true); setMode('search');
+    route(`/music?tab=search&q=${encodeURIComponent(q)}`);
     try {
       // 一次要满一屏。40 与后端上限（80）之间留了余量：后端会先取满 100 条原始池、
       // 跨源去重 + 重排后再截断，所以「要 40 条」实际拿到的是重排后的前 40 条。
@@ -295,6 +318,20 @@ export function Music() {
       setCandidates([]); setSearchNote(''); setSearchSources([]);
     } finally { setSearching(false); }
   }
+
+  // 从 URL 恢复搜索：刷新 / 从详情返回后，搜索结果不应该消失。
+  useEffect(() => {
+    if (mode !== 'search') return;
+    const url = new URL(router?.url || '/music', window.location.origin);
+    const q = (url.searchParams.get('q') || '').trim();
+    if (!q || q === searchedFor || searching) {
+      if (q) urlSearchRef.current = q;
+      return;
+    }
+    if (urlSearchRef.current === q) return;
+    urlSearchRef.current = q;
+    runSearch(q);
+  }, [mode, router?.url]);
 
   // ---- B 站曲目（MV）的播放路径 ----
   //
@@ -553,7 +590,7 @@ export function Music() {
         stats={mode === 'home' ? undefined : stats}
         tabs={tabs}
         activeTab={mode}
-        onTab={setMode}
+        onTab={goTab}
       >
         {/* 只有站长能上传本地音乐；普通用户/访客不渲染这个按钮 */}
         {isAdmin && (
@@ -592,7 +629,7 @@ export function Music() {
           <>
             <div class="seg">
               {GROUPS.map((g) => (
-                <button key={g.key} class={group === g.key ? 'on' : ''} onClick={() => setGroup(g.key)}>{g.label}</button>
+                <button key={g.key} class={group === g.key ? 'on' : ''} onClick={() => { setGroup(g.key); route(`/music?tab=library&group=${g.key}`); }}>{g.label}</button>
               ))}
             </div>
             <select class="toolbar-select" value={quality} onChange={(e) => setQuality(e.currentTarget.value)} aria-label="音质">
@@ -840,7 +877,7 @@ export function Music() {
             title="播放队列是空的"
             hint="在音乐库里点「全部播放」，或从搜索结果里点一首歌，队列就会出现在这里。"
             action={
-              <button class="primary empty-action" onClick={() => setMode('library')}>
+              <button class="primary empty-action" onClick={() => route('/music?tab=library')}>
                 <Icon name="music" size={14} /> 去音乐库
               </button>
             }

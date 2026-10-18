@@ -97,7 +97,7 @@ export function MusicView({ id }) {
   return (
     <article class="song-page">
       <div class="song-bar">
-        <button class="np-icon" onClick={() => route('/music')} title="返回音乐库">
+        <button class="np-icon" onClick={() => (history.length > 1 ? history.back() : route('/music'))} title="返回">
           <Icon name="chevronLeft" size={18} />
         </button>
         <a class="crumb" href="/music">音乐库</a>
@@ -204,7 +204,15 @@ export function MusicView({ id }) {
               {nextUp.map((m, i) => {
                 const st = m.track || {};
                 return (
-                  <button key={m.id} type="button" class="track-row" onClick={() => playQueue([music, ...nextUp], i + 1)}>
+                  <button
+                    key={m.id}
+                    type="button"
+                    class="track-row"
+                    onClick={() => {
+                      playQueue([music, ...nextUp], i + 1);
+                      route(`/music/${m.id}`);
+                    }}
+                  >
                     <span class="track-index">{i + 1}</span>
                     <span class="track-cover">
                       {st.artwork_url ? <img src={st.artwork_url} alt="" loading="lazy" /> : <Icon name="music" size={15} />}

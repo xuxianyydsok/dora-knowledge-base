@@ -1,7 +1,7 @@
 // 影视详情页：影院级质感（模糊海报背景 + 大海报 + 元信息 + 线路/剧集选择 + 播放）
 // 播放时切换到全屏播放器视图，只显示播放器，下方不再重复卡片。
-import { useEffect, useMemo, useState } from 'preact/hooks';
-import { route } from 'preact-router';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { route, useRouter } from 'preact-router';
 import { api } from '../lib/api.js';
 import { MoviePlayer } from '../components/MoviePlayer.jsx';
 import { TagChip } from '../components/TagChip.jsx';
@@ -60,6 +60,7 @@ function candidateToMovie(c, source, vid) {
 
 export function MovieView({ id, source, vid }) {
   const preview = !!(source && vid);
+  const [router] = useRouter();
   const { isAdmin } = useAuth();
   const [movie, setMovie] = useState(null);
   const [error, setError] = useState('');
@@ -71,6 +72,34 @@ export function MovieView({ id, source, vid }) {
   const [rematching, setRematching] = useState(false);
   const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+
+  // 线路 / 集数写进 URL：刷新后仍回到同一集、同一条线路。
+  useEffect(() => {
+    const url = new URL(router?.url || '/', window.location.origin);
+    const r = Number(url.searchParams.get('route'));
+    const e = Number(url.searchParams.get('ep'));
+    if (Number.isFinite(r) && r >= 0) setRouteIndex(r);
+    if (Number.isFinite(e) && e >= 0) setEpIndex(e);
+  }, [router?.url]);
+
+  function selectRoute(i) {
+    setRouteIndex(i);
+    setEpIndex(0);
+    setPlaying(false);
+    const params = new URLSearchParams();
+    params.set('route', String(i));
+    params.set('ep', '0');
+    route(`${router?.url?.split('?')[0] || `/movies/${id}`}?${params}`, true);
+  }
+
+  function selectEpisode(i) {
+    setEpIndex(i);
+    setPlaying(false);
+    const params = new URLSearchParams();
+    params.set('route', String(routeIndex));
+    params.set('ep', String(i));
+    route(`${router?.url?.split('?')[0] || `/movies/${id}`}?${params}`, true);
+  }
 
   // 站长专用：原采集源下线 / 存库直链已死时，用标题去在用源重新匹配并回填。
   // 访客与普通用户不显示此入口；后端也只允许本人写。
@@ -175,8 +204,11 @@ export function MovieView({ id, source, vid }) {
     })();
   }, [movie?.id, t.source_key, t.source_vod_id, routes.length]);
 
-  const episodes = routes[routeIndex]?.episodes || [];
-  const currentEpisode = episodes[epIndex] || null;
+  const safeRouteIndex = Math.min(Math.max(0, routeIndex), Math.max(0, routes.length - 1));
+  const currentRoute = routes[safeRouteIndex];
+  const safeEpIndex = Math.min(Math.max(0, epIndex), Math.max(0, (currentRoute?.episodes?.length || 1) - 1));
+  const currentEpisode = currentRoute?.episodes?.[safeEpIndex] || null;
+  const currentEpisodes = currentRoute?.episodes || [];
   // 播放地址优先级：选中剧集 > 保存的播放直链。
   // 两者都必须是 m3u8/mp4 直链，否则返回 ''（显示空态）——绝不把网页地址交给播放器。
   const playUrl = resolvePlayUrl(currentEpisode?.url, movie?.url);
@@ -198,15 +230,15 @@ export function MovieView({ id, source, vid }) {
         movie={{ ...movie, url: playUrl }}
         title={movie.title}
         episodeName={currentEpisode?.name || ''}
-        episodeIndex={epIndex}
-        episodeCount={episodes.length}
+        episodeIndex={safeEpIndex}
+        episodeCount={currentEpisodes.length}
         routes={routes.map((r) => ({ name: r.name, count: r.episodes?.length || 0 }))}
-        routeIndex={routeIndex}
-        episodes={episodes.map((e) => ({ name: e.name }))}
-        onSelectEpisode={setEpIndex}
-        onSelectRoute={(i) => { setRouteIndex(i); setEpIndex(0); }}
+        routeIndex={safeRouteIndex}
+        episodes={currentEpisodes.map((e) => ({ name: e.name }))}
+        onSelectEpisode={selectEpisode}
+        onSelectRoute={selectRoute}
         onEnded={() => {
-          if (epIndex + 1 < episodes.length) setEpIndex(epIndex + 1);
+          if (safeEpIndex + 1 < currentEpisodes.length) selectEpisode(safeEpIndex + 1);
         }}
         onClose={() => setPlaying(false)}
       />
@@ -229,12 +261,12 @@ export function MovieView({ id, source, vid }) {
   if (!movie) return <LoadingState shape="poster" count={6} />;
 
   const year = t.release_date ? String(t.release_date).slice(0, 4) : null;
-  const isSeries = t.media_type === 'tv' || episodes.length > 1;
+  const isSeries = t.media_type === 'tv' || currentEpisodes.length > 1;
 
   return (
     <article class="detail-page">
       <div class="page-bar">
-        <button onClick={() => (preview && history.length > 1 ? history.back() : route('/movies'))}><Icon name="arrowLeft" size={15} /> 返回影视库</button>
+        <button onClick={() => (history.length > 1 ? history.back() : route('/movies'))}><Icon name="arrowLeft" size={15} /> 返回影视库</button>
         <span class="spacer" />
         {isAdmin && movie.id && (
           <button onClick={toggleVisibility} disabled={visibilityBusy}>
@@ -265,7 +297,7 @@ export function MovieView({ id, source, vid }) {
               {t.genres && <span>{t.genres}</span>}
               {t.runtime ? <span>{t.runtime} 分钟</span> : null}
               {t.rating != null && <span class="score">{t.rating} 分</span>}
-              {episodes.length > 1 && <span class="ep-count">共 {episodes.length} 集</span>}
+              {currentEpisodes.length > 1 && <span class="ep-count">共 {currentEpisodes.length} 集</span>}
               {t.remarks && <span class="remark-chip">{t.remarks}</span>}
               {t.source_name && <span class="src-chip">{t.source_name}</span>}
             </div>
@@ -306,7 +338,7 @@ export function MovieView({ id, source, vid }) {
             <h2><span class="bar" />{isSeries ? '剧集列表' : '播放线路'}</h2>
             <span class="count">
               {routes.length > 1 ? `${routes.length} 条线路` : '1 条线路'}
-              {isSeries && episodes.length ? ` · ${episodes.length} 集` : ''}
+              {isSeries && currentEpisodes.length ? ` · ${currentEpisodes.length} 集` : ''}
             </span>
           </div>
 
@@ -317,9 +349,9 @@ export function MovieView({ id, source, vid }) {
                 return (
                   <button
                     key={`${r.name}-${i}`}
-                    class={`chip${i === routeIndex ? ' active' : ''}`}
+                    class={`chip${i === safeRouteIndex ? ' active' : ''}`}
                     title={`源标识：${r.name}`}
-                    onClick={() => { setRouteIndex(i); setEpIndex(0); }}
+                    onClick={() => selectRoute(i)}
                   >
                     {label}
                     <span class="chip-n">{r.episodes?.length || 0}</span>
@@ -330,11 +362,11 @@ export function MovieView({ id, source, vid }) {
           )}
 
           <div class="episodes">
-            {episodes.map((ep, i) => (
+            {currentEpisodes.map((ep, i) => (
               <button
                 key={`${ep.name}-${i}`}
-                class={`ep${i === epIndex ? ' active' : ''}`}
-                onClick={() => { setEpIndex(i); setPlaying(true); }}
+                class={`ep${i === safeEpIndex ? ' active' : ''}`}
+                onClick={() => { selectEpisode(i); setPlaying(true); }}
                 title={ep.name}
               >
                 {ep.name}

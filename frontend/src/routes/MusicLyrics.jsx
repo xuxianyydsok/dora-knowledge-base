@@ -133,7 +133,7 @@ export function MusicLyrics({ id }) {
       <div class="np-veil" />
 
       <div class="np-bar">
-        <button class="np-icon" onClick={() => route(`/music/${music.id}`)} title="返回详情">
+        <button class="np-icon" onClick={() => (history.length > 1 ? history.back() : route(`/music/${music.id}`))} title="返回">
           <Icon name="chevronLeft" size={18} />
         </button>
         <div class="np-bar-title">

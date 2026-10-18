@@ -444,6 +444,41 @@ async function unit() {
     return '三类入口 + user_id 隔离 + 缓存失效';
   });
 
+  await test('图书阅读: 独立路由 + EPUB/PDF 统一进度键', async () => {
+    const app = readFileSync(join(FRONTEND_SRC, 'app.jsx'), 'utf8');
+    const progress = readFileSync(join(FRONTEND_SRC, 'lib', 'bookProgress.js'), 'utf8');
+    const reader = readFileSync(join(FRONTEND_SRC, 'components', 'BookReader.jsx'), 'utf8');
+    assert(/path="\/books\/:id"/.test(app), '缺少 /books/:id 阅读路由');
+    assert(/loadBookProgress/.test(reader) && /saveBookProgress/.test(reader), '阅读器必须恢复并保存进度');
+    assert(/saveBookProgress\(book\.id, \{ page: pdfPage \}\)/.test(reader), 'PDF 翻页必须写入统一进度键');
+    assert(/bk:reader:progress:/.test(progress), '进度键必须统一');
+    return '独立阅读路由 + EPUB/PDF 统一进度';
+  });
+
+  await test('影视播放: URL 线路/集数使用安全索引', async () => {
+    const view = readFileSync(join(FRONTEND_SRC, 'routes', 'MovieView.jsx'), 'utf8');
+    assert(/safeRouteIndex/.test(view) && /safeEpIndex/.test(view), '线路与集数必须按实际数据夹取');
+    assert(/currentEpisodes/.test(view), '播放器必须使用当前线路的集数');
+    assert(/selectEpisode\(safeEpIndex \+ 1\)/.test(view), '自动下一集必须写回 URL');
+    return '线路/集数夹取 + 下一集同步 URL';
+  });
+
+  await test('音乐搜索: URL 恢复不会重复请求同一关键词', async () => {
+    const music = readFileSync(join(FRONTEND_SRC, 'routes', 'Music.jsx'), 'utf8');
+    assert(/urlSearchRef/.test(music), '搜索恢复必须有去重状态');
+    assert(/urlSearchRef\.current = q[\s\S]*route\(`\/music\?tab=search/.test(music), 'runSearch 应先记录关键词再写 URL');
+    assert(/urlSearchRef\.current === q/.test(music), '同一关键词不得重复请求');
+    return 'URL 恢复搜索去重';
+  });
+
+  await test('影视列表: URL 恢复与快速切换只保留最后一次请求', async () => {
+    const movies = readFileSync(join(FRONTEND_SRC, 'routes', 'Movies.jsx'), 'utf8');
+    assert(/urlRequestRef/.test(movies), '列表必须有请求代次');
+    assert(/urlRequestRef\.current === requestKey/.test(movies), '旧请求结果不得覆盖新频道');
+    assert(/urlRequestRef\.current = next === 'search'/.test(movies), 'switchMode 必须先登记新请求');
+    return '列表请求代次 + URL 恢复去重';
+  });
+
   // ---- 公开读边界（三层权限：公开访客 / 登录用户 / 管理员） ----
   section('UNIT · 公开读边界（访客白名单与过滤）');
 

@@ -36,6 +36,7 @@ const Gallery = lazy(() => import('./Gallery.jsx').then((m) => ({ default: m.Gal
 const Timeline = lazy(() => import('./Timeline.jsx').then((m) => ({ default: m.Timeline })));
 const Moments = lazy(() => import('./Moments.jsx').then((m) => ({ default: m.Moments })));
 const Books = lazy(() => import('./Books.jsx').then((m) => ({ default: m.Books })));
+const BookRead = lazy(() => import('./BookRead.jsx').then((m) => ({ default: m.BookRead })));
 const Changelog = lazy(() => import('./Changelog.jsx').then((m) => ({ default: m.Changelog })));
 const Coop = lazy(() => import('./Coop.jsx').then((m) => ({ default: m.Coop })));
 const AdminFeedback = lazy(() => import('./AdminFeedback.jsx').then((m) => ({ default: m.AdminFeedback })));
@@ -57,7 +58,7 @@ export {
   Music, MusicView, MusicEdit, MusicLyrics,
   MusicPlayer, AdminMusic,
   Movies, MovieView, MovieEdit, AdminUsers, News, SourceHealth,
-  Gallery, Timeline, Moments, Books, Changelog, Coop, AdminFeedback,
+  Gallery, Timeline, Moments, Books, BookRead, Changelog, Coop, AdminFeedback,
   AdminExcerpts,
   AdminHeroSubtitle,
   MathFrame, NotionPosts, NotionPostView
