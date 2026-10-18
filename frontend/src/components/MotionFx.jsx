@@ -154,3 +154,19 @@ export function DotsNav({ count, index, interval = 3000, onSelect }) {
     </div>
   );
 }
+
+// 127 液态变形球（纯 CSS，无 JS）：
+// 两层错位旋转的渐变叠在一起，边缘持续变形，像一颗流动的液态球。
+// 图鉴原版是彩虹色，这里改成站点主色系（见 motion.css 的说明）。
+// 尺寸由 size 控制；文字居中。
+export function LiquidBlob({ text = 'FLOW', size = 200 }) {
+  return (
+    <div
+      class="mfx-blob"
+      style={{ width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * 0.12)}px` }}
+      aria-hidden={text ? undefined : 'true'}
+    >
+      <span>{text}</span>
+    </div>
+  );
+}

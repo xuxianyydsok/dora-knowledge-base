@@ -11,6 +11,7 @@ import { BlogDock, BlogLinks } from '../components/BlogDock.jsx';
 // 卡片与封面在 2026-10-14 抽到 components/PostCard.jsx：
 // Notion 博客分区（/notion）复用的就是同一个卡片，见该文件顶部说明。
 import { PostCard, PostCover } from '../components/PostCard.jsx';
+import { PostHeatmap } from '../components/PostHeatmap.jsx';
 // 横幅与默认封面的地址统一放在 lib/blogMedia.js（原先写在本文件里）
 import { BANNERS } from '../lib/blogMedia.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -269,7 +270,15 @@ export function Posts({ cat: catParam, tag: tagParam, focus }) {
               ))}
             </div>
           </div>
+
         </aside>
+      </div>
+      {/* 发文热力图（2026-10-18，图鉴 #102）：用**真实**文章发布日期统计，
+          不是装饰性假数据。
+          为什么放主内容区底部而不是侧栏：它宽 53 周 ≈ 848px，塞进 300px 的
+          侧栏只能横向滚动，体验很差；放在整宽区域才能一屏看完。 */}
+      <div class="cs-box cs-box-heat">
+        <PostHeatmap posts={posts} />
       </div>
       {error && <div class="notice danger">{error}</div>}
       <BlogDock active={focus === 'search' ? 'search' : 'home'} />

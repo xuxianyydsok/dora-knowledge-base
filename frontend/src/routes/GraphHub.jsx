@@ -27,6 +27,7 @@ import {
   StatBoard, StatCard, RankBars
 } from '../components/StatCharts.jsx';
 import { FlowSankey } from '../components/FlowSankey.jsx';
+import { TagSphere } from '../components/TagSphere.jsx';
 // 2026-10-11（本轮）：上一轮追加的 8 张图里，用户点名保留了「占比点阵」
 // （WaffleGrid）和「矩形树图」（TreemapBoard），其余（和弦图 / 多维环形对比 /
 // 同心环段 / 轨道星座 / 流带时间轴 / 山脊图）连同后面一批原有图表一起删掉。
@@ -403,6 +404,13 @@ function BlogGraph() {
 
             <StatCard title="标签体量" sub={`共 ${stats.totals.tags} 个标签`}>
               <RankBars items={stats.tagRank} ariaLabel="标签排行" />
+            </StatCard>
+            {/* 3D 标签球（2026-10-18，图鉴 #114）：用**真实标签**（stats.tagRank）
+                而不是图鉴里的演示词。移动鼠标可控制转向，松手后恢复匀速自转。
+                放在这里是因为它和「标签体量」是同一份数据、两种看法：
+                柱状图看排序，标签球看「标签的体量与分布感」。 */}
+            <StatCard title="标签球" sub={`共 ${stats.totals.tags} 个标签 · 移动鼠标可转向`}>
+              <TagSphere items={stats.tagRank} size={260} />
             </StatCard>
             {/* 同时删掉：内容构成雷达、内容健康度仪表。 */}
           </StatBoard>

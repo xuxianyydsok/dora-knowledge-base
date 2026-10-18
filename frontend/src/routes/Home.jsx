@@ -14,6 +14,12 @@ import { HeroCarousel } from '../components/HeroCarousel.jsx';
 import { PixelFlip } from '../components/PixelFlip.jsx';
 import { HomeFlow } from '../components/HomeFlow.jsx';
 import { HomeNow } from '../components/HomeNow.jsx';
+// 动效装饰（2026-10-18，用户从图鉴里挑选）：
+//   LiquidBlob  = #127 液态变形球（纯 CSS）
+//   Harmonograph= #194 谐波绘图（canvas）
+//   BreathingRings = #198 呼吸三环（canvas）
+import { LiquidBlob } from '../components/MotionFx.jsx';
+import { Harmonograph, BreathingRings } from '../components/CanvasFx.jsx';
 import {
   AboutBlock, IntroBlock, Marquee, ProgressRing, Seal, SplitLines, TitleBand, useReveal
 } from '../components/LandingParts.jsx';
@@ -473,6 +479,16 @@ function Landing() {
           已经收录 <b class="ld-num">{total == null ? '—' : total.toLocaleString('en-US')}</b> 条公开条目，
           分布在 <b class="ld-num">{MODULES.length}</b> 个模块里。
         </p>
+
+        {/* 装饰区（2026-10-18）：三件纯视觉组件，不承载数据。
+            为什么放在「关于」区块末尾：这里是全页唯一「可以慢下来看」的位置，
+            而这三个组件都是持续动画，放在首屏会抢注意力。
+            aria-hidden 让屏幕阅读器跳过 —— 它们只是装饰，没有信息量。 */}
+        <div class="ld-fx-row" aria-hidden="true">
+          <div class="ld-fx-cell"><LiquidBlob text="Dora" size={160} /></div>
+          <div class="ld-fx-cell ld-fx-wide"><Harmonograph height={200} /></div>
+          <div class="ld-fx-cell"><BreathingRings height={200} /></div>
+        </div>
       </section>
 
       <section class="ld-cta">

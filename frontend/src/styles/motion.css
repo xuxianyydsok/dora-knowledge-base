@@ -352,3 +352,196 @@
     animation: none;
   }
 }
+
+/* =============================================================
+   102 发文热力图（2026-10-18）
+
+   与图鉴原版的差异：原版用紫蓝硬编码色（--h0..--h4），这里改成
+   **站点主色的 5 档透明度**，所以三套主题下都会跟着主色变。
+   原版是伪随机假数据，本站版本用真实文章发布日期（见 components/PostHeatmap.jsx）。
+   ============================================================= */
+.phm { width: 100%; }
+/* 放在博客页主内容区底部时的外框：与 .cs-box 同款，但给足上下留白 */
+.cs-box-heat { margin-top: 22px; }
+.phm-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.phm-head strong { font-size: 14px; color: var(--text); }
+.phm-sum { font-size: 12.5px; color: var(--text-muted); }
+
+/* 53 周 × (13px + 3px) ≈ 848px，窄屏放不下 → 横向滚动，不压缩格子
+   （格子小于 10px 就看不清了，压缩反而失去意义）。 */
+.phm-scroll { overflow-x: auto; padding-bottom: 6px; }
+.phm-inner {
+  position: relative;
+  width: max-content;
+  padding: 18px 0 0 26px;
+  margin: 0 auto;
+}
+
+.phm-months { position: absolute; top: 0; left: 26px; height: 16px; }
+.phm-months span {
+  position: absolute;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.phm-weekdays { position: absolute; top: 18px; left: 0; }
+.phm-weekdays span {
+  position: absolute;
+  font-size: 10px;
+  color: var(--text-muted);
+  left: 0;
+}
+
+.phm-grid {
+  display: grid;
+  grid-template-rows: repeat(7, 13px);
+  grid-auto-flow: column;
+  gap: 3px;
+}
+.phm-grid i {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: var(--bg-subtle);
+  /* 首次出现时从中心放大淡入，按列错峰（--d 由组件按周计算） */
+  animation: phm-pop 0.5s var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
+  transition: transform 0.15s, outline-color 0.15s;
+  outline: 2px solid transparent;
+}
+.phm-grid i[data-l='1'] { background: color-mix(in srgb, var(--primary) 24%, var(--bg-subtle)); }
+.phm-grid i[data-l='2'] { background: color-mix(in srgb, var(--primary) 44%, var(--bg-subtle)); }
+.phm-grid i[data-l='3'] { background: color-mix(in srgb, var(--primary) 68%, var(--bg-subtle)); }
+.phm-grid i[data-l='4'] { background: var(--primary); }
+.phm-grid i:hover {
+  transform: scale(1.5);
+  outline-color: var(--text);
+  position: relative;
+  z-index: 2;
+}
+.phm-grid i.is-future { visibility: hidden; }
+@keyframes phm-pop {
+  from { opacity: 0; transform: scale(0.1); }
+}
+
+.phm-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.phm-legend i {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  display: block;
+  background: var(--bg-subtle);
+}
+.phm-legend i[data-l='1'] { background: color-mix(in srgb, var(--primary) 24%, var(--bg-subtle)); }
+.phm-legend i[data-l='2'] { background: color-mix(in srgb, var(--primary) 44%, var(--bg-subtle)); }
+.phm-legend i[data-l='3'] { background: color-mix(in srgb, var(--primary) 68%, var(--bg-subtle)); }
+.phm-legend i[data-l='4'] { background: var(--primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .phm-grid i { animation: none; }
+}
+
+/* =============================================================
+   114 3D 标签球（2026-10-18）
+
+   位置计算全部在 JS 里（每帧写 transform），CSS 只负责「标签长什么样」。
+   ============================================================= */
+.tsph {
+  position: relative;
+  margin: 0 auto;
+  cursor: grab;
+  /* 触屏上拖动时不要触发页面滚动 —— 这个球是给鼠标/手指转的 */
+  touch-action: none;
+}
+.tsph:active { cursor: grabbing; }
+.tsph span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  will-change: transform, opacity;
+  pointer-events: none;   /* 标签本身不接收事件，交给容器统一处理 */
+  transition: color 0.25s var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 减少动态效果时不转（JS 仍在跑，但这里至少让标签不动）
+     真正停转由系统设置 + 组件内的 rAF 共同决定，这里只做兜底。 */
+  .tsph span { transition: none; }
+}
+
+/* =============================================================
+   127 液态变形球（2026-10-18）
+
+   图鉴原版用固定的彩虹渐变（#ff6a4a → #9b6bff → #33d6e8），
+   这里改成**站点主色 + 副色**的渐变，三套主题下都会跟着变。
+   两层错位旋转（::before / ::after）叠出「液态流动」的层次感。
+   ============================================================= */
+.mfx-blob {
+  position: relative;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  color: #fff;
+  isolation: isolate;
+}
+.mfx-blob::before,
+.mfx-blob::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 82%, #ff6a4a),
+    var(--primary),
+    color-mix(in srgb, var(--primary) 60%, #33d6e8)
+  );
+  background-size: 200% 200%;
+  animation: mfx-blob-morph 8s ease-in-out infinite, mfx-blob-bg 6s linear infinite;
+  box-shadow: 0 20px 50px color-mix(in srgb, var(--primary) 40%, transparent);
+  z-index: -1;
+}
+.mfx-blob::after {
+  inset: 13%;
+  opacity: 0.55;
+  animation-duration: 6s, 9s;
+  animation-direction: reverse;
+  filter: blur(2px);
+}
+.mfx-blob > span { position: relative; z-index: 1; }
+@keyframes mfx-blob-morph {
+  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; transform: rotate(0); }
+  50% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; transform: rotate(180deg); }
+}
+@keyframes mfx-blob-bg { 50% { background-position: 100% 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .mfx-blob::before,
+  .mfx-blob::after { animation: none; }
+}
+
+/* =============================================================
+   194 谐波绘图 / 198 呼吸三环（2026-10-18）
+   两者共用 .mfx-canvas 基础样式（尺寸由内联 style 给高度，宽度撑满）。
+   ============================================================= */
+.mfx-canvas {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-sm, 10px);
+  background: color-mix(in srgb, var(--bg-subtle) 55%, transparent);
+}

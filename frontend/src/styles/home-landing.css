@@ -1888,6 +1888,29 @@
 .ld-about-sec > .ld-about,
 .ld-about-sec > .ld-about-meta { position: relative; z-index: 1; }
 
+/* 装饰区（2026-10-18）：液态球 / 谐波绘图 / 呼吸三环
+   三列等宽，中间那列宽一倍（谐波是横向图形，太窄会看不清）。
+   窄屏改为单列堆叠。 */
+.ld-fx-row {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: clamp(14px, 2vw, 28px);
+  align-items: center;
+  margin-top: clamp(28px, 4vw, 56px);
+}
+.ld-fx-cell {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+.ld-fx-cell .mfx-canvas { width: 100%; }
+@media (max-width: 860px) {
+  .ld-fx-row { grid-template-columns: 1fr; }
+  .ld-fx-cell { padding: 6px 0; }
+}
+
 .ld-about {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
