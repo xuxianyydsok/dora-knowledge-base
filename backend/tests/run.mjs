@@ -1910,6 +1910,25 @@ async function videoTypeUnit() {
     return `${targets.length} 个接口已接入（timeline 纯聚合靠 TTL）+ 工具含访客限定/版本号/R2 二级/过期兜底`;
   });
 
+  // ---- 模块导入完整性（2026-10-15 线上事故：图书页 json is not defined） ----
+  await test('所有路由：用到 json() 就必须从 response.js 导入', () => {
+    // 事故经过：给 books / wallpapers 加边缘缓存时用了 `return json({ data }, …)`，
+    // 但 import 只写了 ok/readJson/HttpError —— 模块能构建通过（Node 不做未声明
+    // 标识符的静态检查），**运行时**才抛 `ReferenceError: json is not defined`，
+    // 表现为「图书页打不开」。这类错误构建期抓不到，只能靠静态扫描兜住。
+    const files = readdirSync(join(BACKEND, 'src', 'routes')).filter((f) => f.endsWith('.js'));
+    const missing = [];
+    for (const f of files) {
+      const src = readFileSync(join(BACKEND, 'src', 'routes', f), 'utf8');
+      const usesJson = /\breturn json\(|\bjson\(\{/.test(src);
+      if (!usesJson) continue;
+      const importsJson = /import\s*\{[^}]*\bjson\b[^}]*\}\s*from\s*'\.\.\/lib\/response\.js'/.test(src);
+      if (!importsJson) missing.push(f);
+    }
+    assert(missing.length === 0, `这些路由用了 json() 却没导入：${missing.join(', ')}`);
+    return `扫描 ${files.length} 个路由文件，json() 导入全部齐全`;
+  });
+
   // ---- Notion 博客封面口径（2026-10-15 用户要求统一用 Halo 默认封面） ----
   await test('Notion 博客统一用 Halo 默认封面（不再下发自带封面）', () => {
     const src = readFileSync(join(BACKEND, 'src', 'routes', 'notion.js'), 'utf8');

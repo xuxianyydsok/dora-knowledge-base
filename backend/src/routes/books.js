@@ -49,7 +49,7 @@
 // 安全：object key 由服务端生成（books/<user_id>/<年>/<uuid>.<ext>），用户文件名只作展示；
 //       正文/封面读取都要求 is_public=true 或本人，私人书即便拿到 UUID 也读不到。
 
-import { ok, readJson, HttpError, corsHeaders } from '../lib/response.js';
+import { ok, json, readJson, HttpError, corsHeaders } from '../lib/response.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { SupabaseClient, qs } from '../lib/supabase.js';
 import { requireUuid, optionalString, optionalBool, optionalInt } from '../lib/validate.js';
