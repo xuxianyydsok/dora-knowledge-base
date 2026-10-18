@@ -2330,7 +2330,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
     color-mix(in srgb, var(--primary) 7%, transparent), transparent 72%);
   animation: fade-up var(--dur-slow) var(--ease-out) both;
 }
-.empty-state > .icon:first-child {
+.empty-state > .empty-icon {
   box-sizing: content-box;
   margin-bottom: var(--sp-2);
   padding: 15px;
@@ -2359,7 +2359,7 @@ label > input, label > select, label > textarea { margin-top: 6px; color: var(--
   margin-top: var(--sp-3);
 }
 /* 错误态：同一套骨架，只把强调色换成危险色 */
-.empty-state.tone-danger > .icon:first-child {
+.empty-state.tone-danger > .empty-icon {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 11%, transparent);
   border-color: color-mix(in srgb, var(--danger) 22%, transparent);

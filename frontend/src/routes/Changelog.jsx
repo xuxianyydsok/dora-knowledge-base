@@ -13,6 +13,7 @@ import { useMemo, useState } from 'preact/hooks';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { Spirograph } from '../components/MotionFx.jsx';
 import {
   CHANGELOG, CHANGE_TYPES, CHANGE_TYPE_ORDER,
   sortVersions, changelogStats, filterChanges, formatDate
@@ -124,6 +125,9 @@ export function Changelog() {
         activeTab={type}
         onTab={setType}
       />
+
+      {/* 152 万花尺：只作为发布记录上方的细线装饰，不占用内容高度。 */}
+      <Spirograph height={96} class="cl-spiro" label="发布记录装饰线" />
 
       <div class="cl-toolbar">
         <label class="cl-search">

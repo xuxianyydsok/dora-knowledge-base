@@ -9,6 +9,11 @@
 
 .cl-page { display: block; }
 
+.cl-spiro {
+  margin-top: var(--sp-3, 8px);
+  opacity: .72;
+}
+
 /* ---------------- 工具条：搜索 + 计数 ---------------- */
 .cl-toolbar {
   display: flex;

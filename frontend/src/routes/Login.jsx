@@ -13,6 +13,7 @@ import { route } from 'preact-router';
 import { useAuth } from '../lib/auth.jsx';
 import { Logo } from '../components/Logo.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { BubbleField, ElasticIn } from '../components/MotionFx.jsx';
 import '../styles/now-settings.css';
 
 export function Login() {
@@ -103,11 +104,12 @@ export function Login() {
 
   return (
     <section class="auth-page">
+      <BubbleField count={16} />
       <div class="auth-card set-card">
         <div class="auth-brand">
           <Logo size={34} />
           <div>
-            <strong>{mode === 'signin' ? '站长登录' : '新用户注册'}</strong>
+            <ElasticIn tag="strong" text={mode === 'signin' ? '站长登录' : '新用户注册'} />
             <span>{mode === 'signin' ? 'Dora 管理后台入口' : '注册后即可收藏音乐与影视'}</span>
           </div>
         </div>

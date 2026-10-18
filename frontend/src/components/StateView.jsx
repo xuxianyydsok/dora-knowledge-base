@@ -53,7 +53,7 @@ export function LoadingState({ shape = 'card', count, label = '正在加载' }) 
 export function ErrorState({ title = '没能取到数据', message, onRetry, retryLabel = '重试' }) {
   return (
     <div class="empty-state tone-danger">
-      <Icon name="alert" size={24} />
+      <Icon name="alert" size={24} class="empty-icon" />
       <p>{title}</p>
       {message && <span>{message}</span>}
       {onRetry && (

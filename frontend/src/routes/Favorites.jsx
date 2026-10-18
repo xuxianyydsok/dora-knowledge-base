@@ -217,6 +217,7 @@ export function Favorites() {
           icon="heart"
           title="登录后可收藏自己的音乐与影视"
           hint="站长收藏的内容无需登录即可播放；登录后还能把喜欢的音乐与影视收进自己的收藏夹。"
+          decoration="gooey"
           action={<a class="btn primary" href="/login">去登录</a>}
         />
       </section>
@@ -264,6 +265,7 @@ export function Favorites() {
           icon="heart"
           title={filter === 'all' ? '还没有收藏' : `还没有收藏${SECTIONS.find((s) => s.key === filter)?.title || ''}`}
           hint="去音乐或影视详情页点「收藏」，就会出现在这里。"
+          decoration="gooey"
           action={<div class="fav-empty-actions">
             <a class="btn" href="/music">逛音乐</a>
             <a class="btn" href="/movies">逛影视</a>

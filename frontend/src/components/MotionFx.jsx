@@ -28,6 +28,11 @@
 //   171 媒体占比环    → DonutShare
 //   175 实时指标卡    → KpiCard
 //   148 彩带礼炮      → ConfettiBurst
+//   16 中心聚焦跑马灯 → FocusMarquee
+//   26 弹性入场       → ElasticIn
+//   59 气泡上升背景   → BubbleField
+//   150 融球 Gooey    → GooeyBlobs
+//   152 万花尺螺旋    → Spirograph
 //
 // 样式在 styles/motion.css，全部走站点主题变量（三套主题自动适配）。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -657,4 +662,218 @@ export function ConfettiBurst({ active = false, count = 36, class: cls = '' }) {
       ))}
     </span>
   );
+}
+
+// 16 中心聚焦跑马灯：文字横向缓慢移动，靠近中间的字更大更清晰。
+// 用 rAF 计算每帧字号，而不是纯 CSS —— 纯 CSS 无法知道「当前是否在中心」。
+export function FocusMarquee({ text = '', speed = 26, height = 92, class: cls = '' }) {
+  const wrapRef = useRef(null);
+  const trackRef = useRef(null);
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const track = trackRef.current;
+    if (!wrap || !track) return undefined;
+    const spans = [...track.childNodes].filter((node) => node.nodeType === 1);
+    let raf = 0;
+    let start = 0;
+    let running = true;
+    let visible = true;
+
+    const paint = (now) => {
+      if (!running) return;
+      if (!start) start = now;
+      if (visible && !document.hidden) {
+        const w = wrap.clientWidth || 1;
+        const total = track.scrollWidth || 1;
+        const offset = ((now - start) / 1000) * speed;
+        // 复制一份文字，位移到 -50% 时无缝回卷
+        const x = -((offset % (total / 2 || 1)));
+        track.style.transform = `translate3d(${x}px,0,0)`;
+        for (const el of spans) {
+          const r = el.getBoundingClientRect();
+          const center = r.left + r.width / 2;
+          const dist = Math.abs(center - (w / 2));
+          const k = Math.max(0, 1 - dist / (w * 0.42));
+          el.style.opacity = String(0.2 + k * 0.8);
+          el.style.filter = `blur(${(1 - k) * 3.2}px)`;
+          el.style.transform = `scale(${0.82 + k * 0.3})`;
+        }
+      }
+      raf = requestAnimationFrame(paint);
+    };
+    raf = requestAnimationFrame(paint);
+    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { rootMargin: '80px' });
+    io.observe(wrap);
+    return () => {
+      running = false;
+      cancelAnimationFrame(raf);
+      io.disconnect();
+    };
+  }, [text, speed]);
+
+  const body = String(text || '').trim();
+  if (!body) return null;
+  const words = [body, body];
+  return (
+    <div ref={wrapRef} class={`mfx-focus-marquee${cls ? ` ${cls}` : ''}`} style={{ '--fm-h': `${height}px` }} aria-label={body}>
+      <div ref={trackRef} class="mfx-focus-track">
+        {words.map((w, i) => <span key={i}>{w}</span>)}
+      </div>
+    </div>
+  );
+}
+
+// 26 弹性入场：进入视口后每个字按序弹出。只在第一次进入时播放。
+export function ElasticIn({ text = '', tag: Tag = 'span', class: cls = '' }) {
+  const ref = useRef(null);
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    if (typeof IntersectionObserver !== 'function') { setOn(true); return undefined; }
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { setOn(true); io.disconnect(); }
+    }, { threshold: 0.3 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <Tag ref={ref} class={`mfx-elastic${on ? ' in' : ''}${cls ? ` ${cls}` : ''}`} aria-label={text}>
+      {[...String(text)].map((ch, i) => (
+        <i key={i} style={{ '--i': i }} aria-hidden="true">{ch === ' ' ? '\u00A0' : ch}</i>
+      ))}
+    </Tag>
+  );
+}
+
+// 59 气泡上升背景：纯 CSS 粒子，不承载数据。数量与位置用确定性公式，避免每次刷新乱跳。
+export function BubbleField({ count = 18, class: cls = '' }) {
+  const bubbles = useMemo(() => Array.from({ length: count }, (_, i) => ({
+    id: i,
+    left: (i * 37 + 11) % 100,
+    size: 5 + ((i * 13) % 18),
+    delay: -((i * 17) % 120) / 10,
+    duration: 7 + ((i * 29) % 70) / 10,
+    drift: ((i * 19) % 36) - 18
+  })), [count]);
+  return (
+    <span class={`mfx-bubbles${cls ? ` ${cls}` : ''}`} aria-hidden="true">
+      {bubbles.map((b) => (
+        <i
+          key={b.id}
+          style={{
+            '--x': `${b.left}%`,
+            '--s': `${b.size}px`,
+            '--delay': `${b.delay}s`,
+            '--d': `${b.duration}s`,
+            '--drift': `${b.drift}px`
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+// 150 融球 Gooey：多个彩色球缓慢游动，用 SVG filter 合并边缘。
+// 用主题主色派生，不引入图鉴里的固定彩虹色。
+export function GooeyBlobs({ class: cls = '' }) {
+  return (
+    <span class={`mfx-gooey${cls ? ` ${cls}` : ''}`} aria-hidden="true">
+      <svg width="0" height="0" focusable="false">
+        <defs>
+          <filter id="mfx-gooey-filter">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blur" />
+            <feColorMatrix in="blur" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -8" />
+          </filter>
+        </defs>
+      </svg>
+      <span class="mfx-gooey-stage">
+        {[0, 1, 2, 3, 4, 5].map((i) => <i key={i} style={{ '--i': i }} />)}
+      </span>
+    </span>
+  );
+}
+
+// 152 万花尺螺旋：canvas 逐步绘制外摆线，画满后换一个参数重画。
+export function Spirograph({ height = 220, class: cls = '', label = '万花尺螺旋' }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return undefined;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
+    let raf = 0;
+    let running = true;
+    let visible = true;
+    let w = 0;
+    let h = 0;
+    let dpr = 1;
+    let points = [];
+    let phase = 0;
+
+    const build = () => {
+      const r = canvas.getBoundingClientRect();
+      w = Math.max(1, r.width);
+      h = Math.max(1, r.height);
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const R = Math.min(w, h) * 0.4;
+      const r0 = R * (0.19 + (phase % 3) * 0.035);
+      const d = R * (0.52 + (phase % 4) * 0.045);
+      const turns = 18;
+      points = [];
+      for (let i = 0; i <= 2600; i++) {
+        const t = (i / 2600) * Math.PI * 2 * turns;
+        const k = (R - r0) / r0;
+        const x = w / 2 + (R - r0) * Math.cos(t) + d * Math.cos(k * t);
+        const y = h / 2 + (R - r0) * Math.sin(t) - d * Math.sin(k * t);
+        points.push([x, y]);
+      }
+    };
+    build();
+    const ro = new ResizeObserver(build);
+    ro.observe(canvas);
+    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { rootMargin: '80px' });
+    io.observe(canvas);
+
+    let drawn = 0;
+    const paint = () => {
+      if (!running) return;
+      if (visible && !document.hidden) {
+        const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#4a6cf7';
+        if (drawn === 0) ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = primary;
+        ctx.globalAlpha = 0.72;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const end = Math.min(points.length, drawn + 34);
+        for (let i = drawn; i < end; i++) {
+          const [x, y] = points[i];
+          if (i === drawn) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        drawn = end;
+        if (drawn >= points.length) {
+          drawn = 0;
+          phase += 1;
+          build();
+        }
+      }
+      raf = requestAnimationFrame(paint);
+    };
+    raf = requestAnimationFrame(paint);
+    return () => {
+      running = false;
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      io.disconnect();
+    };
+  }, []);
+
+  return <canvas ref={ref} class={`mfx-spiro${cls ? ` ${cls}` : ''}`} style={{ height: `${height}px` }} role="img" aria-label={label} />;
 }

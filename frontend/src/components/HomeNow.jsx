@@ -22,6 +22,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { BrandFilings } from './BrandFilings.jsx';
 import { BookShelf } from './BookShelf.jsx';
+import { FocusMarquee } from './MotionFx.jsx';
 import { charGradients } from '../lib/brandGradient.js';
 import { Icon } from './Icon.jsx';
 
@@ -186,6 +187,7 @@ function Excerpts({ items = [] }) {
         <p class="now-box-t">摘抄 · 读一段</p>
         <span class="now-ex-count">{i + 1} / {list.length}</span>
       </div>
+      <FocusMarquee text={`${cur.from || 'Dora Studio'} · 摘抄`} speed={22} height={74} class="now-ex-focus" />
       <blockquote ref={quoteRef} class={`now-ex-q${out ? ' out' : ''}`}>
         {cur.text}
       </blockquote>

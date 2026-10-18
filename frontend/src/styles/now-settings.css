@@ -321,8 +321,14 @@
 /* ---------------- 登录 / 注册页（/login） ----------------
    2026-10-11 新增：站长登录 + 新用户注册两个标签页。
    复用 .set-card 卡片观感，只补这一页独有的排版。 */
-.auth-page { display: flex; justify-content: center; padding-top: clamp(16px, 6vh, 64px); }
+.auth-page {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: clamp(16px, 6vh, 64px);
+}
 .auth-card { width: min(430px, 100%); margin-top: 0; }
+.auth-page .auth-card { position: relative; z-index: 1; }
 .auth-brand { display: flex; align-items: center; gap: var(--sp-4, 12px); margin-bottom: var(--sp-5, 16px); }
 .auth-brand strong { display: block; font-size: var(--fs-title, 17px); }
 .auth-brand span { display: block; margin-top: 2px; font-size: var(--fs-sm, 13px); color: var(--text-muted); }
@@ -394,6 +400,21 @@
    以音乐 + 影视为主要对象：封面 + 标题 + 操作，网格排布。
    音乐封面 1:1、影视海报 2:3，用 aspect-ratio 撑高，避免加载后跳动。 */
 .fav-page { display: block; }
+.fav-page .empty-state { position: relative; overflow: hidden; }
+.fav-page .empty-state.has-gooey { min-height: 250px; }
+.fav-page .empty-state > .empty-icon,
+.fav-page .empty-state > p,
+.fav-page .empty-state > span,
+.fav-page .empty-state > .fav-empty-actions { position: relative; z-index: 1; }
+.fav-page .empty-gooey {
+  position: absolute;
+  inset: -30% -10%;
+  width: auto;
+  height: auto;
+  opacity: .28;
+  z-index: 0;
+  pointer-events: none;
+}
 .fav-tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated); }
 .fav-tab {
   display: inline-flex; align-items: center; gap: 6px;

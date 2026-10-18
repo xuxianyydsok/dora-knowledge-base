@@ -118,6 +118,7 @@ class D extends E {
 }
 function matches(n, sel) {
   const part = sel.trim().split(/\s+/).slice(-1)[0] || '';
+  if (part.startsWith('#')) return n.getAttribute?.('id') === part.slice(1);
   return part.startsWith('.')
     ? part.slice(1).split('.').every((name) => String(n.getAttribute?.('class') || '').split(/\s+/).includes(name))
     : n.localName === part.toLowerCase();
@@ -205,7 +206,8 @@ async function load() {
 export {
   CrossFadeWords, BurstLike, Equalizer, PlayPauseMorph, PulseIcon,
   BellPulse, SquareWave, LoadingLetters, GlassCube, SilkField, ParticleText,
-  GenreRank, DonutShare, KpiCard, ConfettiBurst
+  GenreRank, DonutShare, KpiCard, ConfettiBurst,
+  FocusMarquee, ElasticIn, BubbleField, GooeyBlobs, Spirograph
 } from './components/MotionFx.jsx';
 export { h, render } from 'preact';
 `,
@@ -239,7 +241,13 @@ const WIRING = [
   ['frontend/src/components/FavoriteButton.jsx', ['BurstLike']],
   ['frontend/src/routes/Timeline.jsx', ['tl-live-line']],
   ['frontend/src/routes/GraphHub.jsx', ['DonutShare', 'KpiCard', 'LiveFeed']],
-  ['frontend/src/routes/Coop.jsx', ['ConfettiBurst']]
+  ['frontend/src/routes/Coop.jsx', ['ConfettiBurst']],
+  ['frontend/src/routes/Login.jsx', ['BubbleField', 'ElasticIn']],
+  ['frontend/src/components/HomeNow.jsx', ['FocusMarquee']],
+  ['frontend/src/routes/Changelog.jsx', ['Spirograph']],
+  ['frontend/src/components/EmptyState.jsx', ['GooeyBlobs']],
+  ['frontend/src/components/EmptyState.jsx', ['decoration === \'gooey\'']],
+  ['frontend/src/routes/Favorites.jsx', ['decoration="gooey"']]
 ];
 
 async function checkWiring() {
@@ -329,6 +337,25 @@ ok('175 指标卡数字滚动到真实值', text(host.querySelector('.mfx-kpi st
 render(M.h(M.ConfettiBurst, { active: true, count: 12 }));
 ok('148 礼炮有 12 片彩带', host.querySelectorAll('.mfx-confetti i').length === 12);
 ok('148 礼炮只在 active 时播放', !!host.querySelector('.mfx-confetti.on'));
+
+render(M.h(M.FocusMarquee, { text: 'Dora Studio', height: 80 }));
+ok('16 中心聚焦跑马灯有 2 份循环文字', host.querySelectorAll('.mfx-focus-track span').length === 2);
+
+render(M.h(M.ElasticIn, { text: '欢迎' }));
+ok('26 弹性入场逐字拆分', host.querySelectorAll('.mfx-elastic i').length === 2);
+
+render(M.h(M.BubbleField, { count: 9 }));
+ok('59 气泡背景有 9 个气泡', host.querySelectorAll('.mfx-bubbles i').length === 9);
+
+render(M.h(M.GooeyBlobs));
+ok('150 融球有 6 个球', host.querySelectorAll('.mfx-gooey-stage i').length === 6);
+ok('150 融球使用 SVG filter', findAll(host, '#mfx-gooey-filter').length === 1);
+
+render(M.h(M.Spirograph, { height: 120 }));
+const spiro = find(host, '.mfx-spiro');
+ok('152 万花尺挂载 canvas', !!spiro);
+await new Promise((r) => setTimeout(r, 80));
+ok('152 canvas 尺寸有效', spiro?.width > 0 && spiro?.height > 0, `${spiro?.width}x${spiro?.height}`);
 
 M.render(null, host);
 console.log('\n' + '='.repeat(52));
