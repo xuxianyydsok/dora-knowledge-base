@@ -514,6 +514,19 @@ async function unit() {
     return '展开成功 + 外站拒绝 + 入口限制';
   });
 
+  await test('歌词页: 已唱/未唱不同色 + 逐句填充 + 细粒度进度', async () => {
+    const page = readFileSync(join(FRONTEND_SRC, 'routes', 'MusicLyrics.jsx'), 'utf8');
+    const css = readFileSync(join(FRONTEND_SRC, 'styles', 'lyrics.css'), 'utf8');
+    const player = readFileSync(join(FRONTEND_SRC, 'lib', 'player.jsx'), 'utf8');
+    assert(/const activeFill = useMemo/.test(page), '当前句必须有实时填充比例');
+    assert(/lyr-fill/.test(page) && /--fill:/.test(page), '当前句必须渲染填充层');
+    assert(/\.lyric-line\.passed[\s\S]*?var\(--primary\)/.test(css), '已唱行必须使用主题色');
+    assert(/\.lyric-line\s*\{[\s\S]*?var\(--text\) 52%/.test(css), '未唱行必须保持可读对比度');
+    assert(/requestAnimationFrame\(tick\)/.test(player) && /now - lastPaint >= 100/.test(player),
+      '播放器必须提供约 100ms 的歌词时间粒度');
+    return '三态配色 + 逐句填充 + 100ms 进度';
+  });
+
   // ---- 公开读边界（三层权限：公开访客 / 登录用户 / 管理员） ----
   section('UNIT · 公开读边界（访客白名单与过滤）');
 

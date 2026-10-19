@@ -1,7 +1,8 @@
 // 歌词页（沉浸式 · 双栏）
 // 设计取向：左侧黑胶专辑图（播放时缓慢自转 + 光晕），右侧逐句歌词。
-// 歌词分三档：未唱（低对比灰）/ 已唱（越早唱过越淡，形成渐隐带）/ 当前行
-// （渐变文字 + 流动光带）。随播放自动居中滚动，点击任意行跳转播放位置。
+// 歌词分三档：未唱（清晰但低饱和）/ 已唱（主题色）/ 当前行（逐字填充）。
+// 当前行的填充宽度由播放时间与下一句时间差实时计算，跟随歌手节奏推进。
+// 随播放自动居中滚动，点击任意行跳转播放位置。
 // 样式集中在 ../styles/lyrics.css（不改 global.css）。
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { route } from 'preact-router';
@@ -10,18 +11,16 @@ import { Icon } from '../components/Icon.jsx';
 import { FavoriteButton } from '../components/FavoriteButton.jsx';
 import { usePlayer } from '../lib/player.jsx';
 
-import { LoadingState, ErrorState } from '../components/StateView.jsx';
+import { ErrorState } from '../components/StateView.jsx';
 import '../styles/lyrics.css';
 
-// 已唱行的「渐隐带」：越早唱过的越淡（40% 最淡，86% 最清晰），
-// 越靠近当前行越亮 —— 视线自然被引到当前行。
-// 整段都明显高于「未唱行」的 22%，保证「已唱 / 未唱」一眼可辨。
-// 注意：color-mix 的百分比必须带单位，所以这里直接返回 "40%" 这种字符串。
-const PASS_MIN = 40;
-const PASS_MAX = 86;
+// 已唱行不再「越早越淡」：颜色本身就是完成态，过淡会让用户分不清
+// “唱过”与“没唱”。只保留很轻微的层次，最近唱过的略亮。
+const PASS_MIN = 82;
+const PASS_MAX = 100;
 function passOpacity(i, activeIndex) {
   if (activeIndex <= 0) return `${PASS_MAX}%`;
-  const dist = (activeIndex - i) / activeIndex; // 0 = 紧邻当前行，1 = 最早唱过
+  const dist = (activeIndex - i) / activeIndex;
   const pct = Math.max(PASS_MIN, PASS_MAX - dist * (PASS_MAX - PASS_MIN));
   return `${pct.toFixed(1)}%`;
 }
@@ -51,6 +50,8 @@ export function MusicLyrics({ id }) {
   const [autoScroll, setAutoScroll] = useState(true);
   const lineRefs = useRef([]);
   const boxRef = useRef(null);
+  const programmaticScrollUntilRef = useRef(0);
+  const userScrollTimerRef = useRef(null);
   const {
     music: current, position, duration, playing, toggle, seek, playOne,
     hasPrev, hasNext, prev, next
@@ -94,24 +95,63 @@ export function MusicLyrics({ id }) {
     return idx;
   }, [lines, position]);
 
+  // 当前句的填充比例：从本句开始时间推进到下一句开始时间。
+  // 没有下一句时用当前句时长与 4 秒的较小值，避免最后一句突然全亮。
+  const activeFill = useMemo(() => {
+    if (activeIndex < 0 || !playing) return 0;
+    const line = lines[activeIndex];
+    const next = lines[activeIndex + 1];
+    const end = next ? next.time : line.time + Math.min(4, Math.max(1.5, (duration || 0) - line.time));
+    const span = Math.max(0.4, end - line.time);
+    return Math.max(0, Math.min(1, (position - line.time) / span));
+  }, [activeIndex, lines, position, duration, playing]);
+
   // 当前行居中滚动
   useEffect(() => {
     if (!autoScroll || activeIndex < 0) return;
     const el = lineRefs.current[activeIndex];
     const box = boxRef.current;
     if (!el || !box) return;
-    box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2, behavior: 'smooth' });
+    const top = el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2;
+    if (typeof box.scrollTo === 'function') {
+      programmaticScrollUntilRef.current = Date.now() + 650;
+      try {
+        box.scrollTo({ top, behavior: 'smooth' });
+      } catch {
+        box.scrollTop = top;
+      }
+    } else {
+      box.scrollTop = top;
+    }
   }, [activeIndex, autoScroll]);
 
   function onUserScroll() {
+    // 自动居中本身也会触发 scroll；只有用户手势才应暂停跟随。
+    if (Date.now() < programmaticScrollUntilRef.current) return;
     if (!autoScroll) return;
     setAutoScroll(false);
-    clearTimeout(onUserScroll.timer);
-    onUserScroll.timer = setTimeout(() => setAutoScroll(true), 5000);
+    clearTimeout(userScrollTimerRef.current);
+    userScrollTimerRef.current = setTimeout(() => setAutoScroll(true), 5000);
   }
 
+  useEffect(() => () => clearTimeout(userScrollTimerRef.current), []);
+
   if (error) return <ErrorState title="歌词加载失败" message={error} />;
-  if (!music) return <LoadingState shape="list" count={4} />;
+  if (!music) {
+    return (
+      <section class="lyric-page lyric-loading">
+        <div class="np-veil" />
+        <div class="lyric-loading-card" role="status" aria-live="polite">
+          <span class="lyric-loading-disc" aria-hidden="true"><i /></span>
+          <div>
+            <strong>正在打开歌词页</strong>
+            <span>读取歌曲与同步歌词…</span>
+          </div>
+          <span class="lyric-loading-bars" aria-hidden="true"><i /><i /><i /><i /></span>
+        </div>
+      </section>
+    );
+  }
 
   const t = music.track || {};
   const cover = t.artwork_url || music.cover_path;
@@ -173,16 +213,20 @@ export function MusicLyrics({ id }) {
             <span>{t.artist}{t.album ? ` · ${t.album}` : ''}</span>
           </div>
 
-          {/* 进度条：点击任意位置跳转 */}
-          <div class="lp-seek">
-            <span class="lp-time">{fmt(position)}</span>
-            <input
-              type="range" min={0} max={total || 0} step={1} value={position}
-              onInput={(e) => seek(Number(e.currentTarget.value))}
-              style={`--pct:${pct}%`}
-              aria-label="播放进度"
-            />
-            <span class="lp-time">{fmt(total)}</span>
+          {/* 自定义进度条：圆角轨道 + 主色填充 + 柔和滑块 */}
+          <div class="lp-progress">
+            <div class="lp-progress-head">
+              <span>{fmt(position)}</span>
+              <span>{fmt(total)}</span>
+            </div>
+            <label class="lp-seek">
+              <input
+                type="range" min={0} max={total || 0} step={1} value={position}
+                onInput={(e) => seek(Number(e.currentTarget.value))}
+                style={`--pct:${pct}%`}
+                aria-label="播放进度"
+              />
+            </label>
           </div>
 
           {/* 控制：上一首 / 播放暂停 / 下一首 */}
@@ -210,27 +254,50 @@ export function MusicLyrics({ id }) {
           </div>
         </aside>
 
-        {/* 右：歌词 */}
+        {/* 右：磨砂歌词面板 */}
         <div class="lyric-main">
-          {lyricsError && <p class="muted">{lyricsError}</p>}
-          {!lyricsError && !lyrics && <p class="muted">歌词加载中…</p>}
-          {lyrics?.instrumental && <p class="muted">该曲目为纯音乐，暂无歌词。</p>}
+          <header class="lyric-panel-head">
+            <div>
+              <span class="lyric-kicker">Lyrics</span>
+              <h2>{hasSynced ? '正在同步' : '歌词'}</h2>
+            </div>
+            <span class={`lyric-sync-dot${playing && hasSynced ? ' on' : ''}`} title={playing ? '播放中' : '已暂停'}>
+              <i />{playing && hasSynced ? '跟随中' : '已暂停'}
+            </span>
+          </header>
+
+          {lyricsError && <p class="lyric-notice danger">{lyricsError}</p>}
+          {!lyricsError && !lyrics && (
+            <div class="lyric-inline-loading" role="status" aria-live="polite">
+              <span class="lyric-inline-bars" aria-hidden="true"><i /><i /><i /><i /></span>
+              <span>正在匹配同步歌词…</span>
+            </div>
+          )}
+          {lyrics?.instrumental && <p class="lyric-notice">该曲目为纯音乐，暂无歌词。</p>}
 
           {hasSynced && (
-            <div class="lyrics-scroll tall" ref={boxRef} onWheel={onUserScroll} onTouchMove={onUserScroll}>
+            <div class="lyrics-scroll tall" ref={boxRef} onWheel={onUserScroll} onTouchMove={onUserScroll} onScroll={onUserScroll}>
               <div class="lyr-spacer" aria-hidden="true" />
               {lines.map((l, i) => {
                 const passed = i < activeIndex;
+                const active = i === activeIndex;
                 return (
                   <p
                     key={`${l.time}-${i}`}
                     ref={(el) => { lineRefs.current[i] = el; }}
-                    class={`lyric-line${i === activeIndex ? ' active' : ''}${passed ? ' passed' : ''}`}
+                    class={`lyric-line${active ? ' active' : ''}${passed ? ' passed' : ''}`}
                     style={passed ? `--pass:${passOpacity(i, activeIndex)}` : undefined}
                     onClick={() => seek(l.time)}
                     title="点击跳转到这句"
                   >
-                    <span class="lyr-text">{l.text || '♪'}</span>
+                    <span class="lyr-text lyr-base">{l.text || '♪'}</span>
+                    {active && (
+                      <span
+                        class="lyr-text lyr-fill"
+                        style={`--fill:${(activeFill * 100).toFixed(2)}%`}
+                        aria-hidden="true"
+                      >{l.text || '♪'}</span>
+                    )}
                   </p>
                 );
               })}
@@ -247,14 +314,14 @@ export function MusicLyrics({ id }) {
           )}
 
           {lyrics && !hasSynced && plain.length === 0 && !lyrics.instrumental && (
-            <p class="muted">未找到歌词内容。</p>
+            <p class="lyric-notice">未找到歌词内容。</p>
           )}
 
           {lyrics && (
-            <p class="lyric-source">
-              歌词来源：{lyrics.source}
-              {hasSynced ? ' · 含时间轴，随播放同步高亮' : ' · 无时间轴，静态展示'}
-            </p>
+            <footer class="lyric-panel-foot">
+              <span>来源 {lyrics.source || '未知'}</span>
+              <span>{hasSynced ? '时间轴同步' : '静态歌词'}</span>
+            </footer>
           )}
         </div>
       </div>

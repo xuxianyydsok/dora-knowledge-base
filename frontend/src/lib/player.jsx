@@ -293,6 +293,25 @@ export function PlayerProvider({ children }) {
     goTo(target);
   }
 
+  // 歌词逐字填充需要比 timeupdate（约 250ms）更细的时间粒度。
+  // 只在播放时运行，暂停即停；100ms 的 state 更新足以让填充看起来连续，
+  // 又不会让整个 App 每帧重渲染。
+  useEffect(() => {
+    if (!playing) return undefined;
+    let raf = 0;
+    let lastPaint = 0;
+    const tick = (now) => {
+      const el = audioRef.current;
+      if (el && now - lastPaint >= 100) {
+        lastPaint = now;
+        setPosition(el.currentTime);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
+
   const value = {
     audioRef, music, track: t, queue, index, playing, position, duration,
     loading, error, notice, volume, activeSrc,
