@@ -2041,6 +2041,14 @@ async function videoTypeUnit() {
     return 'GET 放行 / PATCH 拒绝 + 多条摘要增删改启停排序 + 保存后立即刷新';
   });
 
+  await test('管理员首页快捷入口：摘要与摘抄两个入口都齐全', () => {
+    const home = readFileSync(join(FRONTEND_SRC, 'routes', 'Home.jsx'), 'utf8');
+    assert(/to: '\/admin\/hero-subtitle'/.test(home), '快捷入口缺少首页轮播摘要');
+    assert(/to: '\/admin\/excerpts'/.test(home), '快捷入口缺少首页摘抄');
+    assert(/首页轮播摘要/.test(home) && /首页摘抄/.test(home), '两个入口名称必须明确区分');
+    return '轮播摘要 + 摘抄双入口';
+  });
+
   // ---- 博客列表接口（2026-10-14 修「博客页打不开」） ----
   await test('博客列表 · 走边缘缓存、写操作失效、标签一次往返取回', () => {
     const src = readFileSync(join(BACKEND, 'src', 'routes', 'posts.js'), 'utf8');

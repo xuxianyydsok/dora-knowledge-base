@@ -564,7 +564,8 @@ const BASE_SHORTCUTS = [
 
 // 管理员专属：首页内容配置入口。普通用户看不到，避免点了进 403。
 const ADMIN_SHORTCUTS = [
-  { to: '/admin/hero-subtitle', icon: 'pencil', label: '首页摘要', desc: '编辑轮播图下方文案' },
+  { to: '/admin/hero-subtitle', icon: 'pencil', label: '首页轮播摘要', desc: '管理轮播图下方多条文案' },
+  { to: '/admin/excerpts', icon: 'sparkles', label: '首页摘抄', desc: '管理「此刻」大卡片摘抄' },
   { to: '/gallery?hero=1', icon: 'grid', label: '首页轮播', desc: '挑选图片与视频' }
 ];
 
