@@ -1,6 +1,19 @@
 /* 首页摘抄管理（/admin/excerpts）专用样式。
    颜色全部走主题变量；类名统一 ex- 前缀，避免与 .now-* / .mo-* 撞名。 */
 .ex-page { display: block; }
+.ex-debug {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-elevated) 42%, transparent);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.ex-debug strong { color: var(--text); font-weight: 600; }
 
 .ex-editor {
   margin-top: var(--sp-5, 16px);

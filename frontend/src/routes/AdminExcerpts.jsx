@@ -124,7 +124,7 @@ function ExcerptCard({ item, index, total, busy, onEdit, onToggle, onMove, onDel
 }
 
 export function AdminExcerpts() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -280,6 +280,12 @@ export function AdminExcerpts() {
           <Icon name="refresh" size={14} /> 刷新
         </button>
       </PageHeader>
+
+      <div class="ex-debug">
+        <span>当前账号：<strong>{user?.email || '未知'}</strong></span>
+        <span>后台读取：<strong>{loading ? '读取中…' : `${items.length} 条`}</strong></span>
+        <span>启用中：<strong>{loading ? '—' : `${active} 条`}</strong></span>
+      </div>
 
       {error && <div class="notice danger">{error}</div>}
 
