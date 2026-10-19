@@ -15,7 +15,7 @@
 import { ok, json, readJson, HttpError } from '../lib/response.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
-import { cachedData, bumpVersion } from '../lib/edgeCache.js';
+import { cachedData, bumpVersion, invalidateNamespace } from '../lib/edgeCache.js';
 
 const TABLE = 'site_settings';
 const HERO_SUBTITLE = 'hero_subtitle';
@@ -78,7 +78,10 @@ export async function updateSiteSettings(request, env) {
     },
     prefer: 'return=representation,resolution=merge-duplicates'
   });
-  await bumpVersion(`site-settings/${user.id}`, env);
+  await Promise.all([
+    bumpVersion(`site-settings/${user.id}`, env),
+    invalidateNamespace(`site-settings/${user.id}`, env)
+  ]);
   return ok({
     hero_subtitle: shape(rows[0]),
     updated_at: rows[0]?.updated_at || null

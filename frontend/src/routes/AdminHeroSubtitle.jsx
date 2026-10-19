@@ -8,7 +8,7 @@
 // 存储：复用 site_settings 的 `hero_subtitle` 键（value = { text }），
 // 不新建表；首页通过 GET /api/site-settings 读取，接口失败时用内置文案兜底。
 import { useEffect, useState } from 'preact/hooks';
-import { api } from '../lib/api.js';
+import { api, clearApiCache } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState, LoadingState, ErrorState } from '../components/StateView.jsx';
@@ -52,6 +52,7 @@ export function AdminHeroSubtitle() {
       const next = res?.hero_subtitle?.text || '';
       setText(next);
       setSaved(next);
+      clearApiCache('/api/site-settings');
       toastSuccess('首页摘要已保存，刷新首页即可看到');
     } catch (err) {
       toastError(err.message);

@@ -2017,7 +2017,13 @@ async function videoTypeUnit() {
     assert(/export async function getSiteSettings[\s\S]{0,300}requireAuth\(/.test(src),
       'getSiteSettings 应走 requireAuth（访客可读）');
     assert(/MAX_SUBTITLE\s*=\s*500/.test(src), '首页摘要应有长度上限');
-    return 'GET 放行 / PATCH 拒绝 + 公开键白名单 + 长度上限';
+    assert(/invalidateNamespace/.test(src), '保存摘要后必须清理旧列表缓存');
+    const apiSrc = readFileSync(join(FRONTEND_SRC, 'lib', 'api.js'), 'utf8');
+    assert(/getSiteSettings: \(\) => request\('\/api\/site-settings', \{ cache: false \}\)/.test(apiSrc),
+      '首页摘要读取必须绕过前端 60 秒内存缓存');
+    const hero = readFileSync(join(FRONTEND_SRC, 'components', 'HeroCarousel.jsx'), 'utf8');
+    assert(/if \(typeof text === 'string'\)/.test(hero), '摘要为空时也必须更新首页状态');
+    return 'GET 放行 / PATCH 拒绝 + 公开键白名单 + 长度上限 + 保存后立即刷新';
   });
 
   // ---- 博客列表接口（2026-10-14 修「博客页打不开」） ----

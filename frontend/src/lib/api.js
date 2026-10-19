@@ -95,7 +95,7 @@ export function clearApiCache(match) {
   }
 }
 
-async function request(path, { method = 'GET', body, timeout = 20000, signal } = {}) {
+async function request(path, { method = 'GET', body, timeout = 20000, signal, cache: useCache = true } = {}) {
   const auth = await authHeader();
   // 访客模式（未登录）只能读：进度上报静默跳过，其余写操作给出明确提示
   if (!auth.Authorization && path.endsWith('/progress')) return null;   // 访客不读写个人进度
@@ -105,7 +105,7 @@ async function request(path, { method = 'GET', body, timeout = 20000, signal } =
   // 读缓存 + 并发去重（2026-10-11 提速）：
   //   后端到 Supabase 的往返常有 1.5–6s，同一页来回切换时没必要反复请求。
   //   仅对 GET 生效；写操作成功后会按前缀失效相关缓存（见 invalidate()）。
-  if (method === 'GET') {
+  if (method === 'GET' && useCache) {
     const key = `${auth.Authorization ? 'me' : 'guest'}|${path}`;
     const hit = readCache(key);
     if (hit !== undefined) return hit;
@@ -693,7 +693,8 @@ export const api = {
   reorderHeroSlides: (ids) => request('/api/hero/slides/order', { method: 'PUT', body: { ids } }),
 
   // 站点级文案（2026-10-19）：首页轮播下方摘要。读对访客开放，写仅站长。
-  getSiteSettings: () => request('/api/site-settings'),
+  // 首页摘要保存后必须立刻读到新值：禁用 60 秒内存缓存，避免返回旧文案。
+  getSiteSettings: () => request('/api/site-settings', { cache: false }),
   updateSiteSettings: (body) => request('/api/site-settings', { method: 'PATCH', body }),
 
   // 碎念（朋友圈式短动态）

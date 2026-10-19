@@ -93,7 +93,11 @@ export function HeroCarousel() {
       .then((res) => {
         if (!alive) return;
         const text = res?.hero_subtitle?.text;
-        if (typeof text === 'string' && text.trim()) setSubtitle(text.trim());
+        // 摘要可能被站长保存为空（表示回退到内置文案）；不能用“非空才更新”把
+        // 旧摘要一直留在页面上。
+        if (typeof text === 'string') {
+          setSubtitle(text.trim() || '博客 · GitHub 收藏 · 图展 · 音乐 · 影视 —— 一个可以慢慢逛的个人知识库。');
+        }
       })
       .catch(() => { /* 接口失败：保持内置摘要 */ });
     return () => { alive = false; };
