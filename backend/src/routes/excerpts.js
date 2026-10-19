@@ -19,7 +19,7 @@ import { ok, json, readJson, HttpError } from '../lib/response.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { qs } from '../lib/supabase.js';
 import { requireUuid, requireString, optionalString, optionalBool, optionalInt } from '../lib/validate.js';
-import { cachedData, bumpVersion } from '../lib/edgeCache.js';
+import { cachedData, bumpVersion, invalidateNamespace } from '../lib/edgeCache.js';
 
 const TABLE = 'excerpts';
 const SELECT = 'id,content,source,sort_order,is_active,created_at,updated_at';
@@ -99,7 +99,10 @@ export async function createExcerpt(request, env) {
     sort_order: sortOrder,
     is_active: isActive
   });
-  await bumpVersion(`excerpts/${user.id}`, env);
+  await Promise.all([
+    bumpVersion(`excerpts/${user.id}`, env),
+    invalidateNamespace(`excerpts/${user.id}`, env)
+  ]);
   return ok(shape(rows[0]), request, env, 201);
 }
 
@@ -124,7 +127,10 @@ export async function updateExcerpt(request, env, id) {
 
   const rows = await db.update(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }), patch);
   if (!rows.length) throw new HttpError(404, '摘抄不存在或无权限');
-  await bumpVersion(`excerpts/${user.id}`, env);
+  await Promise.all([
+    bumpVersion(`excerpts/${user.id}`, env),
+    invalidateNamespace(`excerpts/${user.id}`, env)
+  ]);
   return ok(shape(rows[0]), request, env);
 }
 
@@ -134,7 +140,10 @@ export async function deleteExcerpt(request, env, id) {
   requireUuid(id, 'id');
   const rows = await db.remove(TABLE, qs({ id: `eq.${id}`, user_id: `eq.${user.id}` }));
   if (!rows.length) throw new HttpError(404, '摘抄不存在或无权限');
-  await bumpVersion(`excerpts/${user.id}`, env);
+  await Promise.all([
+    bumpVersion(`excerpts/${user.id}`, env),
+    invalidateNamespace(`excerpts/${user.id}`, env)
+  ]);
   return ok({ id, removed: true }, request, env);
 }
 
@@ -151,6 +160,9 @@ export async function reorderExcerpts(request, env) {
     return db.update(TABLE, qs({ id: `eq.${sid}`, user_id: `eq.${user.id}` }), { sort_order: i });
   }));
   const failed = results.filter((r) => r.status === 'rejected').length;
-  await bumpVersion(`excerpts/${user.id}`, env);
+  await Promise.all([
+    bumpVersion(`excerpts/${user.id}`, env),
+    invalidateNamespace(`excerpts/${user.id}`, env)
+  ]);
   return ok({ updated: ids.length - failed, failed }, request, env);
 }

@@ -199,8 +199,28 @@ export async function bumpVersion(ns, env) {
     // R2 侧的旧版本数据不会被自动回收（键里带版本号，旧键没人再读）。
     // 按前缀列出并删除该命名空间下的旧对象，避免无限堆积。
     // 删失败无所谓：数据不会错，只是多占一点空间。
-    await r2DeletePrefix(env, `${ns}/`);
+    // 键实际形如 `<ns>/<参数>/v<版本>`，必须按 `<ns>/` 前缀删，
+    // 而不是 `<ns>`（少斜杠会匹配不到任何对象）。
+    await r2DeletePrefix(env, `${ns.replace(/\/+$/, '')}/`);
   } catch { /* 失败最多让旧缓存多活一个 TTL */ }
+}
+
+/**
+ * 按命名空间直接清掉 Cache API 中的已知列表键，并清空 R2 快照。
+ *
+ * 版本号机制本身已经能让旧键失效，但如果某个接口的写操作没有 bumpVersion，
+ * 或者线上版本号键暂时不可用，就会继续读到旧数据。这个函数用于「写后立即刷新」
+ * 这类必须看到新值的场景，调用方传明确的 key 前缀即可。
+ */
+export async function invalidateNamespace(ns, env) {
+  const prefix = `${String(ns).replace(/\/+$/, '')}/`;
+  const cache = cacheApi();
+  if (cache) {
+    // Cache API 无法按前缀枚举，只能删已知的少量精确键；
+    // 这里同时删掉版本号键，让下一次读取从 0 开始重新回源。
+    await cache.delete(cacheKeyOf(`__ver__/${prefix.slice(0, -1)}`)).catch(() => {});
+  }
+  await r2DeletePrefix(env, prefix);
 }
 
 // 按前缀删除 R2 对象（用于缓存失效后清理旧版本快照）。

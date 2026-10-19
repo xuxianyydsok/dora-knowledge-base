@@ -118,7 +118,8 @@ function HeatCalendar({ dates = [] }) {
 // 2026-10-18 用户要求：摘抄卡片与 Dora Studio 卡片**对调位置**，
 // 摘抄改成像原来品牌卡那样的大卡片（要写很多内容），品牌卡缩到右列。
 // 内容不再写死：由站长在 /admin/excerpts 维护，首页通过 /api/excerpts 读取。
-// 接口失败或一条都没配置时，用下面这 3 段内置文案兜底，首页永远不会空。
+// 接口还没返回时用下面 3 段内置文案占位；接口明确返回空列表时，
+// 不再用内置文案冒充后台内容，而是显示「还没有可展示的摘抄」。
 const FALLBACK_EXCERPTS = [
   {
     text: '一个人真正的成长，往往不是突然懂得了什么大道理，而是某天清晨醒来，发现昨天让你辗转反侧的那件事，已经不再那么重要了。',
@@ -134,16 +135,21 @@ const FALLBACK_EXCERPTS = [
   }
 ];
 
-function Excerpts({ items = [] }) {
+function Excerpts({ items = [], loaded = false }) {
   // 统一结构：后台条目是 { content, source }，兜底是 { text, from }。
-  const list = useMemo(
-    () => (items.length ? items.map((x) => ({ text: x.content, from: x.source || '' })) : FALLBACK_EXCERPTS),
-    [items]
-  );
+  const list = useMemo(() => {
+    const configured = items
+      .map((x) => ({ text: x.content, from: x.source || '' }))
+      .filter((x) => x.text);
+    if (configured.length) return configured;
+    // 后台还没有内容时才使用内置文案；返回空列表表示「确实没有可展示的摘抄」，
+    // 由卡片显示明确提示，而不是把内置文案伪装成站长保存的内容。
+    return loaded ? [] : FALLBACK_EXCERPTS;
+  }, [items, loaded]);
   const [i, setI] = useState(0);
   const [out, setOut] = useState(false);
   const [hold, setHold] = useState(false);
-  const cur = list[i % list.length] || FALLBACK_EXCERPTS[0];
+  const cur = list.length ? list[i % list.length] : null;
   const timerRef = useRef(null);
   const quoteRef = useRef(null);
 
@@ -167,6 +173,21 @@ function Excerpts({ items = [] }) {
   }, [hold, i, list.length]);
   // 换段后回到顶部：长摘抄上一段滚到中间时，下一段不该从中途开始。
   useEffect(() => { if (quoteRef.current) quoteRef.current.scrollTop = 0; }, [i]);
+
+  if (!list.length) {
+    return (
+      <div class="now-box now-excerpt is-empty">
+        <div class="now-ex-head">
+          <p class="now-box-t">摘抄 · 读一段</p>
+          <span class="now-ex-count">0 / 0</span>
+        </div>
+        <div class="now-ex-empty">
+          <p>还没有可展示的摘抄。</p>
+          <span>请在后台「首页摘抄」中新增并启用一条内容。</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -216,7 +237,7 @@ function Excerpts({ items = [] }) {
 // ---------------- 组装 ----------------
 // props.posts：公开文章列表（用于热力日历）；props.books：公开图书（用于书架）；
 // props.excerpts：站长在后台维护的摘抄（首页只取启用项）
-export function HomeNow({ posts = [], books = [], excerpts = [] }) {
+export function HomeNow({ posts = [], books = [], excerpts = [], excerptsLoaded = false }) {
   const dates = useMemo(() => posts.map((p) => p.published_at || p.created_at).filter(Boolean), [posts]);
 
   return (
@@ -229,7 +250,7 @@ export function HomeNow({ posts = [], books = [], excerpts = [] }) {
       </div>
 
       {/* 左列（跨两行）：摘抄大卡片 */}
-      <Excerpts items={excerpts} />
+      <Excerpts items={excerpts} loaded={excerptsLoaded} />
 
       {/* 右列下：写作日历 */}
       <HeatCalendar dates={dates} />

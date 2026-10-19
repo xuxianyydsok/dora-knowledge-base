@@ -9,7 +9,7 @@
 //   2) 下方列表按首页轮播顺序排列，可启用 / 停用、编辑、上移 / 下移、删除；
 //   3) 所有写操作只对站长开放，非管理员只看到「仅站长可见」。
 import { useEffect, useState } from 'preact/hooks';
-import { api } from '../lib/api.js';
+import { api, clearApiCache } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { PageHeader } from '../components/PageHeader.jsx';
 import { EmptyState, LoadingState, ErrorState } from '../components/StateView.jsx';
@@ -131,6 +131,12 @@ export function AdminExcerpts() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
 
+  // 保存后清掉首页摘抄的读缓存：站长从后台回首页时能立刻看到新内容，
+  // 不会先读到 60 秒内的旧列表（尤其是刚新增的第一条）。
+  function refreshHomeExcerptCache() {
+    clearApiCache('/api/excerpts');
+  }
+
   async function load() {
     setLoading(true);
     setError('');
@@ -152,6 +158,7 @@ export function AdminExcerpts() {
     try {
       await api.createExcerpt(body);
       toastSuccess('已添加到首页摘抄');
+      refreshHomeExcerptCache();
       setAdding(false);
       await load();
     } catch (e) {
@@ -166,6 +173,7 @@ export function AdminExcerpts() {
     try {
       await api.updateExcerpt(editing.id, body);
       toastSuccess('摘抄已保存');
+      refreshHomeExcerptCache();
       setEditing(null);
       await load();
     } catch (e) {
@@ -180,6 +188,7 @@ export function AdminExcerpts() {
     try {
       const updated = await api.updateExcerpt(item.id, { is_active: !item.is_active });
       setItems((list) => list.map((x) => (x.id === item.id ? updated : x)));
+      refreshHomeExcerptCache();
       toastSuccess(updated.is_active ? '已启用，首页会展示' : '已停用，首页不再展示');
     } catch (e) {
       toastError(e.message);
@@ -198,6 +207,7 @@ export function AdminExcerpts() {
     setBusy(true);
     try {
       await api.reorderExcerpts(next.map((x) => x.id));
+      refreshHomeExcerptCache();
       toastSuccess('顺序已保存');
     } catch (e) {
       toastError(e.message);
@@ -213,6 +223,7 @@ export function AdminExcerpts() {
     try {
       await api.deleteExcerpt(item.id);
       setItems((list) => list.filter((x) => x.id !== item.id));
+      refreshHomeExcerptCache();
       toastSuccess('已删除');
     } catch (e) {
       toastError(e.message);

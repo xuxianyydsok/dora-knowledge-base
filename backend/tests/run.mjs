@@ -1972,7 +1972,10 @@ async function videoTypeUnit() {
     // 站长首页也可能登录着：默认仍必须只取启用项，只有管理页显式 ?all=true 才读停用项。
     assert(/默认（含站长首页）只拿启用项/.test(src),
       'listExcerpts 的默认口径必须写明：站长首页也只取启用项');
-    return `GET 放行 / 写 4 条拒绝 + order 顺序正确 + 访客过滤下推查询层`;
+    assert(/invalidateNamespace/.test(src), '写操作必须清理摘抄列表的旧缓存');
+    const cacheSrc = readFileSync(join(BACKEND, 'src', 'lib', 'edgeCache.js'), 'utf8');
+    assert(/ns\.replace\(\/\\\/\+\$\/, ''\)\}/.test(cacheSrc), 'R2 前缀必须以斜杠结尾');
+    return `GET 放行 / 写 4 条拒绝 + order 顺序正确 + 访客过滤下推查询层 + 写后清缓存`;
   });
 
   await test('首页摘抄 · 迁移含 RLS、幂等触发器与内容非空约束', () => {
