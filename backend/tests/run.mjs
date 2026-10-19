@@ -2023,7 +2023,17 @@ async function videoTypeUnit() {
       '首页摘要读取必须绕过前端 60 秒内存缓存');
     const hero = readFileSync(join(FRONTEND_SRC, 'components', 'HeroCarousel.jsx'), 'utf8');
     assert(/if \(typeof text === 'string'\)/.test(hero), '摘要为空时也必须更新首页状态');
-    return 'GET 放行 / PATCH 拒绝 + 公开键白名单 + 长度上限 + 保存后立即刷新';
+    assert(/HERO_SUBTITLE_ITEMS/.test(src), '摘要必须支持多条存储');
+    assert(/listHeroSubtitleItems/.test(src), '管理端必须能读取完整摘要列表');
+    assert(/hero_subtitle_items/.test(src), '保存接口必须支持多条摘要');
+    const admin = readFileSync(join(FRONTEND_SRC, 'routes', 'AdminHeroSubtitle.jsx'), 'utf8');
+    for (const action of ['create', 'update', 'toggle', 'move', 'remove']) {
+      assert(new RegExp(`async function ${action}\\(`).test(admin), `管理页缺少 ${action}`);
+    }
+    assert(/getHeroSubtitleItems/.test(admin), '管理页必须读取多条摘要');
+    assert(/新增摘要/.test(admin) && /编辑/.test(admin) && /停用/.test(admin) && /删除/.test(admin),
+      '管理页必须提供新增/编辑/停用/删除入口');
+    return 'GET 放行 / PATCH 拒绝 + 多条摘要增删改启停排序 + 保存后立即刷新';
   });
 
   // ---- 博客列表接口（2026-10-14 修「博客页打不开」） ----

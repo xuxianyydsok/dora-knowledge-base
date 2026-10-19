@@ -162,6 +162,8 @@ const routes = [
   ['DELETE', '/api/hero/slides/:id', heroSlides.deleteHeroSlide],
 
   // 站点级文案（首页轮播摘要）：读对访客开放，写仅管理员。
+  // ⚠️ /admin 是更具体的路径，必须排在通用 GET 之前（顺序匹配）。
+  ['GET', '/api/site-settings/admin', siteSettings.listHeroSubtitleItems],
   ['GET', '/api/site-settings', siteSettings.getSiteSettings],
   ['PATCH', '/api/site-settings', siteSettings.updateSiteSettings],
 

@@ -696,6 +696,7 @@ export const api = {
   // 首页摘要保存后必须立刻读到新值：禁用 60 秒内存缓存，避免返回旧文案。
   getSiteSettings: () => request('/api/site-settings', { cache: false }),
   updateSiteSettings: (body) => request('/api/site-settings', { method: 'PATCH', body }),
+  getHeroSubtitleItems: () => request('/api/site-settings/admin', { method: 'GET', cache: false }),
 
   // 碎念（朋友圈式短动态）
   listMoments: (params = '') => request(`/api/moments${params}`),
