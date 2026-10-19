@@ -31,7 +31,7 @@ function fullTime(value) {
 }
 
 // 新增 / 编辑共用同一张表单，避免两套字段行为不一致。
-function ExcerptEditor({ initial, onSubmit, onCancel, busy, submitLabel = '添加到首页' }) {
+function ExcerptEditor({ initial, onSubmit, onCancel, busy, submitLabel = '添加到首页', error = '' }) {
   const [draft, setDraft] = useState({ ...EMPTY_DRAFT, ...(initial || {}) });
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const canSubmit = draft.content.trim().length > 0 && !busy;
@@ -48,6 +48,7 @@ function ExcerptEditor({ initial, onSubmit, onCancel, busy, submitLabel = '添�
 
   return (
     <form class="ex-editor" onSubmit={submit}>
+      {error && <div class="notice danger" role="alert">{error}</div>}
       <textarea
         class="ex-editor-text"
         rows={initial ? 7 : 5}
@@ -130,6 +131,7 @@ export function AdminExcerpts() {
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [saveError, setSaveError] = useState('');
 
   // 保存后清掉首页摘抄的读缓存：站长从后台回首页时能立刻看到新内容，
   // 不会先读到 60 秒内的旧列表（尤其是刚新增的第一条）。
@@ -143,9 +145,13 @@ export function AdminExcerpts() {
     try {
       // all=true 让站长看到已停用的条目；访客 / 普通用户永远只拿启用项。
       const res = await api.listExcerpts('?all=true&limit=200');
-      setItems(res?.items || []);
+      const list = Array.isArray(res?.items) ? res.items : [];
+      setItems(list);
+      // 返回给保存流程做“写后读”核对：接口说成功、列表却读不到，必须明确报错。
+      return list;
     } catch (e) {
       setError(e.message);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -155,13 +161,21 @@ export function AdminExcerpts() {
 
   async function create(body) {
     setBusy(true);
+    setSaveError('');
     try {
       await api.createExcerpt(body);
       toastSuccess('已添加到首页摘抄');
       refreshHomeExcerptCache();
       setAdding(false);
-      await load();
+      // 等首页读缓存清完再回读，避免刚写入就命中旧的空列表。
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      // 只有写接口成功后才重新读列表；读失败不能伪装成“保存失败”。
+      const list = await load();
+      if (!Array.isArray(list) || !list.some((x) => x.content === body.content)) {
+        setSaveError('保存接口已返回成功，但列表里没有读到这条内容。请刷新后再试，或检查数据库权限。');
+      }
     } catch (e) {
+      setSaveError(`保存失败：${e.message}`);
       toastError(e.message);
     } finally {
       setBusy(false);
@@ -170,13 +184,20 @@ export function AdminExcerpts() {
 
   async function update(body) {
     setBusy(true);
+    setSaveError('');
     try {
       await api.updateExcerpt(editing.id, body);
       toastSuccess('摘抄已保存');
       refreshHomeExcerptCache();
+      const editedId = editing.id;
       setEditing(null);
-      await load();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      const list = await load();
+      if (!Array.isArray(list) || !list.some((x) => x.id === editedId)) {
+        setSaveError('保存接口已返回成功，但列表里没有读到这条内容。请刷新后再试，或检查数据库权限。');
+      }
     } catch (e) {
+      setSaveError(`保存失败：${e.message}`);
       toastError(e.message);
     } finally {
       setBusy(false);
@@ -267,6 +288,7 @@ export function AdminExcerpts() {
           onSubmit={create}
           onCancel={() => setAdding(false)}
           busy={busy}
+          error={saveError}
         />
       )}
       {editing && (
@@ -276,6 +298,7 @@ export function AdminExcerpts() {
           onSubmit={update}
           onCancel={() => setEditing(null)}
           busy={busy}
+          error={saveError}
           submitLabel="保存修改"
         />
       )}
