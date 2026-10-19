@@ -1973,6 +1973,11 @@ async function videoTypeUnit() {
     assert(/默认（含站长首页）只拿启用项/.test(src),
       'listExcerpts 的默认口径必须写明：站长首页也只取启用项');
     assert(/invalidateNamespace/.test(src), '写操作必须清理摘抄列表的旧缓存');
+    assert(/diagnoseExcerpts/.test(src), '需要站长专用数据库核对接口');
+    const router2 = readFileSync(join(BACKEND, 'src', 'router.js'), 'utf8');
+    assert(router2.includes("'/api/excerpts/diagnose'"), '诊断接口必须注册到路由');
+    assert(router2.indexOf("'/api/excerpts/diagnose'") < router2.indexOf("'/api/excerpts/:id'"),
+      '诊断路径必须排在 /:id 之前');
     const cacheSrc = readFileSync(join(BACKEND, 'src', 'lib', 'edgeCache.js'), 'utf8');
     assert(/ns\.replace\(\/\\\/\+\$\/, ''\)\}/.test(cacheSrc), 'R2 前缀必须以斜杠结尾');
     return `GET 放行 / 写 4 条拒绝 + order 顺序正确 + 访客过滤下推查询层 + 写后清缓存`;

@@ -71,6 +71,33 @@ export async function listExcerpts(request, env) {
   return json({ data }, { headers: { 'X-List-Cache': cache } }, request, env);
 }
 
+// GET /api/excerpts/diagnose —— 仅站长：不经过缓存，直接看数据库真实记录。
+// 用于排查「后台看得到、访客首页看不到」这类账号/启用状态问题。
+export async function diagnoseExcerpts(request, env) {
+  const { db, user } = await requireAdmin(request, env);
+  const rows = await db.select(TABLE, qs({
+    select: 'id,user_id,content,source,sort_order,is_active,created_at,updated_at',
+    order: 'created_at.desc',
+    limit: '200'
+  }));
+  return ok({
+    viewer: { id: user.id, email: user.email, role: user.role },
+    total: rows.length,
+    active: rows.filter((r) => r.is_active !== false).length,
+    rows: rows.map((r) => ({
+      id: r.id,
+      user_id: r.user_id,
+      owner_is_viewer: r.user_id === user.id,
+      is_active: r.is_active !== false,
+      content: String(r.content || '').slice(0, 120),
+      source: r.source || '',
+      sort_order: r.sort_order,
+      created_at: r.created_at,
+      updated_at: r.updated_at
+    }))
+  }, request, env);
+}
+
 // POST /api/excerpts
 export async function createExcerpt(request, env) {
   const { db, user } = await requireAdmin(request, env);

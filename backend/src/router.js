@@ -170,6 +170,7 @@ const routes = [
   // 首页摘抄（2026-10-18）：读对访客开放，写全部 requireAdmin。
   // ⚠️ /order 是 3 段路径，必须排在 /:id 之前。
   ['GET', '/api/excerpts', excerpts.listExcerpts],
+  ['GET', '/api/excerpts/diagnose', excerpts.diagnoseExcerpts],
   ['POST', '/api/excerpts', excerpts.createExcerpt],
   ['PUT', '/api/excerpts/order', excerpts.reorderExcerpts],
   ['PATCH', '/api/excerpts/:id', excerpts.updateExcerpt],

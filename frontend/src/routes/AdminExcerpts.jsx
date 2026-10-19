@@ -132,6 +132,8 @@ export function AdminExcerpts() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
   const [saveError, setSaveError] = useState('');
+  const [diagnose, setDiagnose] = useState(null);
+  const [diagnoseBusy, setDiagnoseBusy] = useState(false);
 
   // 保存后清掉首页摘抄的读缓存：站长从后台回首页时能立刻看到新内容，
   // 不会先读到 60 秒内的旧列表（尤其是刚新增的第一条）。
@@ -158,6 +160,17 @@ export function AdminExcerpts() {
   }
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin]);
+
+  async function runDiagnose() {
+    setDiagnoseBusy(true);
+    try {
+      setDiagnose(await api.diagnoseExcerpts());
+    } catch (e) {
+      setDiagnose({ error: e.message });
+    } finally {
+      setDiagnoseBusy(false);
+    }
+  }
 
   async function create(body) {
     setBusy(true);
@@ -279,6 +292,9 @@ export function AdminExcerpts() {
         <button type="button" onClick={load} disabled={loading || busy}>
           <Icon name="refresh" size={14} /> 刷新
         </button>
+        <button type="button" onClick={runDiagnose} disabled={diagnoseBusy}>
+          <Icon name="search" size={14} /> {diagnoseBusy ? '检查中…' : '数据库核对'}
+        </button>
       </PageHeader>
 
       <div class="ex-debug">
@@ -286,6 +302,24 @@ export function AdminExcerpts() {
         <span>后台读取：<strong>{loading ? '读取中…' : `${items.length} 条`}</strong></span>
         <span>启用中：<strong>{loading ? '—' : `${active} 条`}</strong></span>
       </div>
+
+      {diagnose && (
+        <div class="notice" style="margin-top:10px">
+          {diagnose.error ? (
+            <>数据库核对失败：{diagnose.error}</>
+          ) : (
+            <>
+              数据库真实记录 <strong>{diagnose.total}</strong> 条，
+              启用 <strong>{diagnose.active}</strong> 条；
+              其中属于当前账号 <strong>{diagnose.rows.filter((r) => r.owner_is_viewer).length}</strong> 条。
+              {diagnose.total === 0 && ' —— 说明记录没有写进数据库。'}
+              {diagnose.total > 0 && diagnose.active === 0 && ' —— 说明记录都被停用了。'}
+              {diagnose.active > 0 && diagnose.rows.filter((r) => r.owner_is_viewer && r.is_active).length === 0
+                && ' —— 说明启用记录属于另一个账号，访客首页不会显示。'}
+            </>
+          )}
+        </div>
+      )}
 
       {error && <div class="notice danger">{error}</div>}
 
