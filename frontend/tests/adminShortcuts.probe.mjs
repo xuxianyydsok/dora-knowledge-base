@@ -28,10 +28,14 @@ const home = read('frontend/src/routes/Home.jsx');
 ok('管理员入口包含「首页摘要」', home.includes("to: '/admin/hero-subtitle'"));
 ok('管理员入口包含「首页轮播」', home.includes("to: '/gallery?hero=1'"));
 ok('管理员入口只在 isAdmin 时拼接', /isAdmin\s*\?\s*\[\.\.\.ADMIN_SHORTCUTS/.test(home));
-ok('快捷入口面板有等高类', home.includes('panel console-shortcuts'));
+const recentPanel = home.match(/<section class="([^"]*)"[^>]*>\s*<div class="panel-head">\s*<h2>最近添加<\/h2>/);
+const shortcutsPanel = home.match(/<section class="([^"]*)"[^>]*>\s*<div class="panel-head">\s*<h2>快捷入口<\/h2>/);
+ok('等高类只挂在右侧快捷入口面板', /console-shortcuts/.test(shortcutsPanel?.[1] || '')
+  && !/console-shortcuts/.test(recentPanel?.[1] || ''));
 
 const css = read('frontend/src/styles/global.css');
 ok('控制台两栏改为拉伸等高', /\.console-cols\s*\{[^}]*align-items:\s*stretch/.test(css));
+ok('两栏轨道允许内容收缩（避免长标题挤扁右栏）', /grid-template-columns:\s*minmax\(0,\s*1\.25fr\)\s+minmax\(0,\s*1fr\)/.test(css));
 ok('快捷入口面板高度 100%', /\.console-shortcuts\s*\{[^}]*height:\s*100%/.test(css));
 
 const app = read('frontend/src/app.jsx');
@@ -39,8 +43,8 @@ ok('首页摘要路由仅管理员', /admin path="\/admin\/hero-subtitle"/.test(
 ok('路由组件已导出', read('frontend/src/routes/routes.js').includes('AdminHeroSubtitle'));
 
 const admin = read('frontend/src/routes/AdminHeroSubtitle.jsx');
-ok('管理页读取 site-settings', admin.includes('api.getSiteSettings()'));
-ok('管理页保存 hero_subtitle', admin.includes('api.updateSiteSettings({ hero_subtitle: { text:'));
+ok('管理页读取多条摘要', admin.includes('api.getHeroSubtitleItems()'));
+ok('管理页保存 hero_subtitle', /api\.updateSiteSettings\(\{\s*hero_subtitle_items:/.test(admin));
 ok('管理页最多 500 字', /MAX_TEXT\s*=\s*500/.test(admin));
 
 const hero = read('frontend/src/components/HeroCarousel.jsx');

@@ -12,7 +12,7 @@ export async function withPage(url, fn, { port = 9333, width = 1440, height = 10
 
   const chrome = spawn(CHROME, [
     '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
-    `--remote-debugging-port=${port}`, `--window-size=${width},${height}`,
+    `--remote-debugging-port=${port}`, '--window-size=1440,1000',
     '--disable-dev-shm-usage', 'about:blank'
   ], { stdio: 'ignore', env });
 
@@ -71,6 +71,9 @@ export async function withPage(url, fn, { port = 9333, width = 1440, height = 10
     // 会拿到上一次的 CSS/JS，让「改完没效果」的假象反复出现。
     await send('Network.enable');
     await send('Network.setCacheDisabled', { cacheDisabled: true });
+    await send('Emulation.setDeviceMetricsOverride', {
+      width, height, deviceScaleFactor: 1, mobile: width <= 640
+    });
     await send('Page.navigate', { url });
     await sleep(waitMs);
 

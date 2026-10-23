@@ -657,7 +657,7 @@ function Dashboard() {
       </div>
 
       <div class="console-cols">
-        <section class="panel console-shortcuts">
+        <section class="panel">
           <div class="panel-head">
             <h2>最近添加</h2>
             <a class="panel-more" href="/search">全部资源 <Icon name="chevronRight" size={13} /></a>
@@ -683,7 +683,7 @@ function Dashboard() {
           )}
         </section>
 
-        <section class="panel">
+        <section class="panel console-shortcuts">
           <div class="panel-head">
             <h2>快捷入口</h2>
           </div>
